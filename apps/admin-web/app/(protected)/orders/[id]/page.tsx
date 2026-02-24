@@ -34,13 +34,14 @@ import { toast } from 'sonner';
 
 const STATUS_FLOW: OrderStatus[] = [
   'BOOKING_CONFIRMED',
-  'PICKUP_SCHEDULED',
   'PICKED_UP',
   'IN_PROCESSING',
   'READY',
   'OUT_FOR_DELIVERY',
   'DELIVERED',
 ];
+
+type OrderTab = 'ack' | 'final' | 'payment';
 
 export default function OrderDetailPage() {
   const params = useParams();
@@ -100,6 +101,7 @@ export default function OrderDetailPage() {
   const [paymentProvider, setPaymentProvider] = useState<PaymentProvider>('UPI');
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
+  const [orderTab, setOrderTab] = useState<OrderTab>('ack');
   // Hydrate ACK form from saved invoice when summary loads; or default order mode from order type
   useEffect(() => {
     if (!summary) return;
@@ -289,9 +291,25 @@ export default function OrderDetailPage() {
     order.status === 'OUT_FOR_DELIVERY' ||
     order.status === 'DELIVERED' ||
     (order.orderSource === 'WALK_IN' && order.status === 'READY');
+  const ackSubmitted = ackInvoice?.status === 'ISSUED';
+  const finalSubmitted = finalInvoice?.status === 'ISSUED';
+  const paymentRecorded = summary.payment?.status === 'CAPTURED';
+  const showTabs = ackSubmitted;
+  const isAckEditable = ackSubmitted && !finalSubmitted;
   const isLocked = ackInvoice?.status === 'ISSUED';
-  const isFinalLocked = summary.payment?.status === 'CAPTURED';
+  const isFinalLocked = paymentRecorded;
   const hasSubscription = !!(summary.subscription || summary.subscriptionUsage);
+
+  // When ACK is submitted, switch to Final tab; when Final is submitted, switch to Payment tab
+  const prevAckSubmitted = useRef(false);
+  const prevFinalSubmitted = useRef(false);
+  useEffect(() => {
+    if (!summary) return;
+    if (ackSubmitted && !prevAckSubmitted.current) setOrderTab('final');
+    if (finalSubmitted && !prevFinalSubmitted.current) setOrderTab('payment');
+    prevAckSubmitted.current = ackSubmitted;
+    prevFinalSubmitted.current = finalSubmitted;
+  }, [summary, ackSubmitted, finalSubmitted]);
 
   /** ACK weight/items for this order (from issued ACK invoice). Acknowledgement invoice is immutable once submitted. */
   const ackKgForOrder = ackInvoice && (ackInvoice as { subscriptionUsageKg?: number | null }).subscriptionUsageKg != null ? Number((ackInvoice as { subscriptionUsageKg?: number | null }).subscriptionUsageKg) : null;
@@ -487,6 +505,17 @@ export default function OrderDetailPage() {
     );
   };
 
+  const onAckIssueSuccess = () => {
+    if (order.status === 'BOOKING_CONFIRMED' || order.status === 'PICKUP_SCHEDULED') {
+      updateStatus.mutate('PICKED_UP', {
+        onSuccess: () => toast.success('ACK submitted; status set to Picked up'),
+        onError: (e) => toast.error(e.message),
+      });
+    } else {
+      toast.success('ACK invoice submitted');
+    }
+  };
+
   const quickIssueAck = () => {
     const useNewSub = hasNewSubscriptionSelected;
     const body = useNewSub || ackItems.length
@@ -501,7 +530,7 @@ export default function OrderDetailPage() {
             itemsCount: ackItemsCount !== '' ? ackItemsCount : undefined,
           },
           {
-            onSuccess: () => toast.success('ACK invoice submitted'),
+            onSuccess: onAckIssueSuccess,
             onError: (e) => toast.error(e.message),
           },
         );
@@ -557,7 +586,6 @@ export default function OrderDetailPage() {
 
   const timelineStages: { key: OrderStatus; label: string; ts: string | null }[] = [
     { key: 'BOOKING_CONFIRMED', label: 'Order initiated', ts: order.createdAt ?? null },
-    { key: 'PICKUP_SCHEDULED', label: 'Order confirmation', ts: order.confirmedAt ?? null },
     { key: 'PICKED_UP', label: 'Picked up', ts: order.pickedUpAt ?? null },
     { key: 'IN_PROCESSING', label: 'In progress', ts: order.inProgressAt ?? null },
     { key: 'READY', label: 'Ready', ts: order.readyAt ?? null },
@@ -566,7 +594,6 @@ export default function OrderDetailPage() {
   ];
   const currentIdx = STATUS_FLOW.indexOf(order.status);
   const canConfirmOrder = order.status === 'BOOKING_CONFIRMED';
-  const canConfirmPickup = order.status === 'PICKUP_SCHEDULED';
   const hasSubscriptionUsage = (ackWeightKg !== '' && Number(ackWeightKg) > 0) || (ackItemsCount !== '' && Number(ackItemsCount) > 0);
   /** Order is dedicated to one subscription; we use summary.subscription (order's subscription). */
   const hasExistingSubscriptionSelected = ackOrderMode !== 'INDIVIDUAL' && !!summary.subscription;
@@ -810,7 +837,42 @@ export default function OrderDetailPage() {
         </DialogContent>
       </Dialog>
 
+      {showTabs && (
+        <div className="flex flex-wrap gap-1 border-b border-muted pb-2 mb-2">
+          <Button
+            variant={orderTab === 'ack' ? 'default' : 'ghost'}
+            size="sm"
+            onClick={() => setOrderTab('ack')}
+            className="rounded-b-none"
+          >
+            Acknowledgment Invoice
+          </Button>
+          <Button
+            variant={orderTab === 'final' ? 'default' : 'ghost'}
+            size="sm"
+            onClick={() => setOrderTab('final')}
+            className="rounded-b-none"
+          >
+            Final Invoice
+          </Button>
+          {finalSubmitted && (
+            <Button
+              variant={orderTab === 'payment' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setOrderTab('payment')}
+              className="rounded-b-none"
+            >
+              Record Payment
+            </Button>
+          )}
+        </div>
+      )}
+
+      {(!showTabs || orderTab === 'ack') && (
       <div ref={ackPrintAreaRef} className="ack-invoice-print-area rounded-lg p-4 bg-gray-100">
+      {finalSubmitted && (
+        <p className="text-sm text-muted-foreground mb-3 ack-print-hide">Acknowledgement invoice cannot be edited after Final invoice is submitted.</p>
+      )}
       <Card className="bg-transparent border-0 shadow-none">
         <CardContent className="space-y-4 pt-6">
           {/* Header: logo left, company name (heading), branch name below */}
@@ -1013,7 +1075,6 @@ export default function OrderDetailPage() {
                 weightKg: ackWeightKg !== '' ? ackWeightKg : undefined,
                 itemsCount: ackItemsCount !== '' ? ackItemsCount : undefined,
               };
-              const onIssueSuccess = () => toast.success('ACK invoice submitted');
               const onIssueError = (e: Error) => toast.error(getFriendlyErrorMessage(e));
               if (!ackInvoice) {
                 createAckDraft.mutate(
@@ -1021,7 +1082,7 @@ export default function OrderDetailPage() {
                   {
                     onSuccess: () => {
                       issueAck.mutate(issueOpts, {
-                        onSuccess: onIssueSuccess,
+                        onSuccess: onAckIssueSuccess,
                         onError: onIssueError,
                       });
                     },
@@ -1030,7 +1091,7 @@ export default function OrderDetailPage() {
                 );
               } else {
                 issueAck.mutate(issueOpts, {
-                  onSuccess: onIssueSuccess,
+                  onSuccess: onAckIssueSuccess,
                   onError: onIssueError,
                 });
               }
@@ -1038,8 +1099,8 @@ export default function OrderDetailPage() {
             saveDraftLoading={createAckDraft.isPending}
             issueLoading={issueAck.isPending || createAckDraft.isPending}
             draftExists={!!ackInvoice}
-            issued={isLocked}
-            issueDisabled={(() => {
+            issued={isLocked || finalSubmitted}
+            issueDisabled={finalSubmitted || (() => {
               if (ackSubscriptionPreview == null) return false;
               const kgOrItemsExceeded = ackSubscriptionPreview.kgExceeded || ackSubscriptionPreview.itemsExceeded;
               const lastInvoiceAllowed = summary.subscription?.remainingPickups === 0 && !kgOrItemsExceeded;
@@ -1066,13 +1127,13 @@ export default function OrderDetailPage() {
               (hasNewSubscriptionSelected || (hasExistingSubscriptionSelected && validSubscriptionUsage))
             }
             saveDraftLabel="Save Ack Invoice"
-            canSaveDraft={
+            canSaveDraft={!finalSubmitted && (
               ackOrderMode === 'SUBSCRIPTION_ONLY'
                 ? (!!order.subscriptionId && summary.subscription ? validSubscriptionUsage : false) || hasNewSubscriptionSelected
                 : ackOrderMode === 'BOTH'
                   ? ackItems.length > 0 || (hasExistingSubscriptionSelected && validSubscriptionUsage) || hasNewSubscriptionSelected
                   : ackItems.length > 0
-            }
+            )}
             subscriptionAmountPaise={hasNewSubscriptionSelected ? ackSubscriptionAmountPaise : undefined}
             showTaxAndDiscountWhenNewSubscription={ackOrderMode === 'SUBSCRIPTION_ONLY' && hasNewSubscriptionSelected}
           />
@@ -1111,7 +1172,9 @@ export default function OrderDetailPage() {
         </CardContent>
       </Card>
       </div>
+      )}
 
+      {showTabs && orderTab === 'final' && (
       <div ref={finalPrintAreaRef} className="final-invoice-print-area rounded-lg p-4 bg-pink-50">
       <Card className="bg-transparent border-0 shadow-none">
         <CardHeader className="ack-print-hide-header">
@@ -1345,10 +1408,12 @@ export default function OrderDetailPage() {
         </CardContent>
       </Card>
       </div>
+      )}
 
+      {showTabs && orderTab === 'payment' && finalSubmitted && (
       <Card>
         <CardHeader>
-          <CardTitle>Payment Recorded</CardTitle>
+          <CardTitle>Record Payment</CardTitle>
           {order.status === 'DELIVERED' && summary.payment?.status !== 'CAPTURED' && (
             <p className="text-sm text-muted-foreground">Record payment after delivery.</p>
           )}
@@ -1408,13 +1473,17 @@ export default function OrderDetailPage() {
           )}
         </CardContent>
       </Card>
+      )}
+
       </div>
 
       <footer className="fixed bottom-0 left-0 right-0 z-40 border-t bg-background px-4 py-3 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
         <div className="flex flex-wrap items-center justify-center gap-2">
           {STATUS_FLOW.map((s) => {
             const idx = STATUS_FLOW.indexOf(order.status);
-            const isNext = idx >= 0 && idx < STATUS_FLOW.length - 1 && STATUS_FLOW[idx + 1] === s;
+            const isNext =
+              (idx >= 0 && idx < STATUS_FLOW.length - 1 && STATUS_FLOW[idx + 1] === s) ||
+              (order.status === 'PICKUP_SCHEDULED' && s === 'PICKED_UP');
             const isCurrent = order.status === s;
             const label = s === 'PICKED_UP' && isNext ? 'Confirm Pickup' : s.replace(/_/g, ' ');
             return (

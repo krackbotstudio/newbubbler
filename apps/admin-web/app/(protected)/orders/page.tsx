@@ -24,7 +24,6 @@ import type { AdminOrderListRow, OrderStatus, ServiceType } from '@/types';
 
 const STATUS_OPTIONS: OrderStatus[] = [
   'BOOKING_CONFIRMED',
-  'PICKUP_SCHEDULED',
   'PICKED_UP',
   'IN_PROCESSING',
   'READY',
@@ -112,10 +111,10 @@ export default function OrdersPage() {
             Date filter: leave empty for all dates. With a range, orders are shown if initiated, picked up, or delivered on any day in that range.
           </p>
           <div className="flex flex-wrap items-end gap-4">
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Status</label>
+            <div className="space-y-1.5 min-w-0">
+              <label className="text-xs text-muted-foreground block">Status</label>
               <select
-                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                className="h-10 min-h-[2.5rem] w-full min-w-[100px]"
                 value={status}
                 onChange={(e) => {
                   setStatus(e.target.value as OrderStatus | '');
@@ -130,8 +129,8 @@ export default function OrdersPage() {
                 ))}
               </select>
             </div>
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Pincode</label>
+            <div className="space-y-1.5 min-w-0">
+              <label className="text-xs text-muted-foreground block">Pincode</label>
               <Input
                 placeholder="6 digits"
                 value={pincode}
@@ -143,10 +142,10 @@ export default function OrdersPage() {
                 className="w-28"
               />
             </div>
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Service</label>
+            <div className="space-y-1.5 min-w-0">
+              <label className="text-xs text-muted-foreground block">Service</label>
               <select
-                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                className="h-10 min-h-[2.5rem] w-full min-w-[100px]"
                 value={serviceType}
                 onChange={(e) => {
                   setServiceType(e.target.value as ServiceType | '');
@@ -161,8 +160,8 @@ export default function OrdersPage() {
                 ))}
               </select>
             </div>
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Date from</label>
+            <div className="space-y-1.5 min-w-0">
+              <label className="text-xs text-muted-foreground block">Date from</label>
               <Input
                 type="date"
                 value={dateFrom}
@@ -172,8 +171,8 @@ export default function OrdersPage() {
                 }}
               />
             </div>
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Date to</label>
+            <div className="space-y-1.5 min-w-0">
+              <label className="text-xs text-muted-foreground block">Date to</label>
               <Input
                 type="date"
                 value={dateTo}
@@ -183,11 +182,11 @@ export default function OrdersPage() {
                 }}
               />
             </div>
-            <div className="space-y-1 ml-auto">
-              <label className="text-xs text-muted-foreground">Branch name</label>
+            <div className="space-y-1.5 ml-auto min-w-0">
+              <label className="text-xs text-muted-foreground block">Branch name</label>
               {isBranchHead ? (
                 <select
-                  className="h-10 rounded-md border border-input bg-muted px-3 text-sm min-w-[140px]"
+                  className="h-10 min-h-[2.5rem] min-w-[140px] disabled:opacity-70"
                   value={effectiveBranchId}
                   disabled
                   title="Your assigned branch (cannot change)"
@@ -198,7 +197,7 @@ export default function OrdersPage() {
                 </select>
               ) : (
                 <select
-                  className="h-10 rounded-md border border-input bg-background px-3 text-sm min-w-[140px]"
+                  className="h-10 min-h-[2.5rem] min-w-[140px]"
                   value={branchId}
                   onChange={(e) => {
                     setBranchId(e.target.value);

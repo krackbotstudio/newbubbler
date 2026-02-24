@@ -136,17 +136,17 @@ export function AddItemsToInvoiceDialog({
             return (
               <div
                 key={item.id}
-                className="rounded-lg border bg-card overflow-hidden"
+                className="relative rounded-lg border bg-card min-h-[72px] flex flex-col"
               >
                 <button
                   type="button"
-                  className="w-full flex items-center gap-3 p-3 text-left hover:bg-muted/50 transition-colors"
+                  className="w-full flex items-center gap-3 p-3 text-left hover:bg-muted/50 transition-colors flex-shrink-0 min-h-[72px]"
                   onClick={() => setExpandedId(isExpanded ? null : item.id)}
                 >
-                  <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg border bg-muted/50">
-                    <CatalogItemIcon icon={item.icon} size={40} />
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border bg-muted/50">
+                    <CatalogItemIcon icon={item.icon} size={28} />
                   </span>
-                  <span className="flex-1 font-medium truncate">{item.name}</span>
+                  <span className="flex-1 font-medium truncate text-sm">{item.name}</span>
                   {isExpanded ? (
                     <ChevronDown className="h-5 w-5 shrink-0 text-muted-foreground" />
                   ) : (
@@ -154,7 +154,10 @@ export function AddItemsToInvoiceDialog({
                   )}
                 </button>
                 {isExpanded && (
-                  <div className="border-t px-3 py-3 space-y-3 bg-muted/20">
+                  <div
+                    className="absolute left-0 right-0 top-full z-20 mt-0.5 rounded-md border bg-popover shadow-lg px-3 py-3 space-y-3 min-w-[240px] max-h-[280px] overflow-y-auto"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     <div>
                       <label className="text-xs font-medium text-muted-foreground">Segment</label>
                       <select

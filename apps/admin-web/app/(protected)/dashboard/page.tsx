@@ -16,6 +16,14 @@ import type { AdminOrderListRow, OrderStatus } from '@/types';
 
 const HIDE_FROM_PICKUPS: OrderStatus[] = ['PICKED_UP', 'DELIVERED', 'CANCELLED'];
 
+const DASHBOARD_STATUS_CHIPS: { status: OrderStatus | 'CONFIRMED'; label: string }[] = [
+  { status: 'CONFIRMED', label: 'Confirmed Orders' },
+  { status: 'PICKED_UP', label: 'Picked up' },
+  { status: 'IN_PROCESSING', label: 'In progress' },
+  { status: 'READY', label: 'Ready' },
+  { status: 'OUT_FOR_DELIVERY', label: 'Out for delivery' },
+];
+
 /** Current date in IST (YYYY-MM-DD) so Today/Tomorrow labels are correct for admin. */
 function getTodayIST(): string {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
@@ -53,6 +61,7 @@ export default function DashboardPage() {
   const [selectedBranchIds, setSelectedBranchIds] = useState<string[]>(() =>
     isBranchHead && user?.branchId ? [user.branchId] : []
   );
+  const [statusFilter, setStatusFilter] = useState<OrderStatus | 'CONFIRMED' | ''>('');
 
   useEffect(() => {
     if (isBranchHead && user?.branchId) setSelectedBranchIds([user.branchId]);
@@ -87,10 +96,34 @@ export default function DashboardPage() {
     { refetchInterval: 30000 }
   );
 
+  const statusCounts = useMemo(() => {
+    const rows = ordersData?.data ?? [];
+    const counts: Record<string, number> = {
+      CONFIRMED: 0,
+      PICKED_UP: 0,
+      IN_PROCESSING: 0,
+      READY: 0,
+      OUT_FOR_DELIVERY: 0,
+    };
+    for (const row of rows) {
+      const s = row.status as OrderStatus;
+      if (s === 'BOOKING_CONFIRMED' || s === 'PICKUP_SCHEDULED') counts.CONFIRMED += 1;
+      else if (s in counts) counts[s] += 1;
+    }
+    return counts;
+  }, [ordersData?.data]);
+
   const scheduledPickups = useMemo(() => {
-    const list = (ordersData?.data ?? []).filter(
+    let list = (ordersData?.data ?? []).filter(
       (row) => !HIDE_FROM_PICKUPS.includes(row.status as OrderStatus)
     );
+    if (statusFilter) {
+      if (statusFilter === 'CONFIRMED') {
+        list = list.filter((row) => (row.status as OrderStatus) === 'BOOKING_CONFIRMED' || (row.status as OrderStatus) === 'PICKUP_SCHEDULED');
+      } else {
+        list = list.filter((row) => (row.status as OrderStatus) === statusFilter);
+      }
+    }
     const missedFirst = [...list].sort((a, b) => {
       const aKey = pickupDateKey(a.pickupDate);
       const bKey = pickupDateKey(b.pickupDate);
@@ -108,7 +141,7 @@ export default function DashboardPage() {
     }
     const orderedKeys = Array.from(byDate.keys()).sort();
     return { list: missedFirst, byDate, orderedKeys };
-  }, [ordersData?.data, todayKey]);
+  }, [ordersData?.data, todayKey, statusFilter]);
 
   return (
     <div className="space-y-6">
@@ -194,6 +227,28 @@ export default function DashboardPage() {
             )}
           </CardContent>
         </Card>
+      </div>
+
+      {/* Status filter chips */}
+      <div className="flex flex-wrap gap-2">
+        {DASHBOARD_STATUS_CHIPS.map(({ status, label }) => {
+          const count = statusCounts[status] ?? 0;
+          const isActive = statusFilter === status;
+          return (
+            <button
+              key={status}
+              type="button"
+              onClick={() => setStatusFilter((prev) => (prev === status ? '' : status))}
+              className={`rounded-full px-3 py-1.5 text-sm font-medium transition-colors ${
+                isActive
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-muted text-muted-foreground hover:bg-muted/80'
+              }`}
+            >
+              {label} ({count})
+            </button>
+          );
+        })}
       </div>
 
       {/* Scheduled Pickups – calendar view only */}

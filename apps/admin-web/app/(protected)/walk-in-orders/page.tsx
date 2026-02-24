@@ -8,6 +8,7 @@ import { useOrders } from '@/hooks/useOrders';
 import { useBranches } from '@/hooks/useBranches';
 import { OrderStatusBadge, PaymentStatusBadge } from '@/components/shared/StatusBadge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import {
   Table,
@@ -24,7 +25,6 @@ import type { AdminOrderListRow, OrderStatus } from '@/types';
 
 const STATUS_OPTIONS: OrderStatus[] = [
   'BOOKING_CONFIRMED',
-  'PICKUP_SCHEDULED',
   'PICKED_UP',
   'IN_PROCESSING',
   'READY',
@@ -150,9 +150,8 @@ export default function WalkInOrdersPage() {
             </div>
             <div className="space-y-1">
               <label className="text-xs text-muted-foreground">Date from</label>
-              <input
+              <Input
                 type="date"
-                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
                 value={dateFrom}
                 onChange={(e) => {
                   setDateFrom(e.target.value);
@@ -162,9 +161,8 @@ export default function WalkInOrdersPage() {
             </div>
             <div className="space-y-1">
               <label className="text-xs text-muted-foreground">Date to</label>
-              <input
+              <Input
                 type="date"
-                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
                 value={dateTo}
                 onChange={(e) => {
                   setDateTo(e.target.value);

@@ -6,7 +6,6 @@ import { toast } from 'sonner';
 import { getToken, getStoredUser, type AuthUser } from '@/lib/auth';
 import { isOpsDeniedRoute, OPS_DEFAULT_REDIRECT } from '@/lib/permissions';
 import { Sidebar } from './Sidebar';
-import { DevTopBar } from './DevTopBar';
 import { Button } from '@/components/ui/button';
 import { Menu } from 'lucide-react';
 
@@ -55,7 +54,6 @@ export function ProtectedLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-screen flex-col">
-      <DevTopBar />
       <div className="flex flex-1 min-h-0">
         <Sidebar
           user={user}

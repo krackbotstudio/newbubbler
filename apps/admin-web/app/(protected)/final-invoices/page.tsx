@@ -5,9 +5,10 @@ import { useRouter } from 'next/navigation';
 import { getStoredUser } from '@/lib/auth';
 import { useFinalInvoices, type AdminFinalInvoiceRow } from '@/hooks/useFinalInvoices';
 import { useBranches } from '@/hooks/useBranches';
+import { useWalkInLookupCustomer } from '@/hooks/useWalkIn';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import {
   Table,
   TableBody,
@@ -26,7 +27,15 @@ export default function FinalInvoicesPage() {
   const user = useMemo(() => getStoredUser(), []);
   const isBranchHead = user?.role === 'OPS' && user?.branchId;
   const { data: branches = [] } = useBranches();
-  const [customerId, setCustomerId] = useState('');
+  const [countryCode, setCountryCode] = useState('+91');
+  const [phoneDigits, setPhoneDigits] = useState('');
+  const combinedPhone = useMemo(
+    () =>
+      (countryCode.trim().startsWith('+') ? countryCode.trim() : '+' + countryCode.trim()) +
+      phoneDigits.replace(/\D/g, '').slice(0, 10),
+    [countryCode, phoneDigits]
+  );
+  const { data: customerByPhone } = useWalkInLookupCustomer(combinedPhone);
   const [branchId, setBranchId] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -34,13 +43,14 @@ export default function FinalInvoicesPage() {
   const limit = 50;
 
   const effectiveBranchId = isBranchHead ? (user?.branchId ?? branchId) : branchId;
+  const resolvedCustomerId = phoneDigits.replace(/\D/g, '').length >= 10 ? customerByPhone?.id : undefined;
 
   useEffect(() => {
     if (isBranchHead && user?.branchId) setBranchId(user.branchId);
   }, [isBranchHead, user?.branchId]);
 
   const filters = {
-    customerId: customerId.trim() || undefined,
+    customerId: resolvedCustomerId ?? undefined,
     branchId: effectiveBranchId || undefined,
     dateFrom: dateFrom || undefined,
     dateTo: dateTo || undefined,
@@ -86,25 +96,34 @@ export default function FinalInvoicesPage() {
       </p>
 
       <Card>
-        <CardHeader>
-          <CardTitle>Filters</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-xs text-muted-foreground mb-3">
-            Filter by customer ID or issued date range. Leave empty for all.
-          </p>
+        <CardContent className="pt-4">
           <div className="flex flex-wrap items-end gap-4">
             <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Customer ID</label>
-              <Input
-                placeholder="User UUID"
-                value={customerId}
-                onChange={(e) => {
-                  setCustomerId(e.target.value);
-                  setCursor(undefined);
-                }}
-                className="w-64"
-              />
+              <label className="text-xs text-muted-foreground">Customer phone</label>
+              <div className="flex gap-1">
+                <Input
+                  type="tel"
+                  placeholder="+91"
+                  value={countryCode}
+                  onChange={(e) => {
+                    const d = e.target.value.replace(/\D/g, '').slice(0, 3);
+                    setCountryCode(d ? '+' + d : '+91');
+                    setCursor(undefined);
+                  }}
+                  className="w-16 shrink-0"
+                />
+                <Input
+                  type="tel"
+                  placeholder="9876543210"
+                  value={phoneDigits}
+                  onChange={(e) => {
+                    setPhoneDigits(e.target.value.replace(/\D/g, '').slice(0, 10));
+                    setCursor(undefined);
+                  }}
+                  className="w-36"
+                  maxLength={10}
+                />
+              </div>
             </div>
             <div className="space-y-1">
               <label className="text-xs text-muted-foreground">Date from</label>

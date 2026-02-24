@@ -2,10 +2,14 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useQueryClient } from '@tanstack/react-query';
 import { logout, type AuthUser } from '@/lib/auth';
 import { canAccessRoute } from '@/lib/permissions';
 import { cn } from '@/lib/utils';
+import { API_BASE_URL } from '@/lib/api';
+import { useSystemStatus } from '@/hooks/use-system-status';
 import { Button } from '@/components/ui/button';
+import { toast } from 'sonner';
 import {
   LayoutDashboard,
   Package,
@@ -18,18 +22,17 @@ import {
   MessageSquare,
   LogOut,
   Shield,
-  Smartphone,
   Calendar,
   Store,
   PanelLeftClose,
   PanelLeft,
   X,
+  RefreshCw,
 } from 'lucide-react';
 
 const NAV = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/customers', label: 'Customers', icon: Users },
-  { href: '/customer-simulator', label: 'Customer Simulator', icon: Smartphone },
   { href: '/orders', label: 'Orders', icon: Package },
   { href: '/walk-in-orders', label: 'Walk-in orders', icon: Store },
   { href: '/final-invoices', label: 'Final Invoices', icon: FileCheck },
@@ -44,6 +47,20 @@ const NAV = [
   { href: '/feedback', label: 'Feedback', icon: MessageSquare },
 ];
 
+function StatusDot({ status }: { status: 'green' | 'yellow' | 'red' }) {
+  return (
+    <span
+      className={cn(
+        'inline-block h-1.5 w-1.5 rounded-full shrink-0',
+        status === 'green' && 'bg-green-500',
+        status === 'yellow' && 'bg-amber-500',
+        status === 'red' && 'bg-red-500'
+      )}
+      title={status}
+    />
+  );
+}
+
 export interface SidebarProps {
   user: AuthUser;
   collapsed?: boolean;
@@ -54,7 +71,14 @@ export interface SidebarProps {
 
 export function Sidebar({ user, collapsed = false, onToggleCollapse, mobileOpen = false, onCloseMobile }: SidebarProps) {
   const pathname = usePathname();
+  const queryClient = useQueryClient();
+  const { api, auth, db, dbInfo, lastError, checking, refresh } = useSystemStatus();
   const navItems = NAV.filter((item) => canAccessRoute(user.role, item.href));
+
+  const handleInvalidate = () => {
+    queryClient.invalidateQueries();
+    toast.success('Cache invalidated');
+  };
 
   const sidebarContent = (
     <>
@@ -108,20 +132,54 @@ export function Sidebar({ user, collapsed = false, onToggleCollapse, mobileOpen 
           );
         })}
       </nav>
-      <div className="border-t p-2 shrink-0">
+      <div className="border-t p-2 shrink-0 space-y-2">
         {!collapsed && (
           <>
-            <div className="mb-2 px-3 text-xs text-muted-foreground truncate" title={user.email ?? user.phone ?? user.id}>
-              {user.email ?? user.phone ?? user.id}
+            <div className="px-3 text-[11px] text-muted-foreground space-y-0.5">
+              <div className="truncate" title={API_BASE_URL}>
+                API: {API_BASE_URL.replace(/^https?:\/\//, '').replace(/\/api\/?$/, '').slice(0, 28)}
+                {(API_BASE_URL.length > 35) ? '…' : ''}
+              </div>
+              {dbInfo && (
+                <div className="truncate" title={dbInfo.db_host}>
+                  DB: {dbInfo.db_host_display} · {dbInfo.database_name}
+                </div>
+              )}
+              <div className="truncate">
+                User: {user?.email ?? user?.phone ?? user?.id ?? '—'} · {user?.role ?? '—'}
+              </div>
+              <div className="flex items-center gap-1.5 mt-1">
+                <StatusDot status={api} />
+                <StatusDot status={auth} />
+                <StatusDot status={db} />
+                {checking && <span className="text-muted-foreground">…</span>}
+                {lastError && (
+                  <span className="truncate max-w-[120px] text-amber-600 dark:text-amber-400" title={String(lastError)}>!</span>
+                )}
+                <Button variant="ghost" size="icon" className="h-5 w-5 p-0 shrink-0" onClick={refresh} disabled={checking} title="Refresh status">
+                  <RefreshCw className={cn('h-3 w-3', checking && 'animate-spin')} />
+                </Button>
+              </div>
             </div>
-            <div className="text-xs font-medium text-muted-foreground px-3">Role: {user.role}</div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full justify-start gap-2 h-8 text-xs"
+              onClick={handleInvalidate}
+            >
+              <RefreshCw className="h-3 w-3 shrink-0" />
+              Invalidate cache
+            </Button>
           </>
         )}
         <Button
           variant="ghost"
           size="sm"
-          className={cn('mt-2 w-full justify-start gap-2', collapsed && 'justify-center px-2')}
-          onClick={() => logout()}
+          className={cn('w-full justify-start gap-2', collapsed && 'justify-center px-2')}
+          onClick={() => {
+            logout();
+            toast.info('Logged out');
+          }}
           title={collapsed ? 'Log out' : undefined}
         >
           <LogOut className="h-4 w-4 shrink-0" />
@@ -145,7 +203,7 @@ export function Sidebar({ user, collapsed = false, onToggleCollapse, mobileOpen 
       {/* Sidebar: drawer on mobile (w-64), collapsible on desktop (w-56 or w-14) */}
       <aside
         className={cn(
-          'flex flex-col border-r bg-card z-50 transition-[width] duration-200 ease-in-out',
+          'flex flex-col border-r bg-pink-50 dark:bg-pink-950/20 z-50 transition-[width] duration-200 ease-in-out',
           'fixed md:relative inset-y-0 left-0 top-0',
           'w-64',
           'md:translate-x-0',
