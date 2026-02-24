@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { getStoredUser } from '@/lib/auth';
 import { useAnalyticsRevenue, useDashboardKpis } from '@/hooks/useAnalytics';
 import { useOrders } from '@/hooks/useOrders';
@@ -72,7 +72,6 @@ function isSubscriptionOrder(row: AdminOrderListRow): boolean {
 }
 
 export default function DashboardPage() {
-  const router = useRouter();
   const user = useMemo(() => getStoredUser(), []);
   const role = user?.role ?? 'CUSTOMER';
   const isBranchHead = role === 'OPS' && !!user?.branchId;
@@ -310,13 +309,14 @@ export default function DashboardPage() {
                           : 'bg-fuchsia-50 dark:bg-fuchsia-950/30';
                         const status = row.status as OrderStatus;
                         return (
-                        <li
-                          key={row.id}
-                          className={`text-xs cursor-pointer hover:underline truncate rounded px-1.5 py-0.5 ${rowBg}`}
-                          onClick={() => router.push(`/orders/${row.id}`)}
-                          title={`${row.customerName ?? row.id} · ${row.timeWindow}${isSub ? ' · Subscription' : ''} · ${status}`}
-                        >
-                          {row.customerName ?? row.id.slice(0, 8)} · {statusFilter === 'CONFIRMED' ? row.timeWindow : (row.timeWindow || '—')}
+                        <li key={row.id}>
+                          <Link
+                            href={`/orders/${row.id}`}
+                            className={`block text-xs cursor-pointer hover:underline truncate rounded px-1.5 py-0.5 ${rowBg}`}
+                            title={`${row.customerName ?? row.id} · ${row.timeWindow}${isSub ? ' · Subscription' : ''} · ${status}`}
+                          >
+                            {row.customerName ?? row.id.slice(0, 8)} · {statusFilter === 'CONFIRMED' ? row.timeWindow : (row.timeWindow || '—')}
+                          </Link>
                         </li>
                         );
                       })}

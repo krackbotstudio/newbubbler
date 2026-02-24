@@ -701,13 +701,13 @@ export function InvoiceBuilder({
       )}
 
       {canEdit && !isSubscriptionOnly && (
-        <div className="flex flex-wrap items-end gap-2">
+        <div className="w-full space-y-2">
           {useMatrix && catalogMatrix ? (
             <>
               <Button
                 type="button"
-                variant="outline"
-                size="sm"
+                variant="default"
+                className="w-full"
                 onClick={() => setAddItemsDialogOpen(true)}
               >
                 Add items
@@ -723,53 +723,58 @@ export function InvoiceBuilder({
             </>
           ) : useCatalog ? (
             <>
-              <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Service</label>
-                <select
-                  className="h-9 rounded-md border px-2 text-sm"
-                  value={catalogService}
-                  onChange={(e) => {
-                    setCatalogService(e.target.value as ServiceType);
-                    setCatalogItemId('');
-                  }}
-                >
-                  {SERVICE_TYPE_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
-                </select>
+              <div className="flex flex-wrap items-end gap-2">
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Service</label>
+                  <select
+                    className="h-9 rounded-md border px-2 text-sm"
+                    value={catalogService}
+                    onChange={(e) => {
+                      setCatalogService(e.target.value as ServiceType);
+                      setCatalogItemId('');
+                    }}
+                  >
+                    {SERVICE_TYPE_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Item</label>
+                  <select
+                    className="h-9 min-w-[140px] rounded-md border px-2 text-sm"
+                    value={catalogItemId}
+                    onChange={(e) => setCatalogItemId(e.target.value)}
+                  >
+                    <option value="">Select item</option>
+                    {catalogItemsForService.map((item) => {
+                      const price = item.prices?.find(
+                        (p) => p.serviceType === catalogService && p.active !== false
+                      );
+                      return (
+                        <option key={item.id} value={item.id}>
+                          {item.name} – {price ? formatMoney(price.unitPricePaise) : '—'} / unit
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Qty</label>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={newQty}
+                    onChange={(e) => setNewQty(Number(e.target.value) || 1)}
+                    className="w-20 h-9"
+                    placeholder="Qty"
+                  />
+                </div>
               </div>
-              <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Item</label>
-                <select
-                  className="h-9 min-w-[140px] rounded-md border px-2 text-sm"
-                  value={catalogItemId}
-                  onChange={(e) => setCatalogItemId(e.target.value)}
-                >
-                  <option value="">Select item</option>
-                  {catalogItemsForService.map((item) => {
-                    const price = item.prices?.find(
-                      (p) => p.serviceType === catalogService && p.active !== false
-                    );
-                    return (
-                      <option key={item.id} value={item.id}>
-                        {item.name} – {price ? formatMoney(price.unitPricePaise) : '—'} / unit
-                      </option>
-                    );
-                  })}
-                </select>
-              </div>
-              <Input
-                type="number"
-                min={1}
-                value={newQty}
-                onChange={(e) => setNewQty(Number(e.target.value) || 1)}
-                className="w-20"
-                placeholder="Qty"
-              />
               <Button
                 type="button"
-                variant="outline"
-                size="sm"
+                variant="default"
+                className="w-full"
                 onClick={addLine}
                 disabled={!catalogItemId}
               >

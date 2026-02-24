@@ -45,7 +45,7 @@ type OrderTab = 'ack' | 'final' | 'payment';
 
 export default function OrderDetailPage() {
   const params = useParams();
-  const orderId = (params?.id as string) ?? '';
+  const orderId = (typeof params?.id === 'string' ? params.id : (params?.id as string) ?? '') || '';
 
   const { data: summary, isLoading, error } = useOrderSummary(orderId || null);
   const updateStatus = useUpdateOrderStatus(orderId);

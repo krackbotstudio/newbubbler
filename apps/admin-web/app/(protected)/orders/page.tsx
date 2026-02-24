@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { getStoredUser } from '@/lib/auth';
 import { useOrders } from '@/hooks/useOrders';
@@ -252,7 +253,11 @@ export default function OrdersPage() {
                       className="cursor-pointer"
                       onClick={() => handleRowClick(row.id)}
                     >
-                      <TableCell className="font-mono text-xs break-all" title={row.id}>{row.id}</TableCell>
+                      <TableCell className="font-mono text-xs break-all" title={row.id}>
+                        <Link href={`/orders/${row.id}`} className="text-primary hover:underline">
+                          {row.id}
+                        </Link>
+                      </TableCell>
                       <TableCell className="max-w-[120px] truncate" title={row.customerName ?? row.userId}>
                         {row.customerName ?? row.userId.slice(0, 8) + '…'}
                       </TableCell>
