@@ -320,10 +320,20 @@ export function EditItemModal({
                   value={isPresetIcon(icon) ? icon : ''}
                   onValueChange={(v) => setIcon(v)}
                 >
-                  <SelectTrigger className="w-[220px]">
-                    <span className="flex items-center gap-2">
-                      {icon && <CatalogItemIcon icon={icon} size={18} className="shrink-0" />}
-                      <SelectValue placeholder={icon && !isPresetIcon(icon) ? 'Custom image' : 'Select icon'} />
+                  <SelectTrigger className="w-[220px] flex flex-row items-center">
+                    <span className="inline-flex flex-1 min-w-0 flex-row items-center gap-2 flex-nowrap">
+                      {icon ? (
+                        <>
+                          <CatalogItemIcon icon={icon} size={18} className="shrink-0" />
+                          <span className="truncate">
+                            {isPresetIcon(icon)
+                              ? catalogIcons.find((c) => c.value === icon)?.label ?? icon
+                              : 'Custom image'}
+                          </span>
+                        </>
+                      ) : (
+                        <SelectValue placeholder="Select icon" />
+                      )}
                     </span>
                   </SelectTrigger>
                   <SelectContent>
