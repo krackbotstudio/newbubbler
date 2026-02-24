@@ -3,8 +3,7 @@
 import {
   Shirt,
   User,
-  UserCircle,
-  Coat,
+  CircleUserRound,
   Baby,
   WashingMachine,
   Wind,
@@ -16,9 +15,9 @@ import {
 const ICON_MAP: Record<string, LucideIcon> = {
   'tshirt-crew': Shirt,
   'human-male': User,
-  'human-female': UserCircle,
+  'human-female': CircleUserRound,
   hoodie: Shirt,
-  'coat-rack': Coat,
+  'coat-rack': Shirt,
   'human-child': Baby,
   'washing-machine': WashingMachine,
   'tumble-dryer': Wind,
