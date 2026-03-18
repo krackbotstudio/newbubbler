@@ -13,29 +13,34 @@ export class PrismaAnalyticsRepo implements AnalyticsRepo {
     dateFrom: Date,
     dateTo: Date,
     breakdownKind: 'daily' | 'monthly',
+    branchId?: string,
   ): Promise<RevenueResult> {
     const invoices = await this.prisma.invoice.findMany({
       where: {
         type: 'FINAL',
         status: 'ISSUED',
         issuedAt: { gte: dateFrom, lt: dateTo },
+        ...(branchId ? { order: { branchId } } : {}),
       },
-      select: { total: true, issuedAt: true },
+      select: { total: true, tax: true, discountPaise: true, issuedAt: true },
     });
     const payments = await this.prisma.payment.findMany({
       where: {
         status: 'CAPTURED',
         createdAt: { gte: dateFrom, lt: dateTo },
+        ...(branchId ? { order: { branchId } } : {}),
       },
       select: { amount: true, createdAt: true },
     });
     const ordersInRange = await this.prisma.order.findMany({
-      where: { createdAt: { gte: dateFrom, lt: dateTo } },
-      select: { id: true, createdAt: true },
+      where: { createdAt: { gte: dateFrom, lt: dateTo }, ...(branchId ? { branchId } : {}) },
+      select: { id: true, createdAt: true, status: true, orderSource: true, orderType: true },
     });
 
     const billedPaise = invoices.reduce((s, i) => s + i.total, 0);
     const collectedPaise = payments.reduce((s, p) => s + p.amount, 0);
+    const taxPaise = invoices.reduce((s, i) => s + (i.tax ?? 0), 0);
+    const discountPaise = invoices.reduce((s, i) => s + (i.discountPaise ?? 0), 0);
 
     const keyToBilled: Record<string, number> = {};
     const keyToCollected: Record<string, number> = {};
@@ -64,6 +69,24 @@ export class PrismaAnalyticsRepo implements AnalyticsRepo {
       keyToOrders[key] = (keyToOrders[key] ?? 0) + 1;
     }
 
+    // Partitioned order categories for pie-chart percentage accuracy.
+    const cancelled = ordersInRange.filter((o) => o.status === 'CANCELLED').length;
+    const subscription = ordersInRange.filter(
+      (o) => o.status !== 'CANCELLED' && (o.orderType === 'SUBSCRIPTION' || o.orderType === 'BOTH'),
+    ).length;
+    const online = ordersInRange.filter(
+      (o) =>
+        o.status !== 'CANCELLED' &&
+        !(o.orderType === 'SUBSCRIPTION' || o.orderType === 'BOTH') &&
+        o.orderSource === 'ONLINE',
+    ).length;
+    const walkin = ordersInRange.filter(
+      (o) =>
+        o.status !== 'CANCELLED' &&
+        !(o.orderType === 'SUBSCRIPTION' || o.orderType === 'BOTH') &&
+        o.orderSource !== 'ONLINE',
+    ).length;
+
     const allKeys = new Set([
       ...Object.keys(keyToBilled),
       ...Object.keys(keyToCollected),
@@ -82,8 +105,16 @@ export class PrismaAnalyticsRepo implements AnalyticsRepo {
     return {
       billedPaise,
       collectedPaise,
+      taxPaise,
+      discountPaise,
       ordersCount: ordersInRange.length,
       invoicesCount: invoices.length,
+      orderCategories: {
+        online,
+        walkin,
+        subscription,
+        cancelled,
+      },
       breakdown,
     };
   }

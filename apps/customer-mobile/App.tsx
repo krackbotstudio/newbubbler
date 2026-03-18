@@ -45,6 +45,8 @@ import {
   listOrders,
   getOrder,
   listOrderInvoices,
+  checkOrderFeedbackEligibility,
+  submitOrderFeedback,
   fetchInvoicePdfBase64,
   getAvailablePlans,
   getPublicBranding,
@@ -211,6 +213,16 @@ export default function App() {
   const [purchaseConfirm, setPurchaseConfirm] = useState<{ planId: string; planName: string; addressId: string; addressLabel: string } | null>(null);
   const [returnToBookPickupAddress, setReturnToBookPickupAddress] = useState(false);
   const [editingAddressId, setEditingAddressId] = useState<string | null>(null);
+
+  // --- Order feedback (shown after DELIVERED + CAPTURED) ---
+  const [feedbackModalVisible, setFeedbackModalVisible] = useState(false);
+  const [feedbackRating, setFeedbackRating] = useState<number | null>(null);
+  const [feedbackComment, setFeedbackComment] = useState('');
+  const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
+  const [feedbackError, setFeedbackError] = useState<string | null>(null);
+  const feedbackEligibilityCheckedForOrderIdRef = useRef<string | null>(null);
+  const feedbackEligibilityInFlightForOrderIdRef = useRef<string | null>(null);
+  const feedbackSubmittedForOrderIdRef = useRef<string | null>(null);
   /** Exclude walk-in addresses from saved-address lists (backend may set source: 'WALK_IN'). */
   const savedAddresses = useMemo(
     () => addresses.filter((a) => (a as BackendAddress & { source?: string }).source !== 'WALK_IN'),
@@ -737,6 +749,76 @@ export default function App() {
       })();
     }
   }, [step, homeScreen, token, selectedOrderId, fetchAddresses]);
+
+  // When an order is completed (DELIVERED + CAPTURED), ask the customer for rating feedback (once per order).
+  useEffect(() => {
+    if (!token || !orderDetail || !selectedOrderId) return;
+    if (step !== 'done' || homeScreen !== 'orderDetail') return;
+
+    const status = String(orderDetail.status || '').toUpperCase();
+    const paymentStatus = String(orderDetail.paymentStatus || '').toUpperCase();
+    if (status !== 'DELIVERED' || paymentStatus !== 'CAPTURED') return;
+
+    if (feedbackSubmittedForOrderIdRef.current === selectedOrderId) return;
+    if (feedbackEligibilityCheckedForOrderIdRef.current === selectedOrderId) return;
+    if (feedbackEligibilityInFlightForOrderIdRef.current === selectedOrderId) return;
+
+    let cancelled = false;
+    (async () => {
+      feedbackEligibilityInFlightForOrderIdRef.current = selectedOrderId;
+      try {
+        const eligibility = await checkOrderFeedbackEligibility(token, selectedOrderId);
+        if (cancelled) return;
+        feedbackEligibilityCheckedForOrderIdRef.current = selectedOrderId;
+        if (eligibility.eligible && !eligibility.alreadySubmitted) {
+          setFeedbackRating(null);
+          setFeedbackComment('');
+          setFeedbackError(null);
+          setFeedbackModalVisible(true);
+        }
+      } catch (err) {
+        // If eligibility check fails, we silently skip feedback prompt.
+        if (feedbackEligibilityCheckedForOrderIdRef.current === selectedOrderId) {
+          feedbackEligibilityCheckedForOrderIdRef.current = null;
+        }
+        if (feedbackEligibilityInFlightForOrderIdRef.current === selectedOrderId) {
+          feedbackEligibilityInFlightForOrderIdRef.current = null;
+        }
+      } finally {
+        if (feedbackEligibilityInFlightForOrderIdRef.current === selectedOrderId) {
+          feedbackEligibilityInFlightForOrderIdRef.current = null;
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [token, step, homeScreen, orderDetail, selectedOrderId]);
+
+  const handleSubmitOrderFeedback = useCallback(async () => {
+    if (!token || !selectedOrderId) return;
+    if (feedbackRating == null) {
+      setFeedbackError('Please select a star rating.');
+      return;
+    }
+    setFeedbackError(null);
+    setFeedbackSubmitting(true);
+    try {
+      await submitOrderFeedback(token, selectedOrderId, {
+        rating: feedbackRating,
+        message: feedbackComment || undefined,
+      });
+      feedbackSubmittedForOrderIdRef.current = selectedOrderId;
+      feedbackEligibilityCheckedForOrderIdRef.current = selectedOrderId;
+      setFeedbackModalVisible(false);
+      Alert.alert('Thanks!', 'Your feedback has been submitted.');
+    } catch (err) {
+      setFeedbackError(err instanceof Error ? err.message : 'Failed to submit feedback');
+    } finally {
+      setFeedbackSubmitting(false);
+    }
+  }, [token, selectedOrderId, feedbackRating, feedbackComment]);
 
   const fetchSubscriptionsData = useCallback(async () => {
     if (!token) return;
@@ -3390,6 +3472,65 @@ export default function App() {
             </View>
           </View>
         </Modal>
+
+        <Modal visible={feedbackModalVisible} animationType="fade" transparent>
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalCard}>
+              <Text style={styles.modalTitle}>Rate your order</Text>
+              <Text style={styles.modalBody}>How was your experience? (1-5 stars)</Text>
+
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 }}>
+                {[1, 2, 3, 4, 5].map((r) => {
+                  const active = feedbackRating != null && feedbackRating >= r;
+                  return (
+                    <TouchableOpacity
+                      key={r}
+                      onPress={() => !feedbackSubmitting && setFeedbackRating(r)}
+                      disabled={feedbackSubmitting}
+                      style={{ paddingHorizontal: 6, paddingVertical: 6 }}
+                    >
+                      <MaterialIcons
+                        name={active ? 'star' : 'star-border'}
+                        size={34}
+                        color={active ? colors.primary : colors.textSecondary}
+                      />
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              {feedbackError ? <Text style={styles.error}>{feedbackError}</Text> : null}
+
+              <TextInput
+                style={[styles.input, { marginTop: 14, minHeight: 80, textAlignVertical: 'top' }]}
+                placeholder="Optional comment"
+                value={feedbackComment}
+                onChangeText={setFeedbackComment}
+                editable={!feedbackSubmitting}
+                multiline
+              />
+
+              <View style={styles.modalButtonRow}>
+                <TouchableOpacity
+                  style={[styles.button, styles.buttonSecondary, styles.modalButton]}
+                  onPress={() => setFeedbackModalVisible(false)}
+                  disabled={feedbackSubmitting}
+                >
+                  <Text style={styles.buttonSecondaryText}>Not now</Text>
+                </TouchableOpacity>
+                <View style={styles.modalButtonSpacer} />
+                <TouchableOpacity
+                  style={[styles.button, styles.buttonPrimary, styles.modalButton]}
+                  disabled={feedbackSubmitting}
+                  onPress={handleSubmitOrderFeedback}
+                >
+                  <Text style={styles.buttonText}>{feedbackSubmitting ? 'Submitting…' : 'Submit'}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
         <Modal visible={!!legalModalContent} animationType="slide" transparent>
           <View style={styles.modalOverlay}>
             <View style={styles.modalCard}>

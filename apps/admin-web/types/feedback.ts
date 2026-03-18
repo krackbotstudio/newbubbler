@@ -5,6 +5,8 @@ export interface FeedbackRecord {
   id: string;
   userId: string | null;
   orderId: string | null;
+  customerName: string | null;
+  customerPhone: string | null;
   type: FeedbackType;
   rating: number | null;
   tags: string[];
@@ -18,4 +20,16 @@ export interface FeedbackRecord {
 export interface AdminFeedbackResponse {
   data: FeedbackRecord[];
   nextCursor: string | null;
+}
+
+export interface AdminFeedbackRatingStatsResponse {
+  avgRating: number | null;
+  totalRated: number;
+  ratingCounts: {
+    1: number;
+    2: number;
+    3: number;
+    4: number;
+    5: number;
+  };
 }

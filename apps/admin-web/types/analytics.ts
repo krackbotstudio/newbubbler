@@ -19,6 +19,8 @@ export type AnalyticsPreset =
 export interface AnalyticsTotals {
   billedPaise: number;
   collectedPaise: number;
+  taxPaise: number;
+  discountPaise: number;
   ordersCount: number;
   invoicesCount: number;
 }
@@ -37,8 +39,16 @@ export interface AnalyticsPoint {
 export interface AnalyticsResponse {
   billedPaise: number;
   collectedPaise: number;
+  taxPaise: number;
+  discountPaise: number;
   ordersCount: number;
   invoicesCount: number;
+  orderCategories: {
+    online: number;
+    walkin: number;
+    subscription: number;
+    cancelled: number;
+  };
   breakdown: Array<{
     key: string;
     billedPaise: number;

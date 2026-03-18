@@ -15,7 +15,7 @@ export class AdminAnalyticsService {
     private readonly customersRepo: CustomersRepo,
   ) {}
 
-  async getRevenue(input: { preset?: RevenuePreset; dateFrom?: Date; dateTo?: Date }) {
+  async getRevenue(input: { preset?: RevenuePreset; branchId?: string; dateFrom?: Date; dateTo?: Date }) {
     return getRevenueAnalytics(input, { analyticsRepo: this.analyticsRepo });
   }
 

@@ -4,10 +4,12 @@ import { createGeneralFeedback } from '../../application/feedback/create-general
 import { listCustomerFeedback } from '../../application/feedback/list-customer-feedback.use-case';
 import { adminListFeedback } from '../../application/feedback/admin-list-feedback.use-case';
 import { adminUpdateFeedbackStatus } from '../../application/feedback/admin-update-feedback-status.use-case';
+import { adminFeedbackRatingStats } from '../../application/feedback/admin-feedback-rating-stats.use-case';
 import type { FeedbackRepo, AdminFeedbackFilters, FeedbackRecord } from '../../application/ports';
 import type { FeedbackStatus } from '@shared/enums';
 import { FEEDBACK_REPO } from '../../infra/infra.module';
 import type { AuthUser } from '../common/roles.guard';
+import type { AdminFeedbackRatingStatsFilters, AdminFeedbackRatingStatsResult } from '../../application/ports';
 
 @Injectable()
 export class FeedbackService {
@@ -56,6 +58,10 @@ export class FeedbackService {
 
   async adminList(filters: AdminFeedbackFilters) {
     return adminListFeedback(filters, { feedbackRepo: this.feedbackRepo });
+  }
+
+  async adminRatingStats(filters: AdminFeedbackRatingStatsFilters): Promise<AdminFeedbackRatingStatsResult> {
+    return adminFeedbackRatingStats(filters, { feedbackRepo: this.feedbackRepo });
   }
 
   async adminUpdateStatus(id: string, status: FeedbackStatus, adminNotes?: string | null) {

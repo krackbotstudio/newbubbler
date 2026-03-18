@@ -72,6 +72,12 @@ export interface AdminOrderListRow extends OrderRecord {
   deliveredDate: string | null;
   /** Final invoice total (paise) if paid; ACK total if picked up; null = show NA. */
   billTotalPaise: number | null;
+  /** Subtotal for the shown bill (paise). */
+  billSubtotalPaise: number | null;
+  /** Tax for the shown bill (paise). */
+  billTaxPaise: number | null;
+  /** Discount for the shown bill (paise). */
+  billDiscountPaise: number | null;
   /** Invoice type: Individual, Subscription, Zero, Both. */
   billTypeLabel?: string;
   /** When ACK invoice was issued (if any). */
@@ -186,6 +192,8 @@ export interface OrderAdminSummary {
       catalogItemId?: string | null;
       segmentCategoryId?: string | null;
       serviceCategoryId?: string | null;
+      segmentLabel?: string | null;
+      serviceLabel?: string | null;
     }>;
   }>;
   payment: {
@@ -193,5 +201,6 @@ export interface OrderAdminSummary {
     provider: string;
     status: string;
     amount: number;
+    note?: string | null;
   } | null;
 }

@@ -21,12 +21,14 @@ export function useDashboardKpis(options?: { enabled?: boolean }) {
 function fetchRevenue(
   preset?: RevenuePreset,
   dateFrom?: string,
-  dateTo?: string
+  dateTo?: string,
+  branchId?: string
 ): Promise<AnalyticsResponse> {
   const params = new URLSearchParams();
   if (preset) params.set('preset', preset);
   if (dateFrom) params.set('dateFrom', dateFrom);
   if (dateTo) params.set('dateTo', dateTo);
+  if (branchId) params.set('branchId', branchId);
   const q = params.toString();
   return api
     .get<AnalyticsResponse>(`/admin/analytics/revenue${q ? `?${q}` : ''}`)
@@ -37,19 +39,21 @@ export interface UseAnalyticsRevenueOptions {
   preset?: AnalyticsPreset;
   dateFrom?: string;
   dateTo?: string;
+  branchId?: string | null;
   enabled?: boolean;
 }
 
 export function useAnalyticsRevenue(options: UseAnalyticsRevenueOptions) {
-  const { preset, dateFrom, dateTo, enabled = true } = options;
+  const { preset, dateFrom, dateTo, branchId, enabled = true } = options;
   const usePreset = preset && preset !== 'CUSTOM';
   return useQuery({
-    queryKey: ['admin', 'analytics', 'revenue', options],
+    queryKey: ['admin', 'analytics', 'revenue', { preset, dateFrom, dateTo, branchId }],
     queryFn: () =>
       fetchRevenue(
         usePreset ? (preset as RevenuePreset) : undefined,
         dateFrom,
-        dateTo
+        dateTo,
+        branchId ?? undefined
       ),
     enabled,
   });

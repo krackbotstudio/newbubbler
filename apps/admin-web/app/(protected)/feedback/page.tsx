@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,11 +19,13 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { useFeedbackList, useUpdateFeedbackStatus } from '@/hooks/useFeedback';
+import { useBranches } from '@/hooks/useBranches';
+import { useFeedbackList, useFeedbackRatingStats, useUpdateFeedbackStatus } from '@/hooks/useFeedback';
 import { formatDateTime } from '@/lib/format';
 import type { FeedbackRecord, FeedbackStatus, FeedbackType } from '@/types';
 import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
+import { getStoredUser } from '@/lib/auth';
 
 const STATUS_OPTIONS: FeedbackStatus[] = ['NEW', 'REVIEWED', 'RESOLVED'];
 const TYPE_OPTIONS: FeedbackType[] = ['ORDER', 'GENERAL'];
@@ -39,17 +41,33 @@ export default function FeedbackPage() {
   const [editStatus, setEditStatus] = useState<FeedbackStatus>('NEW');
   const [editNotes, setEditNotes] = useState('');
 
+  const user = useMemo(() => getStoredUser(), []);
+  const isBranchHead = user?.role === 'OPS' && user?.branchId;
+  const effectiveOpsBranchId = isBranchHead ? user?.branchId ?? null : null;
+  const { data: branches = [], isLoading: branchesLoading } = useBranches();
+  const [branchId, setBranchId] = useState<string>('');
+  const effectiveBranchId = effectiveOpsBranchId ?? (branchId || null);
+
   const filters = {
     type: type || undefined,
     status: (status || undefined) as FeedbackStatus | undefined,
     rating: rating ? parseInt(rating, 10) : undefined,
     dateFrom: dateFrom || undefined,
     dateTo: dateTo || undefined,
+    branchId: effectiveBranchId ?? undefined,
     limit: 20,
     cursor,
   };
 
   const { data, isLoading, error } = useFeedbackList(filters);
+  const statsType = (type || 'ORDER') as FeedbackType;
+  const { data: ratingStats, isLoading: statsLoading } = useFeedbackRatingStats({
+    type: statsType,
+    status: (status || undefined) as FeedbackStatus | undefined,
+    dateFrom: dateFrom || undefined,
+    dateTo: dateTo || undefined,
+    branchId: effectiveBranchId ?? undefined,
+  });
   const updateStatus = useUpdateFeedbackStatus(selected?.id ?? '');
 
   const handleOpenDialog = (row: FeedbackRecord) => {
@@ -114,6 +132,30 @@ export default function FeedbackPage() {
             </select>
           </div>
           <div className="space-y-1">
+            <label className="text-xs text-muted-foreground">Branch</label>
+            <select
+              className="h-9 rounded border bg-background px-3 text-sm min-w-[200px]"
+              value={effectiveBranchId ?? ''}
+              onChange={(e) => {
+                setBranchId(e.target.value);
+                setCursor(undefined);
+              }}
+              disabled={branchesLoading || !!isBranchHead}
+            >
+              {!isBranchHead ? <option value="">All branches</option> : null}
+              {(branches ?? []).map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          {isBranchHead ? (
+            <div className="text-xs text-muted-foreground mt-2">
+              OPS scoped to your branch.
+            </div>
+          ) : null}
+          <div className="space-y-1">
             <label className="text-xs text-muted-foreground">Rating</label>
             <Input
               type="number"
@@ -154,6 +196,45 @@ export default function FeedbackPage() {
       </Card>
       <Card>
         <CardHeader>
+          <CardTitle>Rating summary</CardTitle>
+          <p className="text-xs text-muted-foreground mt-1">
+            Based on current filters (type/date/branch).
+          </p>
+        </CardHeader>
+        <CardContent>
+          {statsLoading ? (
+            <Skeleton className="h-24 w-full" />
+          ) : ratingStats ? (
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-baseline justify-between gap-3">
+                <div className="text-sm">
+                  Overall average:{' '}
+                  <span className="font-semibold">
+                    {ratingStats.avgRating != null ? `${ratingStats.avgRating.toFixed(2)} / 5` : '—'}
+                  </span>
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  Rated count: {ratingStats.totalRated}
+                </div>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                {[1, 2, 3, 4, 5].map((r) => (
+                  <div key={r} className="rounded-md border p-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm">{r} star</span>
+                      <span className="ml-auto font-semibold">{ratingStats.ratingCounts[r as 1 | 2 | 3 | 4 | 5]}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="text-sm text-muted-foreground">No rated feedback found.</div>
+          )}
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
           <CardTitle>List</CardTitle>
         </CardHeader>
         <CardContent>
@@ -166,11 +247,11 @@ export default function FeedbackPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Id</TableHead>
-                    <TableHead>Type</TableHead>
+                    <TableHead>Customer</TableHead>
+                    <TableHead>Order ID</TableHead>
+                    <TableHead>Mobile</TableHead>
                     <TableHead>Rating</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Created</TableHead>
+                    <TableHead>Feedback Given</TableHead>
                     <TableHead>Message</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -181,10 +262,10 @@ export default function FeedbackPage() {
                       className="cursor-pointer hover:bg-muted/50"
                       onClick={() => handleOpenDialog(row)}
                     >
-                      <TableCell className="font-mono text-xs">{row.id.slice(0, 8)}…</TableCell>
-                      <TableCell>{row.type}</TableCell>
+                      <TableCell>{row.customerName ?? '—'}</TableCell>
+                      <TableCell>{row.orderId ?? '—'}</TableCell>
+                      <TableCell>{row.customerPhone ?? '—'}</TableCell>
                       <TableCell>{row.rating ?? '—'}</TableCell>
-                      <TableCell>{row.status}</TableCell>
                       <TableCell>{formatDateTime(row.createdAt)}</TableCell>
                       <TableCell className="max-w-[200px] truncate">{row.message ?? '—'}</TableCell>
                     </TableRow>

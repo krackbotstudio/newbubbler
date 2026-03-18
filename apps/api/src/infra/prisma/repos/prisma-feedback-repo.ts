@@ -6,6 +6,8 @@ import type {
   CreateFeedbackInput,
   AdminFeedbackFilters,
   AdminFeedbackResult,
+  AdminFeedbackRatingStatsFilters,
+  AdminFeedbackRatingStatsResult,
 } from '../../../application/ports';
 import type { FeedbackStatus } from '@shared/enums';
 
@@ -17,6 +19,8 @@ function toRecord(row: {
   id: string;
   userId: string | null;
   orderId: string | null;
+  customerName?: string | null;
+  customerPhone?: string | null;
   type: string;
   rating: number | null;
   tags: string[];
@@ -30,6 +34,8 @@ function toRecord(row: {
     id: row.id,
     userId: row.userId,
     orderId: row.orderId,
+    customerName: row.customerName ?? null,
+    customerPhone: row.customerPhone ?? null,
     type: row.type as FeedbackRecord['type'],
     rating: row.rating,
     tags: row.tags,
@@ -96,6 +102,10 @@ export class PrismaFeedbackRepo implements FeedbackRepo {
     if (filters.type != null) where.type = filters.type;
     if (filters.status != null) where.status = filters.status;
     if (filters.rating != null) where.rating = filters.rating;
+    if (filters.branchId != null) {
+      // Branch filter is applied via feedback.order.branchId (ORDER feedback only).
+      where.order = { branchId: filters.branchId };
+    }
     if (filters.dateFrom != null || filters.dateTo != null) {
       where.createdAt = {};
       if (filters.dateFrom != null)
@@ -109,10 +119,59 @@ export class PrismaFeedbackRepo implements FeedbackRepo {
       take: filters.limit + 1,
       cursor: filters.cursor ? { id: filters.cursor } : undefined,
       skip: filters.cursor ? 1 : 0,
+      include: {
+        user: {
+          select: { name: true, phone: true },
+        },
+      },
     });
-    const data = rows.slice(0, filters.limit).map(toRecord);
+    const data = rows.slice(0, filters.limit).map((r) =>
+      toRecord({
+        ...(r as any),
+        customerName: (r as any).user?.name ?? null,
+        customerPhone: (r as any).user?.phone ?? null,
+      }),
+    );
     const nextCursor = rows.length > filters.limit ? rows[filters.limit - 1].id : null;
     return { data, nextCursor };
+  }
+
+  async getRatingStats(filters: AdminFeedbackRatingStatsFilters): Promise<AdminFeedbackRatingStatsResult> {
+    const where: Record<string, unknown> = {};
+    if (filters.type != null) where.type = filters.type;
+    if (filters.status != null) where.status = filters.status;
+    if (filters.branchId != null) {
+      where.order = { branchId: filters.branchId };
+    }
+    // Only count rated feedback.
+    where.rating = { not: null };
+    if (filters.dateFrom != null || filters.dateTo != null) {
+      where.createdAt = {};
+      if (filters.dateFrom != null) (where.createdAt as Record<string, Date>).gte = filters.dateFrom;
+      if (filters.dateTo != null) (where.createdAt as Record<string, Date>).lte = filters.dateTo;
+    }
+
+    const [totalRatedCount, sumRes, c1, c2, c3, c4, c5] = await Promise.all([
+      this.prisma.feedback.count({ where: where as any }),
+      this.prisma.feedback.aggregate({
+        where: where as any,
+        _sum: { rating: true },
+      }),
+      this.prisma.feedback.count({ where: { ...(where as any), rating: 1 } }),
+      this.prisma.feedback.count({ where: { ...(where as any), rating: 2 } }),
+      this.prisma.feedback.count({ where: { ...(where as any), rating: 3 } }),
+      this.prisma.feedback.count({ where: { ...(where as any), rating: 4 } }),
+      this.prisma.feedback.count({ where: { ...(where as any), rating: 5 } }),
+    ]);
+
+    const sumRating = sumRes._sum.rating ?? 0;
+    const avgRating = totalRatedCount > 0 ? sumRating / totalRatedCount : null;
+
+    return {
+      avgRating,
+      totalRated: totalRatedCount,
+      ratingCounts: { 1: c1, 2: c2, 3: c3, 4: c4, 5: c5 },
+    };
   }
 
   async updateStatus(

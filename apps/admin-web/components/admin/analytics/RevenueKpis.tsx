@@ -17,8 +17,8 @@ function pendingPaise(totals: AnalyticsTotals): number {
 export function RevenueKpis({ totals, isLoading }: RevenueKpisProps) {
   if (isLoading) {
     return (
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        {[1, 2, 3, 4, 5].map((i) => (
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-7">
+        {[1, 2, 3, 4, 5, 6, 7].map((i) => (
           <Card key={i}>
             <CardHeader className="pb-2">
               <Skeleton className="h-4 w-24" />
@@ -41,13 +41,15 @@ export function RevenueKpis({ totals, isLoading }: RevenueKpisProps) {
   const kpis = [
     { label: 'Collected Revenue', value: formatMoney(totals.collectedPaise) },
     { label: 'Billed Revenue', value: formatMoney(totals.billedPaise) },
+    { label: 'Tax collected', value: formatMoney(totals.taxPaise) },
+    { label: 'Discount given', value: formatMoney(totals.discountPaise) },
     { label: 'Orders', value: String(totals.ordersCount) },
     { label: 'Invoices', value: String(totals.invoicesCount) },
     { label: 'Pending', value: formatMoney(pending) },
   ];
 
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-7">
       {kpis.map((k) => (
         <Card key={k.label}>
           <CardHeader className="pb-2">

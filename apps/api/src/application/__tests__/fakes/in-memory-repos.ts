@@ -27,6 +27,8 @@ import type {
   CreateFeedbackInput,
   AdminFeedbackFilters,
   AdminFeedbackResult,
+  AdminFeedbackRatingStatsFilters,
+  AdminFeedbackRatingStatsResult,
 } from '../../ports';
 import { FeedbackStatus } from '@shared/enums';
 
@@ -169,6 +171,9 @@ export function createFakeOrdersRepo(initial: OrderRecord[] = []): OrdersRepo & 
         branchName: null,
         deliveredDate: null,
         billTotalPaise: null,
+        billSubtotalPaise: null,
+        billTaxPaise: null,
+        billDiscountPaise: null,
         billTypeLabel: r.orderSource === 'WALK_IN' ? 'Walkin' : '—',
         ackIssuedAt: null,
         finalIssuedAt: null,
@@ -533,6 +538,8 @@ export function createFakeFeedbackRepo(
         id: uuid(),
         userId: input.userId ?? null,
         orderId: input.orderId ?? null,
+        customerName: null,
+        customerPhone: null,
         type: input.type,
         rating: input.rating ?? null,
         tags: input.tags ?? [],
@@ -556,6 +563,7 @@ export function createFakeFeedbackRepo(
       if (filters.type != null) list = list.filter((r) => r.type === filters.type);
       if (filters.status != null) list = list.filter((r) => r.status === filters.status);
       if (filters.rating != null) list = list.filter((r) => r.rating === filters.rating);
+      // NOTE: in-memory feedback repo has no branch relation, so branchId filtering is ignored.
       if (filters.dateFrom != null) list = list.filter((r) => r.createdAt >= filters.dateFrom!);
       if (filters.dateTo != null) list = list.filter((r) => r.createdAt <= filters.dateTo!);
       const start = filters.cursor ? list.findIndex((r) => r.id === filters.cursor) + 1 : 0;
@@ -563,6 +571,28 @@ export function createFakeFeedbackRepo(
       const data = slice.slice(0, filters.limit);
       const nextCursor = slice.length > filters.limit ? slice[filters.limit - 1].id : null;
       return { data, nextCursor };
+    },
+    async getRatingStats(filters: AdminFeedbackRatingStatsFilters): Promise<AdminFeedbackRatingStatsResult> {
+      const list = records.filter((r) => {
+        if (filters.type != null && r.type !== filters.type) return false;
+        if (filters.status != null && r.status !== filters.status) return false;
+        if (filters.dateFrom != null && r.createdAt < filters.dateFrom) return false;
+        if (filters.dateTo != null && r.createdAt > filters.dateTo) return false;
+        // NOTE: branchId is ignored in this in-memory implementation (no order join).
+        return r.rating != null;
+      });
+      const ratingCounts = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+      let sum = 0;
+      for (const r of list) {
+        const rating = r.rating ?? 0;
+        if (ratingCounts[rating as keyof typeof ratingCounts] != null) {
+          ratingCounts[rating as keyof typeof ratingCounts] += 1;
+        }
+        sum += rating;
+      }
+      const totalRated = list.length;
+      const avgRating = totalRated > 0 ? sum / totalRated : null;
+      return { avgRating, totalRated, ratingCounts };
     },
     async updateStatus(
       id: string,

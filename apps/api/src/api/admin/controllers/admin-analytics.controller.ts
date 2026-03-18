@@ -23,10 +23,12 @@ export class AdminAnalyticsController {
     const preset = query.preset && PRESETS.includes(query.preset as RevenuePreset)
       ? (query.preset as RevenuePreset)
       : undefined;
+    const branchId = query.branchId ? String(query.branchId) : undefined;
     const dateFrom = query.dateFrom ? new Date(query.dateFrom) : undefined;
     const dateTo = query.dateTo ? new Date(query.dateTo) : undefined;
     return this.adminAnalyticsService.getRevenue({
       preset,
+      branchId,
       dateFrom,
       dateTo,
     });

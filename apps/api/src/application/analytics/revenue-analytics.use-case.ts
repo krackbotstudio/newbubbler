@@ -12,6 +12,7 @@ export interface RevenueAnalyticsDeps {
 
 export interface RevenueAnalyticsInput {
   preset?: RevenuePreset;
+  branchId?: string;
   dateFrom?: Date;
   dateTo?: Date;
 }
@@ -45,5 +46,5 @@ export async function getRevenueAnalytics(
     breakdownKind = range.breakdownKind;
   }
 
-  return deps.analyticsRepo.getRevenue(dateFrom, dateTo, breakdownKind);
+  return deps.analyticsRepo.getRevenue(dateFrom, dateTo, breakdownKind, input.branchId);
 }

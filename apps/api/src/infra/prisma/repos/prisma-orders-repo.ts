@@ -16,7 +16,10 @@ import type {
 import { toIndiaDateKey, indiaDayUtcRange, dateKeyToDdMmYyyy } from '../../../application/time/india-date';
 
 /** Accepts PrismaClient or transaction client from prisma.$transaction(callback). */
-type PrismaLike = Pick<PrismaClient, 'order' | 'subscription' | 'serviceArea' | 'branch'>;
+type PrismaLike = Pick<
+  PrismaClient,
+  'order' | 'subscription' | 'serviceArea' | 'branch' | 'segmentCategory' | 'serviceCategory'
+>;
 
 function toOrderRecord(row: {
   id: string;
@@ -462,8 +465,26 @@ export class PrismaOrdersRepo implements OrdersRepo {
     const ackInv = row.invoices?.find((i) => i.type === PrismaInvoiceType.ACKNOWLEDGEMENT);
     const finalIssued = finalInv && (finalInv as { status?: string; issuedAt?: Date | null }).issuedAt;
     let billTotalPaise: number | null = null;
-    if (finalIssued && finalInv) billTotalPaise = finalInv.total;
-    else if (ackInv) billTotalPaise = ackInv.total;
+    let billSubtotalPaise: number | null = null;
+    let billTaxPaise: number | null = null;
+    let billDiscountPaise: number | null = null;
+    const selectedInv =
+      finalIssued && finalInv ? finalInv
+        : ackInv ? ackInv
+          : null;
+
+    if (selectedInv) {
+      const s = selectedInv as unknown as {
+        total: number;
+        subtotal?: number | null;
+        tax?: number | null;
+        discountPaise?: number | null;
+      };
+      billTotalPaise = s.total;
+      billSubtotalPaise = s.subtotal != null ? s.subtotal : null;
+      billTaxPaise = s.tax != null ? s.tax : null;
+      billDiscountPaise = s.discountPaise != null ? s.discountPaise ?? 0 : null;
+    }
     const ackTotal = ackInv?.total ?? 0;
     const ackMode = (ackInv as { orderMode?: string } | undefined)?.orderMode;
     let billTypeLabel = '—';
@@ -490,6 +511,9 @@ export class PrismaOrdersRepo implements OrdersRepo {
       branchName,
       deliveredDate,
       billTotalPaise,
+      billSubtotalPaise,
+      billTaxPaise,
+      billDiscountPaise,
       billTypeLabel,
       ackIssuedAt: ackIssuedAt ?? null,
       finalIssuedAt: finalIssuedAt ?? null,
@@ -535,6 +559,37 @@ export class PrismaOrdersRepo implements OrdersRepo {
         };
       }
     }
+
+    // Resolve Segment/Service labels for invoice line items shown in analytics.
+    const segmentIds = new Set<string>();
+    const serviceIds = new Set<string>();
+    for (const inv of order.invoices) {
+      for (const it of inv.items ?? []) {
+        if (it.segmentCategoryId) segmentIds.add(it.segmentCategoryId);
+        if (it.serviceCategoryId) serviceIds.add(it.serviceCategoryId);
+      }
+    }
+    const [segmentRows, serviceRows] = await Promise.all([
+      segmentIds.size > 0
+        ? this.prisma.segmentCategory.findMany({
+            where: { id: { in: Array.from(segmentIds) } },
+            select: { id: true, label: true },
+          })
+        : Promise.resolve([] as Array<{ id: string; label: string }>),
+      serviceIds.size > 0
+        ? this.prisma.serviceCategory.findMany({
+            where: { id: { in: Array.from(serviceIds) } },
+            select: { id: true, label: true },
+          })
+        : Promise.resolve([] as Array<{ id: string; label: string }>),
+    ]);
+    const segmentLabelById = new Map<string, string>(
+      segmentRows.map((r: { id: string; label: string }) => [r.id, r.label]),
+    );
+    const serviceLabelById = new Map<string, string>(
+      serviceRows.map((r: { id: string; label: string }) => [r.id, r.label]),
+    );
+
     const summary: OrderAdminSummary = {
       order: toOrderRecord(order),
       customer: {
@@ -628,6 +683,8 @@ export class PrismaOrdersRepo implements OrdersRepo {
           ...(i.catalogItemId != null && { catalogItemId: i.catalogItemId }),
           ...(i.segmentCategoryId != null && { segmentCategoryId: i.segmentCategoryId }),
           ...(i.serviceCategoryId != null && { serviceCategoryId: i.serviceCategoryId }),
+          segmentLabel: i.segmentCategoryId ? (segmentLabelById.get(i.segmentCategoryId) ?? null) : null,
+          serviceLabel: i.serviceCategoryId ? (serviceLabelById.get(i.serviceCategoryId) ?? null) : null,
         })),
       })),
       payment: order.payment
@@ -636,6 +693,7 @@ export class PrismaOrdersRepo implements OrdersRepo {
             provider: order.payment.provider,
             status: order.payment.status,
             amount: order.payment.amount,
+            note: order.payment.failureReason ?? null,
           }
         : null,
     };

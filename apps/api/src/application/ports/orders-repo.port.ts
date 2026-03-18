@@ -80,6 +80,12 @@ export interface AdminOrderListRow extends OrderRecord {
   deliveredDate: Date | null;
   /** Amount to collect (paise): final invoice total when issued (with discount); else ACK total; else null. */
   billTotalPaise: number | null;
+  /** Subtotal used for the shown bill (paise), based on FINAL (when issued) else ACK. */
+  billSubtotalPaise: number | null;
+  /** Tax used for the shown bill (paise), based on FINAL (when issued) else ACK. */
+  billTaxPaise: number | null;
+  /** Discount used for the shown bill (paise), based on FINAL (when issued) else ACK. */
+  billDiscountPaise: number | null;
   /** Invoice/bill type for display: Individual, Subscription, Zero, Both. */
   billTypeLabel: string;
   /** When ACK invoice was issued (if any). */
@@ -133,9 +139,20 @@ export interface OrderAdminSummary {
     subscriptionUsageItems?: number | null;
     /** Branding snapshot stored with this invoice (logo, address, PAN, GST, etc.) so any user sees same company branding. */
     brandingSnapshotJson?: unknown;
-    items?: Array<{ type: string; name: string; quantity: number; unitPrice: number; amount: number }>;
+    items?: Array<{
+      type: string;
+      name: string;
+      quantity: number;
+      unitPrice: number;
+      amount: number;
+      catalogItemId?: string | null;
+      segmentCategoryId?: string | null;
+      serviceCategoryId?: string | null;
+      segmentLabel?: string | null;
+      serviceLabel?: string | null;
+    }>;
   }>;
-  payment: { id: string; provider: string; status: string; amount: number } | null;
+  payment: { id: string; provider: string; status: string; amount: number; note?: string | null } | null;
 }
 
 export interface OrdersRepo {

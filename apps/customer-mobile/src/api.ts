@@ -721,6 +721,61 @@ export async function listOrderInvoices(
   return res.json() as Promise<OrderInvoice[]>;
 }
 
+// --- Order feedback (customer) ---
+export interface OrderFeedbackEligibilityResponse {
+  eligible: boolean;
+  reason?: string;
+  alreadySubmitted: boolean;
+}
+
+export interface OrderFeedbackSubmissionResponse {
+  id: string;
+  orderId: string | null;
+  type: string;
+  rating: number | null;
+  status: string;
+  createdAt: string;
+}
+
+export async function checkOrderFeedbackEligibility(
+  token: string,
+  orderId: string,
+): Promise<OrderFeedbackEligibilityResponse> {
+  const base = apiBase();
+  if (!base) throw new Error('API URL not set. Set EXPO_PUBLIC_API_URL in .env and restart Expo.');
+  const res = await fetchWithTimeout(`${base}/orders/${orderId}/feedback/eligibility`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { message?: string } | null;
+    throw new Error(body?.message ?? 'Failed to check feedback eligibility');
+  }
+  return res.json() as Promise<OrderFeedbackEligibilityResponse>;
+}
+
+export async function submitOrderFeedback(
+  token: string,
+  orderId: string,
+  body: { rating: number; message?: string },
+): Promise<OrderFeedbackSubmissionResponse> {
+  const base = apiBase();
+  if (!base) throw new Error('API URL not set. Set EXPO_PUBLIC_API_URL in .env and restart Expo.');
+  const payload = {
+    rating: body.rating,
+    message: body.message?.trim() ? body.message.trim() : undefined,
+  };
+  const res = await fetchWithTimeout(`${base}/orders/${orderId}/feedback`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const errBody = (await res.json().catch(() => null)) as { message?: string } | null;
+    throw new Error(errBody?.message ?? 'Failed to submit feedback');
+  }
+  return res.json() as Promise<OrderFeedbackSubmissionResponse>;
+}
+
 /** Full URL to open invoice PDF (used with Bearer token). */
 export function invoicePdfUrl(invoiceId: string): string {
   const base = apiBase();

@@ -115,9 +115,10 @@ export async function createApp(): Promise<INestApplication> {
     try {
       const q = (req as { query?: Record<string, unknown> }).query ?? {};
       const preset = (q.preset as string) && REVENUE_PRESETS.includes(q.preset as RevenuePreset) ? (q.preset as RevenuePreset) : undefined;
+      const branchId = typeof q.branchId === 'string' ? q.branchId : undefined;
       const dateFrom = q.dateFrom ? new Date(q.dateFrom as string) : undefined;
       const dateTo = q.dateTo ? new Date(q.dateTo as string) : undefined;
-      const data = await service.getRevenue({ preset, dateFrom, dateTo });
+      const data = await service.getRevenue({ preset, branchId, dateFrom, dateTo });
       res.status(200).json(data);
     } catch (e) {
       res.status(500).json({ error: { message: String(e) } });
