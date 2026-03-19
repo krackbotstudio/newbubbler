@@ -1,7 +1,7 @@
 /* eslint-disable react/no-array-index-key */
 'use client';
 
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -99,8 +99,8 @@ export function AnalyticsOrdersList({
             const invSummary = summaries[o.id];
             const err = summaryError[o.id];
             return (
-              <>
-                <TableRow key={o.id}>
+              <Fragment key={o.id}>
+                <TableRow>
                   <TableCell className="font-medium">
                     <div className="flex flex-wrap items-center gap-2">
                       <span>#{o.id}</span>
@@ -225,7 +225,7 @@ export function AnalyticsOrdersList({
                     </TableCell>
                   </TableRow>
                 ) : null}
-              </>
+              </Fragment>
             );
           })}
         </TableBody>
