@@ -29,8 +29,13 @@ ENV PORT=8080
 # Copy root package files for production install
 COPY package.json package-lock.json ./
 
-# Install production deps only + tsconfig-paths (required at runtime for @shared/* resolution)
-RUN npm ci --omit=dev --ignore-scripts && npm install tsconfig-paths --ignore-scripts
+# Install production deps only
+RUN npm ci --omit=dev --ignore-scripts
+
+# Copy tsconfig-paths from builder (it's a devDep but required at runtime for @shared/* resolution)
+# Copying directly avoids npm workspace resolution issues when re-installing in runner
+COPY --from=builder /app/node_modules/tsconfig-paths ./node_modules/tsconfig-paths
+COPY --from=builder /app/node_modules/strip-bom ./node_modules/strip-bom
 
 # Copy compiled API output
 COPY --from=builder /app/apps/api/dist ./apps/api/dist
