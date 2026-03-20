@@ -26,8 +26,6 @@ ENV HOSTNAME=0.0.0.0
 COPY --from=builder /app/.next/standalone ./
 # Copy static assets into the standalone's expected location
 COPY --from=builder /app/.next/static ./.next/static
-# Copy public folder
-COPY --from=builder /app/public ./public
 
 EXPOSE 3000
 
