@@ -4,6 +4,7 @@ WORKDIR /app
 
 # Copy root package files (lock file lives at monorepo root)
 COPY package.json package-lock.json ./
+COPY tsconfig.base.json ./
 
 # Copy shared packages and API source
 COPY packages ./packages
