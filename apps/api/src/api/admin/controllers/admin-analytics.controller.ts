@@ -34,6 +34,22 @@ export class AdminAnalyticsController {
     });
   }
 
+  @Get('completed-catalog-items')
+  async getCompletedCatalogItems(@Query() query: RevenueQueryDto) {
+    const preset = query.preset && PRESETS.includes(query.preset as RevenuePreset)
+      ? (query.preset as RevenuePreset)
+      : undefined;
+    const branchId = query.branchId ? String(query.branchId) : undefined;
+    const dateFrom = query.dateFrom ? new Date(query.dateFrom) : undefined;
+    const dateTo = query.dateTo ? new Date(query.dateTo) : undefined;
+    return this.adminAnalyticsService.getCompletedCatalogItems({
+      preset,
+      branchId,
+      dateFrom,
+      dateTo,
+    });
+  }
+
   @Get('dashboard-kpis')
   async getDashboardKpis() {
     return this.adminAnalyticsService.getDashboardKpis();

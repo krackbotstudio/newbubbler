@@ -36,8 +36,6 @@ import { ExternalLink } from 'lucide-react';
 const STATUS_FLOW: OrderStatus[] = [
   'BOOKING_CONFIRMED',
   'PICKED_UP',
-  'IN_PROCESSING',
-  'READY',
   'OUT_FOR_DELIVERY',
   'DELIVERED',
 ];
@@ -78,7 +76,7 @@ export default function OrderDetailPage() {
   const [ackTaxPercent, setAckTaxPercent] = useState(0);
   const [ackDiscountType, setAckDiscountType] = useState<'percent' | 'amount'>('amount');
   const [ackDiscountValue, setAckDiscountValue] = useState(0);
-  const [ackComments, setAckComments] = useState('');
+  const [ackComments, setAckComments] = useState('Thank you');
   const [ackWeightKg, setAckWeightKg] = useState<number | ''>('');
   const [ackItemsCount, setAckItemsCount] = useState<number | ''>('');
   const [ackNewSubscriptionPlanId, setAckNewSubscriptionPlanId] = useState('');
@@ -133,7 +131,7 @@ export default function OrderDetailPage() {
         }
         setAckDiscountType('amount');
         setAckDiscountValue(ack.discountPaise ?? 0);
-        setAckComments(ack.comments ?? '');
+        setAckComments(ack.comments ?? 'Thank you');
         const rawSnap = ack.newSubscriptionSnapshotJson;
         if (rawSnap) {
           type Snap = { planId: string; validityStartDate: string; quantityMonths?: number };
@@ -318,8 +316,7 @@ export default function OrderDetailPage() {
   const isDelivered = order.status === 'DELIVERED';
   const canIssueFinalInvoice =
     order.status === 'OUT_FOR_DELIVERY' ||
-    order.status === 'DELIVERED' ||
-    (order.orderSource === 'WALK_IN' && order.status === 'READY');
+    order.status === 'DELIVERED';
   const ackSubmitted = ackInvoice?.status === 'ISSUED';
   const finalSubmitted = finalInvoice?.status === 'ISSUED';
   const paymentRecorded = summary.payment?.status === 'CAPTURED';
@@ -382,9 +379,7 @@ export default function OrderDetailPage() {
         : discountType === 'percent'
           ? Math.round(subtotal * discountValue / 100)
           : discountValue;
-    const ackCommentSuffix = ' Bill may change at delivery.';
-    const commentsWithBillNote =
-      (comments?.trim() ? (comments.includes('Bill may change at delivery') ? comments : comments + ackCommentSuffix) : 'Thank you, we will deliver within 3 days.' + ackCommentSuffix) || undefined;
+    const commentsWithBillNote = (comments?.trim() || 'Thank you') || undefined;
     const base = {
       orderMode: mode,
       items:
@@ -616,12 +611,16 @@ export default function OrderDetailPage() {
   const timelineStages: { key: OrderStatus; label: string; ts: string | null }[] = [
     { key: 'BOOKING_CONFIRMED', label: 'Order initiated', ts: order.createdAt ?? null },
     { key: 'PICKED_UP', label: 'Picked up', ts: order.pickedUpAt ?? null },
-    { key: 'IN_PROCESSING', label: 'In progress', ts: order.inProgressAt ?? null },
-    { key: 'READY', label: 'Ready', ts: order.readyAt ?? null },
     { key: 'OUT_FOR_DELIVERY', label: 'Out for delivery', ts: order.outForDeliveryAt ?? null },
     { key: 'DELIVERED', label: 'Delivered', ts: order.deliveredAt ?? null },
   ];
-  const currentIdx = STATUS_FLOW.indexOf(order.status);
+  const currentStatusForFlow: OrderStatus =
+    order.status === 'PICKUP_SCHEDULED'
+      ? 'BOOKING_CONFIRMED'
+      : (order.status === 'IN_PROCESSING' || order.status === 'READY')
+        ? 'PICKED_UP'
+        : order.status;
+  const currentIdx = STATUS_FLOW.indexOf(currentStatusForFlow);
   const canConfirmOrder = order.status === 'BOOKING_CONFIRMED';
   const hasSubscriptionUsage = (ackWeightKg !== '' && Number(ackWeightKg) > 0) || (ackItemsCount !== '' && Number(ackItemsCount) > 0);
   /** Order is dedicated to one subscription; we use summary.subscription (order's subscription). */
@@ -700,92 +699,6 @@ export default function OrderDetailPage() {
         </div>
         <OrderStatusBadge status={order.status} />
       </div>
-      <p className="text-sm text-muted-foreground">
-        Scheduled pickup: {formatDate(order.pickupDate)} · {order.timeWindow}
-        {order.orderSource !== 'WALK_IN' && (
-          <>
-            {' · Service: '}
-            {(order.serviceTypes && order.serviceTypes.length > 0 ? order.serviceTypes : [order.serviceType]).map((s) => s.replace(/_/g, ' ')).join(', ')}
-          </>
-        )}
-      </p>
-
-      <div className="grid gap-4 md:grid-cols-2">
-        <div className="rounded-lg border bg-muted/40 p-4">
-          <h3 className="text-sm font-medium text-muted-foreground mb-2">Customer & address</h3>
-          <div className="space-y-2 text-sm">
-            <p className="font-medium">{customer.name ?? '—'}</p>
-            <p>{customer.phone ?? '—'}</p>
-            <p>{customer.email ?? '—'}</p>
-            {order.orderSource === 'WALK_IN' ? (
-              <p className="text-muted-foreground">Walk-in</p>
-            ) : (
-              <>
-                <hr className="border-muted" />
-                <p>{address.label}</p>
-                <p>{address.addressLine}</p>
-                <p>{address.pincode}</p>
-                {mapsUrl ? (
-                  <a
-                    href={mapsUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-sm text-primary hover:underline mt-1"
-                  >
-                    <ExternalLink className="h-3.5 w-3.5" />
-                    View on Google Maps
-                  </a>
-                ) : (
-                  <p className="text-xs text-muted-foreground mt-1">No Google Maps link saved</p>
-                )}
-              </>
-            )}
-          </div>
-        </div>
-        {summary.subscription ? (
-          summary.subscription.active ? (
-            <div className="rounded-lg border border-green-200 bg-green-50 dark:bg-green-950/30 dark:border-green-800 p-4">
-              <h3 className="text-sm font-medium text-green-800 dark:text-green-200 mb-2">Active subscription</h3>
-              <p className="text-sm font-medium text-green-900 dark:text-green-100">{summary.subscription.planName}</p>
-              <p className="text-sm text-green-800 dark:text-green-200 mt-1">
-                Remaining pickups: {summary.subscription.remainingPickups}
-                {summary.subscription.kgLimit != null && (
-                  <> · Weight utilised: <span className={effectiveUsedKg > (summary.subscription.kgLimit ?? 0) ? 'text-destructive font-medium' : ''}>{effectiveUsedKg}/{summary.subscription.kgLimit} kg</span>{effectiveUsedKg > (summary.subscription.kgLimit ?? 0) && ' (exceeded)'}</>
-                )}
-                {summary.subscription.itemsLimit != null && (
-                  <> · Items utilised: <span className={effectiveUsedItems > (summary.subscription.itemsLimit ?? 0) ? 'text-destructive font-medium' : ''}>{effectiveUsedItems}/{summary.subscription.itemsLimit}</span>{effectiveUsedItems > (summary.subscription.itemsLimit ?? 0) && ' (exceeded)'}</>
-                )}
-                {summary.subscription.kgLimit == null && summary.subscription.itemsLimit == null && (
-                  <> · Used: {effectiveUsedKg} kg, {effectiveUsedItems} items</>
-                )}
-              </p>
-              {(summary.subscription.kgLimit != null && effectiveUsedKg > (summary.subscription.kgLimit ?? 0)) || (summary.subscription.itemsLimit != null && effectiveUsedItems > (summary.subscription.itemsLimit ?? 0)) ? (
-                <p className="text-xs text-destructive font-medium mt-1.5">Final invoice cost may vary as per exceeded utilisation under this subscription plan.</p>
-              ) : null}
-              <p className="text-xs text-green-700 dark:text-green-300 mt-1">Valid until {formatDate(summary.subscription.expiryDate)}</p>
-            </div>
-          ) : (
-            <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 p-4">
-              <h3 className="text-sm font-medium text-amber-800 dark:text-amber-200 mb-2">Inactive subscription</h3>
-              <p className="text-sm font-medium text-amber-900 dark:text-amber-100">{summary.subscription.planName}</p>
-              <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
-                Kg/pickups utilised or validity expired. Valid until {formatDate(summary.subscription.expiryDate)}
-              </p>
-              <p className="text-sm text-amber-800 dark:text-amber-200 mt-1">
-                Pickups: {summary.subscription.remainingPickups}/{summary.subscription.maxPickups}
-                {summary.subscription.kgLimit != null && ` · Weight: ${effectiveUsedKg}/${summary.subscription.kgLimit} kg`}
-                {summary.subscription.itemsLimit != null && ` · Items: ${effectiveUsedItems}/${summary.subscription.itemsLimit}`}
-              </p>
-            </div>
-          )
-        ) : (
-          <div className="rounded-lg border border-dashed bg-muted/20 p-4">
-            <h3 className="text-sm font-medium text-muted-foreground mb-2">Subscription</h3>
-            <p className="text-sm text-muted-foreground">No subscription</p>
-          </div>
-        )}
-      </div>
-
       <Card>
         <CardHeader>
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -917,23 +830,17 @@ export default function OrderDetailPage() {
       )}
       <Card className="bg-transparent border-0 shadow-none">
         <CardContent className="space-y-4 pt-6">
-          {/* Header: logo left, company name (heading), branch name below */}
-          <div className="flex gap-4 border-b pb-4 items-start justify-start">
-            <div className="flex-shrink-0 flex justify-start">
+          {/* Header: centered logo only */}
+          <div className="flex border-b pb-4 items-center justify-center">
+            <div className="flex-shrink-0 flex justify-center">
               {branding?.logoUrl ? (
                 <img
                   src={`${branding.logoUrl.startsWith('http') ? branding.logoUrl : `${getApiOrigin()}${branding.logoUrl}`}${(branding.logoUrl.startsWith('http') ? branding.logoUrl : `${getApiOrigin()}${branding.logoUrl}`).includes('?') ? '&' : '?'}v=${encodeURIComponent(branding.updatedAt)}`}
                   alt="Logo"
-                  className="h-14 w-auto object-contain object-left"
+                  className="h-14 w-auto object-contain"
                 />
               ) : (
                 <div className="h-14 w-24 rounded bg-muted flex items-center justify-center text-xs text-muted-foreground">Logo</div>
-              )}
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="font-semibold text-lg">{branding?.businessName ?? 'Company'}</p>
-              {summary.branch && (
-                <p className="text-sm font-medium text-muted-foreground mt-0.5">{summary.branch.name}</p>
               )}
             </div>
           </div>
@@ -985,6 +892,7 @@ export default function OrderDetailPage() {
                 <>
                   <p className="font-medium text-foreground">{summary.branch.name}</p>
                   <p>{summary.branch.address}</p>
+                  {summary.branch.phone ? <p>Phone: {summary.branch.phone}</p> : null}
                 </>
               )}
             </div>
@@ -1219,9 +1127,7 @@ export default function OrderDetailPage() {
                   </div>
                 )}
                 <div className="mt-6 pt-4 text-center text-sm text-muted-foreground space-y-1">
-                  <p>
-                    {[summary.branch?.address ?? branding?.address ?? '', branding?.email ?? '', branding?.phone ?? ''].filter(Boolean).join(' · ')}
-                  </p>
+                  {summary.branch?.footerNote?.trim() ? <p>{summary.branch.footerNote.trim()}</p> : null}
                 </div>
               </>
             );
@@ -1247,23 +1153,17 @@ export default function OrderDetailPage() {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Same layout as ACK: logo left, company name, branch */}
-          <div className="flex gap-4 border-b pb-4 items-start justify-start">
-            <div className="flex-shrink-0 flex justify-start">
+          {/* Header: centered logo only */}
+          <div className="flex border-b pb-4 items-center justify-center">
+            <div className="flex-shrink-0 flex justify-center">
               {branding?.logoUrl ? (
                 <img
                   src={`${branding.logoUrl.startsWith('http') ? branding.logoUrl : `${getApiOrigin()}${branding.logoUrl}`}${(branding.logoUrl.startsWith('http') ? branding.logoUrl : `${getApiOrigin()}${branding.logoUrl}`).includes('?') ? '&' : '?'}v=${encodeURIComponent(branding.updatedAt)}`}
                   alt="Logo"
-                  className="h-14 w-auto object-contain object-left"
+                  className="h-14 w-auto object-contain"
                 />
               ) : (
                 <div className="h-14 w-24 rounded bg-muted flex items-center justify-center text-xs text-muted-foreground">Logo</div>
-              )}
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="font-semibold text-lg">{branding?.businessName ?? 'Company'}</p>
-              {summary.branch && (
-                <p className="text-sm font-medium text-muted-foreground mt-0.5">{summary.branch.name}</p>
               )}
             </div>
           </div>
@@ -1341,6 +1241,7 @@ export default function OrderDetailPage() {
                 <>
                   <p className="font-medium text-foreground">{summary.branch.name}</p>
                   <p>{summary.branch.address}</p>
+                  {summary.branch.phone ? <p>Phone: {summary.branch.phone}</p> : null}
                 </>
               )}
             </div>
@@ -1458,9 +1359,7 @@ export default function OrderDetailPage() {
                   </div>
                 )}
                 <div className="mt-6 pt-4 text-center text-sm text-muted-foreground space-y-1">
-                  <p>
-                    {[summary.branch?.address ?? branding?.address ?? '', branding?.email ?? '', branding?.phone ?? ''].filter(Boolean).join(' · ')}
-                  </p>
+                  {summary.branch?.footerNote?.trim() ? <p>{summary.branch.footerNote.trim()}</p> : null}
                 </div>
               </>
             );
@@ -1569,11 +1468,10 @@ export default function OrderDetailPage() {
       <footer className="fixed bottom-0 left-0 right-0 z-40 border-t bg-background px-4 py-3 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
         <div className="flex flex-wrap items-center justify-center gap-2">
           {STATUS_FLOW.map((s) => {
-            const idx = STATUS_FLOW.indexOf(order.status);
+            const idx = STATUS_FLOW.indexOf(currentStatusForFlow);
             const isNext =
-              (idx >= 0 && idx < STATUS_FLOW.length - 1 && STATUS_FLOW[idx + 1] === s) ||
-              (order.status === 'PICKUP_SCHEDULED' && s === 'PICKED_UP');
-            const isCurrent = order.status === s;
+              idx >= 0 && idx < STATUS_FLOW.length - 1 && STATUS_FLOW[idx + 1] === s;
+            const isCurrent = currentStatusForFlow === s;
             const label = s === 'PICKED_UP' && isNext ? 'Confirm Pickup' : s.replace(/_/g, ' ');
             return (
               <Button

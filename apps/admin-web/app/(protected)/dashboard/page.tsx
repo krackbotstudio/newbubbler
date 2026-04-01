@@ -6,7 +6,6 @@ import { getStoredUser } from '@/lib/auth';
 import { useAnalyticsRevenue, useDashboardKpis } from '@/hooks/useAnalytics';
 import { useOrders } from '@/hooks/useOrders';
 import { useBranches } from '@/hooks/useBranches';
-import { BranchFilter } from '@/components/shared/BranchFilter';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ErrorDisplay } from '@/components/shared/ErrorDisplay';
@@ -17,12 +16,11 @@ import type { AdminOrderListRow, OrderStatus } from '@/types';
 const DASHBOARD_STATUS_CHIPS: { status: OrderStatus | 'CONFIRMED'; label: string }[] = [
   { status: 'CONFIRMED', label: 'Confirmed Orders' },
   { status: 'PICKED_UP', label: 'Picked up' },
-  { status: 'IN_PROCESSING', label: 'In progress' },
-  { status: 'READY', label: 'Ready' },
   { status: 'OUT_FOR_DELIVERY', label: 'Out for delivery' },
+  { status: 'DELIVERED', label: 'Delivered' },
 ];
 
-const STATUSES_FOR_CHIPS: OrderStatus[] = ['BOOKING_CONFIRMED', 'PICKUP_SCHEDULED', 'PICKED_UP', 'IN_PROCESSING', 'READY', 'OUT_FOR_DELIVERY'];
+const STATUSES_FOR_CHIPS: OrderStatus[] = ['BOOKING_CONFIRMED', 'PICKUP_SCHEDULED', 'PICKED_UP', 'OUT_FOR_DELIVERY', 'DELIVERED'];
 
 /** Current date in IST (YYYY-MM-DD). */
 function getTodayIST(): string {
@@ -49,9 +47,8 @@ function getOrderDateKey(row: AdminOrderListRow, statusFilter: OrderStatus | 'CO
     return pickupDateKey(row.pickupDate);
   }
   if (s === 'PICKED_UP' && row.pickedUpAt) return dateKeyFromIso(row.pickedUpAt) ?? null;
-  if (s === 'IN_PROCESSING' && row.inProgressAt) return dateKeyFromIso(row.inProgressAt) ?? null;
-  if (s === 'READY' && row.readyAt) return dateKeyFromIso(row.readyAt) ?? null;
   if (s === 'OUT_FOR_DELIVERY' && row.outForDeliveryAt) return dateKeyFromIso(row.outForDeliveryAt) ?? null;
+  if (s === 'DELIVERED' && row.deliveredDate) return dateKeyFromIso(row.deliveredDate) ?? null;
   return null;
 }
 
@@ -74,13 +71,13 @@ export default function DashboardPage() {
   const user = useMemo(() => getStoredUser(), []);
   const role = user?.role ?? 'CUSTOMER';
   const isBranchHead = role === 'OPS' && !!user?.branchId;
-  const [selectedBranchIds, setSelectedBranchIds] = useState<string[]>(() =>
-    isBranchHead && user?.branchId ? [user.branchId] : []
+  const [branchId, setBranchId] = useState<string>(() =>
+    isBranchHead && user?.branchId ? user.branchId : ''
   );
   const [statusFilter, setStatusFilter] = useState<OrderStatus | 'CONFIRMED' | ''>('CONFIRMED');
 
   useEffect(() => {
-    if (isBranchHead && user?.branchId) setSelectedBranchIds([user.branchId]);
+    if (isBranchHead && user?.branchId) setBranchId(user.branchId);
   }, [isBranchHead, user?.branchId]);
 
   const todayKey = useMemo(() => getTodayIST(), []);
@@ -100,7 +97,7 @@ export default function DashboardPage() {
   const { data: branches = [] } = useBranches();
   const effectiveBranchId = isBranchHead
     ? (user?.branchId ?? undefined)
-    : (selectedBranchIds.length === 1 ? selectedBranchIds[0] : undefined);
+    : (branchId || undefined);
 
   const { data: ordersData, isLoading: ordersLoading } = useOrders(
     {
@@ -117,9 +114,8 @@ export default function DashboardPage() {
     const counts: Record<string, number> = {
       CONFIRMED: 0,
       PICKED_UP: 0,
-      IN_PROCESSING: 0,
-      READY: 0,
       OUT_FOR_DELIVERY: 0,
+      DELIVERED: 0,
     };
     for (const row of rows) {
       const s = row.status as OrderStatus;
@@ -168,12 +164,32 @@ export default function DashboardPage() {
       )}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="text-2xl font-semibold">Dashboard</h1>
-        <BranchFilter
-          selectedBranchIds={selectedBranchIds}
-          onChange={setSelectedBranchIds}
-          compactLabel
-          disabled={isBranchHead}
-        />
+        {isBranchHead ? (
+          <select
+            className="h-10 min-h-[2.5rem] min-w-[140px] disabled:opacity-70"
+            value={effectiveBranchId ?? ''}
+            disabled
+            title="Your assigned branch (cannot change)"
+          >
+            <option value={user?.branchId ?? ''}>
+              {branches.find((b) => b.id === user?.branchId)?.name ?? user?.branchId ?? '—'}
+            </option>
+          </select>
+        ) : (
+          <select
+            className="h-10 min-h-[2.5rem] min-w-[140px]"
+            value={branchId}
+            onChange={(e) => setBranchId(e.target.value)}
+            title="Filter dashboard by branch name"
+          >
+            <option value="">All branches</option>
+            {branches.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name ?? b.id}
+              </option>
+            ))}
+          </select>
+        )}
       </div>
 
       {/* KPIs in one row */}

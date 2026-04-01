@@ -126,7 +126,7 @@ export interface OrderAdminSummary {
     /** Optional Google Maps URL saved from the mobile app. */
     googleMapUrl?: string | null;
   };
-  branch: { id: string; name: string; address: string; gstNumber?: string | null; panNumber?: string | null } | null;
+  branch: { id: string; name: string; address: string; phone?: string | null; gstNumber?: string | null; panNumber?: string | null; footerNote?: string | null } | null;
   orderItems: Array<{
     id: string;
     name?: string;

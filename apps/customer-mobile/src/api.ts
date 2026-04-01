@@ -644,6 +644,19 @@ export interface OrderInvoice {
   items?: OrderInvoiceItem[];
 }
 
+export interface CustomerPriceListLine {
+  segment: string;
+  service: string;
+  priceRupees: number;
+}
+
+export interface CustomerPriceListItem {
+  itemId: string;
+  name: string;
+  icon?: string | null;
+  lines: CustomerPriceListLine[];
+}
+
 export async function createOrder(
   token: string,
   body: {
@@ -720,6 +733,19 @@ export async function listOrderInvoices(
   });
   if (!res.ok) throw new Error('Failed to load invoices');
   return res.json() as Promise<OrderInvoice[]>;
+}
+
+export async function listPriceList(token: string): Promise<CustomerPriceListItem[]> {
+  const base = apiBase();
+  if (!base) throw new Error('API URL not set. Set EXPO_PUBLIC_API_URL in .env and restart Expo.');
+  const res = await fetchWithTimeout(`${base}/items/price-list`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const msg = await parseErrorResponse(res);
+    throw new Error(msg);
+  }
+  return res.json() as Promise<CustomerPriceListItem[]>;
 }
 
 // --- Order feedback (customer) ---

@@ -908,7 +908,7 @@ export function InvoiceBuilder({
             className="min-h-[60px] w-full rounded-md border px-3 py-2 text-sm ack-comments-input"
             value={comments}
             onChange={(e) => onCommentsChange(e.target.value)}
-            placeholder="Thank you, we will deliver within 3 days. Bill may change at delivery."
+            placeholder="Thank you"
           />
         </div>
       )}

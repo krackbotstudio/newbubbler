@@ -22,4 +22,9 @@ export class ItemsController {
       serviceType: i.serviceType,
     }));
   }
+
+  @Get('price-list')
+  async listPriceList() {
+    return this.itemsService.listPriceList();
+  }
 }

@@ -72,3 +72,10 @@ export interface DashboardKpisResponse {
   activeSubscriptionsCount: number;
   totalCustomersCount: number;
 }
+
+export interface CompletedCatalogItemQuantity {
+  itemName: string;
+  segment: string;
+  service: string;
+  quantity: number;
+}

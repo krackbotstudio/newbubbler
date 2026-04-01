@@ -16,6 +16,8 @@ interface BranchFilterProps {
   compactLabel?: boolean;
   /** When true, filter is locked (e.g. Branch Head sees only their assigned branch) */
   disabled?: boolean;
+  /** Selection behavior: multi-select (default) or single-select dropdown */
+  selectionMode?: 'multi' | 'single';
 }
 
 export function BranchFilter({
@@ -25,6 +27,7 @@ export function BranchFilter({
   className,
   compactLabel = true,
   disabled = false,
+  selectionMode = 'multi',
 }: BranchFilterProps) {
   const { data: branches = [] } = useBranches();
   const [open, setOpen] = useState(false);
@@ -43,9 +46,12 @@ export function BranchFilter({
 
   const isAll = selectedBranchIds.length === 0;
   const selectedBranches = branches.filter((b) => selectedBranchIds.includes(b.id));
+  const singleSelectedId = selectedBranchIds[0] ?? null;
 
   const label = isAll
     ? 'All branches'
+    : selectionMode === 'single'
+      ? (branches.find((b) => b.id === singleSelectedId)?.name ?? placeholder)
     : compactLabel
       ? selectedBranchIds.length === 1
         ? (branches.find((b) => b.id === selectedBranchIds[0])?.name ?? '1 branch')
@@ -70,6 +76,11 @@ export function BranchFilter({
 
   const selectAll = () => {
     onChange([]);
+    setOpen(false);
+  };
+
+  const selectSingleBranch = (id: string) => {
+    onChange([id]);
     setOpen(false);
   };
 
@@ -99,6 +110,20 @@ export function BranchFilter({
           <div className="my-1 border-t" />
           {branches.length === 0 ? (
             <p className="px-2 py-1 text-muted-foreground text-xs">No branches</p>
+          ) : selectionMode === 'single' ? (
+            branches.map((b) => (
+              <button
+                key={b.id}
+                type="button"
+                className={cn(
+                  'w-full rounded px-2 py-1.5 text-left text-sm hover:bg-accent',
+                  singleSelectedId === b.id && 'bg-accent/60 font-medium',
+                )}
+                onClick={() => selectSingleBranch(b.id)}
+              >
+                {b.name}
+              </button>
+            ))
           ) : (
             branches.map((b) => (
               <label

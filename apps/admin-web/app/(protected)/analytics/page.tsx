@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect, useMemo } from 'react';
-import { useAnalyticsRevenue } from '@/hooks/useAnalytics';
+import { useAnalyticsRevenue, useAnalyticsCompletedCatalogItems } from '@/hooks/useAnalytics';
 import { useOrders } from '@/hooks/useOrders';
 import { useBranches } from '@/hooks/useBranches';
 import { AnalyticsFilterBar, type BreakdownMode } from '@/components/admin/analytics/AnalyticsFilterBar';
@@ -10,6 +10,7 @@ import { RevenueLineChart } from '@/components/admin/analytics/RevenueLineChart'
 import { RevenueBreakdownTable } from '@/components/admin/analytics/RevenueBreakdownTable';
 import { OrderCategoriesPieChart } from '@/components/admin/analytics/OrderCategoriesPieChart';
 import { AnalyticsOrdersList } from '@/components/admin/analytics/AnalyticsOrdersList';
+import { CompletedCatalogItemsTable } from '@/components/admin/analytics/CompletedCatalogItemsTable';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { toAnalyticsPoints, type AdminOrdersFilters } from '@/types';
@@ -63,6 +64,16 @@ export default function AnalyticsPage() {
   const queryEnabled = !isCustom || (!!appliedDateFrom && !!appliedDateTo);
 
   const { data, isLoading, error } = useAnalyticsRevenue({
+    preset: queryPreset,
+    dateFrom: queryDateFrom || undefined,
+    dateTo: queryDateTo || undefined,
+    branchId: effectiveBranchId ?? undefined,
+    enabled: queryEnabled,
+  });
+  const {
+    data: completedCatalogItems = [],
+    isLoading: completedCatalogLoading,
+  } = useAnalyticsCompletedCatalogItems({
     preset: queryPreset,
     dateFrom: queryDateFrom || undefined,
     dateTo: queryDateTo || undefined,
@@ -352,6 +363,21 @@ export default function AnalyticsPage() {
                     }
                     hasMore={ordersHasMore}
                     isLoadingMore={ordersLoading}
+                  />
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Completed catalog quantities</CardTitle>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Items ordered in completed orders only, grouped by item, segment and service.
+                  </p>
+                </CardHeader>
+                <CardContent>
+                  <CompletedCatalogItemsTable
+                    rows={completedCatalogItems}
+                    isLoading={completedCatalogLoading}
                   />
                 </CardContent>
               </Card>

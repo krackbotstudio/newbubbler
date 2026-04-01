@@ -66,6 +66,7 @@ export function AdminUsersTable() {
   const [dialogOpen, setDialogOpen] = useState(false);
   /** Last password shown per user (from reset or create) – session only, not persisted */
   const [lastShownPasswords, setLastShownPasswords] = useState<Record<string, string>>({});
+  const [visiblePasswordUserIds, setVisiblePasswordUserIds] = useState<Record<string, true>>({});
   const [resettingUserId, setResettingUserId] = useState<string | null>(null);
 
   const { query, cursor, setCursor } = useAdminUsers(filters);
@@ -76,6 +77,7 @@ export function AdminUsersTable() {
     try {
       const { tempPassword } = await resetAdminUserPassword(user.id);
       setLastShownPasswords((prev) => ({ ...prev, [user.id]: tempPassword }));
+      setVisiblePasswordUserIds((prev) => ({ ...prev, [user.id]: true }));
       toast.success('Password reset. Copy from the table and share with the user.');
     } catch (e) {
       toast.error(getFriendlyErrorMessage(e));
@@ -93,6 +95,13 @@ export function AdminUsersTable() {
     setCurrentUser(getStoredUser());
   }, []);
   const data = query.data;
+  const getPasswordState = (userId: string) => {
+    const pwd = lastShownPasswords[userId];
+    return {
+      value: pwd ?? '',
+      hasValue: !!pwd,
+    };
+  };
 
   return (
     <div className="space-y-4">
@@ -201,6 +210,11 @@ export function AdminUsersTable() {
               </tr>
             )}
             {data?.data.map((user) => (
+              (() => {
+                const isProtected = (user.email ?? '').trim().toLowerCase() === PROTECTED_ADMIN_EMAIL;
+                const pwdState = getPasswordState(user.id);
+                const isPasswordVisible = !!visiblePasswordUserIds[user.id];
+                return (
               <tr key={user.id} className="border-t">
                 <td className="px-3 py-2 align-middle">
                   <div className="font-medium">{user.name ?? '—'}</div>
@@ -228,20 +242,52 @@ export function AdminUsersTable() {
                   {new Date(user.createdAt).toLocaleDateString()}
                 </td>
                 <td className="px-3 py-2 align-middle">
-                  {lastShownPasswords[user.id] ? (
+                  {isProtected ? (
+                    <span className="text-xs text-muted-foreground">Protected</span>
+                  ) : pwdState.hasValue && isPasswordVisible ? (
                     <div className="flex flex-wrap items-center gap-1.5">
                       <code className="rounded bg-muted px-1.5 py-0.5 text-xs font-mono">
-                        {lastShownPasswords[user.id]}
+                        {pwdState.value}
                       </code>
                       <Button
                         variant="ghost"
                         size="sm"
                         className="h-7 w-7 p-0"
-                        onClick={() => handleCopyPassword(lastShownPasswords[user.id])}
+                        onClick={() => handleCopyPassword(pwdState.value)}
                         title="Copy password"
                       >
                         <Copy className="h-3.5 w-3.5" />
                       </Button>
+                    </div>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">Hidden</span>
+                  )}
+                </td>
+                <td className="px-3 py-2 align-middle text-right">
+                  <div className="flex justify-end gap-1.5">
+                    {!isProtected && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => {
+                          const current = lastShownPasswords[user.id];
+                          if (current) {
+                            setVisiblePasswordUserIds((prev) => {
+                              const next = { ...prev };
+                              if (next[user.id]) delete next[user.id];
+                              else next[user.id] = true;
+                              return next;
+                            });
+                            return;
+                          }
+                          toast.info('No visible password yet. Use Reset password to generate one.');
+                        }}
+                      >
+                        {isPasswordVisible ? 'Hide password' : 'Show password'}
+                      </Button>
+                    )}
+                    {!isProtected && (
                       <Button
                         variant="outline"
                         size="sm"
@@ -249,23 +295,10 @@ export function AdminUsersTable() {
                         onClick={() => handleResetPasswordInTable(user)}
                         disabled={resettingUserId === user.id}
                       >
-                        {resettingUserId === user.id ? 'Resetting…' : 'Reset'}
+                        {resettingUserId === user.id ? 'Resetting…' : 'Reset password'}
                       </Button>
-                    </div>
-                  ) : (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-7 text-xs"
-                      onClick={() => handleResetPasswordInTable(user)}
-                      disabled={resettingUserId === user.id}
-                    >
-                      {resettingUserId === user.id ? 'Resetting…' : 'Reset to reveal'}
-                    </Button>
-                  )}
-                </td>
-                <td className="px-3 py-2 align-middle text-right">
-                  <div className="flex justify-end gap-1.5">
+                    )}
+                    {!isProtected && (
                     <Button
                       variant="outline"
                       size="sm"
@@ -277,7 +310,8 @@ export function AdminUsersTable() {
                     >
                       Edit
                     </Button>
-                    {user.email !== PROTECTED_ADMIN_EMAIL && (
+                    )}
+                    {!isProtected && (
                       <Button
                         variant="outline"
                         size="sm"
@@ -299,6 +333,8 @@ export function AdminUsersTable() {
                   </div>
                 </td>
               </tr>
+                );
+              })()
             ))}
           </tbody>
         </table>
@@ -335,6 +371,7 @@ export function AdminUsersTable() {
         open={dialogOpen}
         onPasswordShown={(userId, password) => {
           setLastShownPasswords((prev) => ({ ...prev, [userId]: password }));
+          setVisiblePasswordUserIds((prev) => ({ ...prev, [userId]: true }));
         }}
         onOpenChange={(open) => {
           setDialogOpen(open);

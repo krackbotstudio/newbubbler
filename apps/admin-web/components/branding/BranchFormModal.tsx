@@ -111,14 +111,14 @@ export function BranchFormModal({ branch, open, onOpenChange, mode }: BranchForm
     const body = {
       name: result.data.name,
       address: result.data.address,
-      phone: result.data.phone ?? undefined,
-      email: result.data.email ?? undefined,
-      gstNumber: result.data.gstNumber ?? undefined,
-      panNumber: result.data.panNumber ?? undefined,
-      upiId: upiId.trim() || undefined,
-      upiPayeeName: upiPayeeName.trim() || undefined,
-      upiLink: upiLink.trim() || undefined,
-      footerNote: result.data.footerNote ?? undefined,
+      phone: result.data.phone,
+      email: result.data.email,
+      gstNumber: result.data.gstNumber,
+      panNumber: result.data.panNumber,
+      upiId: result.data.upiId,
+      upiPayeeName: result.data.upiPayeeName,
+      upiLink: result.data.upiLink,
+      footerNote: result.data.footerNote,
       isDefault: isMainBranch,
     };
     if (mode === 'add') {

@@ -31,6 +31,13 @@ export interface RevenueResult {
   breakdown: RevenueBreakdownItem[];
 }
 
+export interface CompletedCatalogItemQuantity {
+  itemName: string;
+  segment: string;
+  service: string;
+  quantity: number;
+}
+
 export interface AnalyticsRepo {
   getRevenue(
     dateFrom: Date,
@@ -38,4 +45,9 @@ export interface AnalyticsRepo {
     breakdownKind: 'daily' | 'monthly',
     branchId?: string,
   ): Promise<RevenueResult>;
+  getCompletedCatalogItemQuantities(
+    dateFrom: Date,
+    dateTo: Date,
+    branchId?: string,
+  ): Promise<CompletedCatalogItemQuantity[]>;
 }

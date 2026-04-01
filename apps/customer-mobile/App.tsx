@@ -26,8 +26,6 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as Print from 'expo-print';
-import * as DateTimePickerModule from '@react-native-community/datetimepicker';
-const DateTimePicker = DateTimePickerModule?.default ?? DateTimePickerModule;
 import krackbotLogo from './assets/krackbot-logo.png';
 import { checkApiConnection } from './src/config/api';
 import {
@@ -55,9 +53,11 @@ import {
   brandingWelcomeBackgroundFullUrl,
   getPublicCarousel,
   carouselImageFullUrl,
+  listPriceList,
   purchaseSubscription,
   registerPushToken,
   type BackendAddress,
+  type CustomerPriceListItem,
   type PublicBrandingResponse,
   type OrderSummary,
   type OrderDetail,
@@ -124,6 +124,10 @@ function toLocalDateKey(d: Date): string {
 }
 
 export default function App() {
+  const [windowWidth, setWindowWidth] = useState(Dimensions.get('window').width);
+  const isDesktopWeb = Platform.OS === 'web' && windowWidth >= 1024;
+  const desktopMobileFrameWidth = 390;
+  const appScreenWidth = isDesktopWeb ? desktopMobileFrameWidth : windowWidth;
   const [step, setStep] = useState<Step>('phone');
   const [initializing, setInitializing] = useState(true);
   const [homeScreen, setHomeScreen] = useState<HomeScreen>('home');
@@ -158,7 +162,10 @@ export default function App() {
   const [bookingAddressId, setBookingAddressId] = useState<string | null>(null);
   const [bookingAddress, setBookingAddress] = useState<BackendAddress | null>(null);
   const [bookingDate, setBookingDate] = useState('');
-  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [webDatePickerVisible, setWebDatePickerVisible] = useState(false);
+  const [webCalendarMonth, setWebCalendarMonth] = useState<Date>(new Date());
+  const [webHolidayDates, setWebHolidayDates] = useState<Record<string, true>>({});
+  const [webHolidayLoading, setWebHolidayLoading] = useState(false);
   const [bookingTimeSlot, setBookingTimeSlot] = useState('');
   const [slotAvailability, setSlotAvailability] = useState<{
     isHoliday: boolean;
@@ -198,6 +205,10 @@ export default function App() {
   const [subscriptionDetailLoading, setSubscriptionDetailLoading] = useState(false);
   const [subscriptionInvoicePreviewUri, setSubscriptionInvoicePreviewUri] = useState<string | null>(null);
   const [notificationsModalVisible, setNotificationsModalVisible] = useState(false);
+  const [priceListModalVisible, setPriceListModalVisible] = useState(false);
+  const [priceListLoading, setPriceListLoading] = useState(false);
+  const [priceListError, setPriceListError] = useState<string | null>(null);
+  const [priceListItems, setPriceListItems] = useState<CustomerPriceListItem[]>([]);
   const [subscriptionInvoiceLoading, setSubscriptionInvoiceLoading] = useState(false);
   const [subscriptionInvoiceError, setSubscriptionInvoiceError] = useState<string | null>(null);
   const [orderFilter, setOrderFilter] = useState<OrderFilter>('all');
@@ -214,6 +225,13 @@ export default function App() {
   const [purchaseConfirm, setPurchaseConfirm] = useState<{ planId: string; planName: string; addressId: string; addressLabel: string } | null>(null);
   const [returnToBookPickupAddress, setReturnToBookPickupAddress] = useState(false);
   const [editingAddressId, setEditingAddressId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const sub = Dimensions.addEventListener('change', ({ window }) => {
+      setWindowWidth(window.width);
+    });
+    return () => sub.remove();
+  }, []);
 
   // --- Order feedback (shown after DELIVERED + CAPTURED) ---
   const [feedbackModalVisible, setFeedbackModalVisible] = useState(false);
@@ -315,6 +333,21 @@ export default function App() {
     return list;
   }, [orders, meData?.activeSubscriptions]);
 
+  const openPriceListModal = useCallback(async () => {
+    setPriceListModalVisible(true);
+    if (!token) return;
+    try {
+      setPriceListLoading(true);
+      setPriceListError(null);
+      const rows = await listPriceList(token);
+      setPriceListItems(rows);
+    } catch (e) {
+      setPriceListError(e instanceof Error ? e.message : 'Failed to load price list');
+    } finally {
+      setPriceListLoading(false);
+    }
+  }, [token]);
+
   /** Prefill houseNo, streetArea, city for edit: use stored fields when present, else parse from addressLine. */
   const prefillAddressFields = useCallback((a: BackendAddress) => {
     const h = (a.houseNo != null && String(a.houseNo).trim() !== '') ? String(a.houseNo).trim() : '';
@@ -342,6 +375,7 @@ export default function App() {
   const carouselPageRef = useRef(0);
   const googleMapsWebViewRef = useRef<WebView>(null);
   const onMapsUrlReceivedRef = useRef<((url: string) => void) | null>(null);
+  const webHolidayCacheRef = useRef<Record<string, Record<string, true>>>({});
 
   useEffect(() => {
     if (step === 'phone') {
@@ -435,7 +469,7 @@ export default function App() {
     if (step !== 'done' || homeScreen !== 'home') return;
     const total = carouselImageUrls.length > 0 ? carouselImageUrls.length : 3;
     if (total <= 1) return;
-    const winW = Dimensions.get('window').width;
+    const winW = appScreenWidth;
     const id = setInterval(() => {
       const next = (carouselPageRef.current + 1) % total;
       carouselPageRef.current = next;
@@ -489,212 +523,364 @@ export default function App() {
     }
   }, []);
 
-  const buildFinalInvoiceHtml = useCallback(async (inv: OrderInvoice): Promise<string> => {
-    const b = welcomeBranding;
-    const businessName = b?.businessName?.trim() || 'WeYou';
-    const logoUrl = b?.logoUrl ? (brandingLogoFullUrl(b.logoUrl) ?? null) : null;
-    const logoDataUri = logoUrl ? await imageToDataUri(logoUrl) : null;
-    const order = orderDetail;
-    const issuedAt = inv.issuedAt ? new Date(inv.issuedAt) : null;
-    const items = inv.items ?? [];
+  const applyGoogleMapsUrlToAddress = useCallback(async (url: string) => {
+    const finalUrl = (url || '').trim();
+    if (!finalUrl) return;
+    setAddGoogleUrl(finalUrl);
+    const coords = parseLatLngFromMapsUrl(finalUrl);
+    if (!coords) return;
+    const result = await reverseGeocodeAddress(coords.lat, coords.lng);
+    if (!result) return;
+    setAddStreetArea([result.street, result.area].filter(Boolean).join(', '));
+    setAddCity(result.city);
+    setAddPincode(result.pincode);
+    setAddAddressLine(result.addressLine);
+  }, []);
 
-    const iconDataUris: Record<string, string | null> = {};
-    await Promise.all(
-      items.map(async (it) => {
-        const raw = it.icon && (it.icon.startsWith('http') || it.icon.startsWith('/')) ? brandingLogoFullUrl(it.icon) : null;
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const win = (globalThis as { window?: Window }).window;
+    if (!win?.addEventListener) return;
+    const applyPayload = (d: {
+      houseNo?: string;
+      streetArea?: string;
+      city?: string;
+      pincode?: string;
+      addressLine?: string;
+      googleUrl?: string;
+    } | null | undefined) => {
+      if (!d) return;
+      if (typeof d.houseNo === 'string') setAddHouseNo(d.houseNo);
+      if (typeof d.streetArea === 'string') setAddStreetArea(d.streetArea);
+      if (typeof d.city === 'string') setAddCity(d.city);
+      if (typeof d.pincode === 'string') setAddPincode(d.pincode.replace(/\D/g, '').slice(0, 6));
+      if (typeof d.addressLine === 'string') setAddAddressLine(d.addressLine);
+      if (typeof d.googleUrl === 'string') setAddGoogleUrl(d.googleUrl);
+      setError(null);
+    };
+    const onPwaMapAddress = (evt: Event) => {
+      const customEvt = evt as CustomEvent<{
+        houseNo?: string;
+        streetArea?: string;
+        city?: string;
+        pincode?: string;
+        addressLine?: string;
+        googleUrl?: string;
+      }>;
+      applyPayload(customEvt?.detail);
+    };
+    const readFromStorage = () => {
+      try {
+        const raw = win.localStorage?.getItem('weyou:pwa-map-address');
         if (!raw) return;
-        iconDataUris[it.id] = await imageToDataUri(raw);
-      })
-    );
+        const payload = JSON.parse(raw) as {
+          houseNo?: string;
+          streetArea?: string;
+          city?: string;
+          pincode?: string;
+          addressLine?: string;
+          googleUrl?: string;
+        };
+        win.localStorage?.removeItem('weyou:pwa-map-address');
+        applyPayload(payload);
+      } catch {
+        /* ignore */
+      }
+    };
+    win.addEventListener('weyou:pwa-map-address', onPwaMapAddress as EventListener);
+    const id = win.setInterval(readFromStorage, 600);
+    readFromStorage();
+    return () => {
+      win.removeEventListener('weyou:pwa-map-address', onPwaMapAddress as EventListener);
+      win.clearInterval(id);
+    };
+  }, []);
 
-    const money = (paise: number) => `₹${(paise / 100).toFixed(2)}`;
-    const subtotal = inv.subtotal ?? inv.total;
-    const tax = inv.tax ?? 0;
-    const discountPaise = inv.discountPaise ?? 0;
+  const buildFinalInvoiceHtml = useCallback(
+    async (inv: OrderInvoice, ackInvoice?: OrderInvoice | null): Promise<string> => {
+      const b = welcomeBranding;
+      const businessName = b?.businessName?.trim() || 'WeYou';
+      const logoUrl = b?.logoUrl ? (brandingLogoFullUrl(b.logoUrl) ?? null) : null;
+      const logoDataUri = logoUrl ? await imageToDataUri(logoUrl) : null;
 
-    const customerName = name?.trim() ? escapeHtml(name.trim()) : '—';
-    const customerPhoneLine = userPhone ? escapeHtml(userPhone) : '—';
-    const addressLine = order?.addressLine ? escapeHtml(order.addressLine) : '';
-    const pincodeLine = order?.pincode ? escapeHtml(order.pincode) : '';
-    const pickupLine = order?.pickupDate ? escapeHtml(order.pickupDate) : '';
-    const timeWindowLine = order?.timeWindow ? escapeHtml(order.timeWindow) : '';
-    const servicesLine = order?.serviceTypes?.length
-      ? escapeHtml(order.serviceTypes.map(serviceTypeDisplayLabel).join(', '))
-      : (order?.serviceType ? escapeHtml(serviceTypeDisplayLabel(order.serviceType)) : '—');
+      const order = orderDetail;
+      const items = inv.items ?? [];
 
-    const issuedStr = issuedAt
-      ? issuedAt.toLocaleString('en-IN', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-      : '—';
+      const iconDataUris: Record<string, string | null> = {};
+      await Promise.all(
+        items.map(async (it) => {
+          const raw = it.icon && (it.icon.startsWith('http') || it.icon.startsWith('/')) ? brandingLogoFullUrl(it.icon) : null;
+          if (!raw) return;
+          iconDataUris[it.id] = await imageToDataUri(raw);
+        })
+      );
 
-    const branchAddress = inv.branchAddress?.trim()
-      || b?.address?.trim()
-      || '';
-    const gstLine = (inv.gstNumber ?? b?.gstNumber)?.trim()
-      ? `GSTIN: ${(inv.gstNumber ?? b?.gstNumber)!.trim()}`
-      : '';
-    const panLine = (inv.panNumber ?? b?.panNumber)?.trim()
-      ? `PAN: ${(inv.panNumber ?? b?.panNumber)!.trim()}`
-      : '';
+      const money = (paise: number) => `₹${(paise / 100).toFixed(2)}`;
+      const subtotal = inv.subtotal ?? inv.total;
+      const tax = inv.tax ?? 0;
+      const discountPaise = inv.discountPaise ?? 0;
+      const taxPercent = subtotal > 0 ? Math.round((tax / subtotal) * 1000) / 10 : 0;
 
-    return `<!doctype html>
+      const formatDate = (value: string | null | undefined): string | null => {
+        if (!value) return null;
+        const d = new Date(value);
+        if (Number.isNaN(d.getTime())) return value;
+        return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+      };
+      const formatDateTime = (value: string | null | undefined): string | null => {
+        if (!value) return null;
+        const d = new Date(value);
+        if (Number.isNaN(d.getTime())) return value;
+        const date = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+        const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        return `${date} ${time}`;
+      };
+
+      const customerName = name?.trim() ? escapeHtml(name.trim()) : '—';
+      const addressLine = order?.addressLine ? escapeHtml(order.addressLine) : '';
+      const pincodeLine = order?.pincode ? escapeHtml(order.pincode) : '';
+
+      const pickupDateLine = escapeHtml(formatDate(order?.pickupDate) ?? '');
+      const timeWindowLine = order?.timeWindow ? escapeHtml(order.timeWindow) : '';
+
+      const servicesText = order?.serviceTypes?.length
+        ? order.serviceTypes.map(serviceTypeDisplayLabel).join(', ')
+        : order?.serviceType
+          ? serviceTypeDisplayLabel(order.serviceType)
+          : '—';
+
+      const orderServiceLine = order?.orderType === 'SUBSCRIPTION' ? 'Subscription booking' : `Service: ${servicesText}`;
+      const orderServiceLineEscaped = escapeHtml(orderServiceLine);
+
+      const issuedStr = formatDateTime(inv.issuedAt) ?? '—';
+      const issuedStrEscaped = escapeHtml(issuedStr);
+
+      const branchAddressFull = inv.branchAddress?.trim() || b?.address?.trim() || '';
+      const branchName = branchAddressFull ? branchAddressFull.split(',')[0]?.trim() || '' : '';
+
+      const gstValue = (inv.gstNumber ?? b?.gstNumber)?.trim();
+      const panValue = (inv.panNumber ?? b?.panNumber)?.trim();
+      const gstLineEscaped = gstValue ? escapeHtml(`GST: ${gstValue}`) : '';
+      const panLineEscaped = panValue ? escapeHtml(`PAN: ${panValue}`) : '';
+
+      const useMatrix = items.some((it) => Boolean(it.segmentLabel || it.serviceLabel));
+
+      const invoiceCodeEscaped = escapeHtml(inv.code ?? '—');
+
+      const ackCode = ackInvoice?.code ?? null;
+      const ackCodeEscaped = ackCode ? escapeHtml(ackCode) : null;
+      const ackIssuedStr = formatDateTime(ackInvoice?.issuedAt);
+      const ackIssuedStrEscaped = ackIssuedStr ? escapeHtml(ackIssuedStr) : null;
+      const ackSubtotalPaise = ackInvoice ? ackInvoice.subtotal ?? ackInvoice.total : null;
+
+      const footerLocation = branchName || branchAddressFull;
+      const footerEmail = inv.branchEmail?.trim() || '';
+      const footerPhone = inv.branchPhone?.trim() || '';
+      const footerLine = [footerLocation, footerEmail, footerPhone]
+        .map((p) => (p ? p.trim() : ''))
+        .filter(Boolean)
+        .map((p) => escapeHtml(p))
+        .join(' · ');
+
+      const termsText = b?.termsAndConditions?.trim() ?? '';
+
+      const itemCell = (it: OrderInvoice['items'][number]): string => {
+        const nameEscaped = escapeHtml(it.name ?? '—');
+        const icon = iconDataUris[it.id] ?? null;
+        if (!icon) return `<span>${nameEscaped}</span>`;
+        return `<span style="display:inline-flex;align-items:center;gap:6px;"><img src="${icon}" alt="" style="width:16px;height:16px;object-fit:contain;border-radius:3px;vertical-align:middle;" /><span>${nameEscaped}</span></span>`;
+      };
+
+      return `<!doctype html>
 <html>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
       * { box-sizing: border-box; }
-      body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; margin: 0; padding: 24px; color: #111827; }
-      .card { border: 1px solid #e5e7eb; border-radius: 14px; padding: 18px; }
-      .header { display: flex; gap: 14px; align-items: flex-start; padding-bottom: 14px; border-bottom: 1px solid #e5e7eb; }
-      .logo { width: 72px; height: 72px; border-radius: 12px; background: #f3f4f6; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+      @page { size: A4; margin: 0; }
+      body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; margin: 0; background: #fdf2f8; color: #111827; }
+      .page { padding: 24px; }
+      .invoice { background: #fff; max-width: 720px; margin: 0 auto; padding: 24px; }
+      .topRow { display: flex; gap: 16px; align-items: flex-start; padding-bottom: 16px; border-bottom: 1px solid #e5e7eb; }
+      .logo { width: 56px; height: 56px; border-radius: 12px; background: #f3f4f6; display: flex; align-items: center; justify-content: center; overflow: hidden; flex: none; }
       .logo img { width: 100%; height: 100%; object-fit: contain; object-position: left top; }
-      .title { font-size: 18px; font-weight: 800; margin: 0; }
-      .muted { color: #6b7280; font-size: 12px; margin: 2px 0 0; }
-      .meta { margin-left: auto; text-align: right; }
-      .meta .k { font-size: 11px; color: #6b7280; margin: 0; }
-      .meta .v { font-size: 12px; font-weight: 600; margin: 2px 0 8px; }
-      .grid { display: flex; gap: 12px; margin-top: 14px; flex-wrap: wrap; }
-      .box { flex: 1 1 240px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 12px; padding: 12px; }
-      .box h3 { margin: 0 0 8px; font-size: 12px; color: #111827; }
-      .box p { margin: 0; font-size: 12px; color: #374151; line-height: 1.4; }
-      table { width: 100%; border-collapse: collapse; margin-top: 14px; }
-      th, td { padding: 10px 6px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
-      th { text-align: left; font-size: 11px; color: #6b7280; }
-      td { font-size: 12px; color: #111827; }
-      .right { text-align: right; white-space: nowrap; }
-      .item { display: flex; gap: 10px; align-items: flex-start; }
-      .icon { width: 28px; height: 28px; border-radius: 8px; background: #f3f4f6; overflow: hidden; flex: none; }
-      .icon img { width: 100%; height: 100%; object-fit: cover; }
-      .name { font-weight: 700; margin: 0; }
-      .sub { font-size: 11px; color: #6b7280; margin: 2px 0 0; }
-      .totals { margin-top: 14px; display: flex; justify-content: flex-end; }
-      .totals .row { display: flex; justify-content: space-between; gap: 24px; padding: 4px 0; font-size: 12px; }
-      .totals .label { color: #6b7280; }
-      .totals .value { font-weight: 700; }
-      .grand { font-size: 16px; font-weight: 900; padding-top: 8px; border-top: 1px solid #e5e7eb; margin-top: 6px; }
-      .terms { margin-top: 14px; padding-top: 12px; border-top: 1px dashed #e5e7eb; }
-      .terms h4 { margin: 0 0 6px; font-size: 12px; }
-      .terms pre { margin: 0; white-space: pre-wrap; font-family: inherit; font-size: 11px; color: #4b5563; }
-      .footer { margin-top: 14px; text-align: center; font-size: 11px; color: #6b7280; }
+      .biz { flex: 1; min-width: 0; }
+      .bizName { font-size: 18px; font-weight: 800; margin: 0; }
+      .bizBranch { font-size: 14px; color: #6b7280; margin: 4px 0 0; font-weight: 600; }
+      .headerBlocks { display: flex; gap: 16px; align-items: flex-start; justify-content: space-between; margin-top: 16px; }
+      .infoBox { border: 1px solid #e5e7eb; background: #f9fafb; border-radius: 6px; padding: 10px 12px; font-size: 13px; }
+      .infoBoxLabel { font-weight: 800; margin: 0 0 4px; }
+      .infoBoxValue { color: #6b7280; font-size: 12px; margin: 0; line-height: 1.4; }
+      .orderBlock { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; background: #f9fafb; border-radius: 6px; padding: 12px; margin-top: 16px; }
+      .orderLeft { flex: 1 1 260px; min-width: 220px; }
+      .orderTitle { font-weight: 800; margin: 0 0 6px; }
+      .orderText { margin: 4px 0 0; font-size: 13px; color: #111827; }
+      .orderMuted { margin: 4px 0 0; font-size: 13px; color: #6b7280; }
+      .orderRight { flex: 1 1 180px; text-align: right; font-size: 13px; color: #6b7280; }
+      .branchName { font-weight: 900; color: #111827; margin-top: 6px; }
+      table { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 13px; }
+      thead th { padding: 10px 6px 8px; color: #6b7280; font-size: 12px; font-weight: 800; text-align: left; border-bottom: 1px solid #e5e7eb; }
+      tbody td { padding: 10px 6px 8px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+      .tdRight { text-align: right; white-space: nowrap; }
+      .tdCenter { text-align: center; }
+      .naCell { color: #6b7280; font-weight: 700; text-align: center; padding: 16px 6px !important; }
+      .totals { margin-top: 16px; padding-top: 16px; border-top: 1px solid #e5e7eb; text-align: right; }
+      .subtotalText { margin: 0; font-size: 16px; }
+      .totalBig { margin: 6px 0 0; font-size: 22px; font-weight: 900; }
+      .terms { margin-top: 16px; padding-top: 16px; border-top: 1px solid #e5e7eb; font-size: 12px; color: #4b5563; }
+      .termsTitle { margin: 0 0 6px; font-weight: 900; color: #374151; font-size: 13px; }
+      .termsBody { white-space: pre-wrap; }
+      .footer { margin-top: 24px; padding-top: 16px; text-align: center; font-size: 13px; color: #6b7280; }
     </style>
   </head>
   <body>
-    <div class="card">
-      <div class="header">
-        <div class="logo">
+    <div class="page">
+      <div class="invoice">
+        <div class="topRow">
+          <div class="logo">
+            ${
+              logoDataUri
+                ? `<img src="${logoDataUri}" alt="Logo" />`
+                : `<span style="font-size:12px;color:#6b7280;">Logo</span>`
+            }
+          </div>
+          <div class="biz">
+            <p class="bizName">${escapeHtml(businessName)}</p>
+            ${branchName ? `<p class="bizBranch">${escapeHtml(branchName)}</p>` : ''}
+          </div>
+        </div>
+
+        <div class="headerBlocks">
+          <div class="infoBox" style="flex: 1;">
+            <p class="infoBoxLabel">Invoice number</p>
+            <p class="infoBoxValue">${invoiceCodeEscaped}</p>
+            ${
+              inv.issuedAt
+                ? `<p class="infoBoxValue" style="margin-top:6px;">Issued: ${issuedStrEscaped}</p>`
+                : ''
+            }
+          </div>
           ${
-            logoDataUri
-              ? `<img src="${logoDataUri}" alt="Logo" />`
-              : `<span style="font-size:12px;color:#6b7280;">Logo</span>`
+            ackInvoice
+              ? `<div class="infoBox" style="text-align:right; flex-shrink:0;">
+                  <p class="infoBoxLabel">Ref Acknowledgement invoice</p>
+                  <p class="infoBoxValue" style="line-height:1.5;">
+                    ${ackCodeEscaped ? `<span>Code: ${ackCodeEscaped}</span>` : ''}
+                    ${
+                      ackCodeEscaped ? ` · ` : ''
+                    }Subtotal: ${escapeHtml(money(ackSubtotalPaise ?? 0))}
+                  </p>
+                  ${
+                    ackIssuedStrEscaped
+                      ? `<p class="infoBoxValue" style="margin-top:6px;line-height:1.5;">Issued: ${ackIssuedStrEscaped}</p>`
+                      : ''
+                  }
+                </div>`
+              : ''
           }
         </div>
-        <div style="min-width:0;">
-          <p class="title">${escapeHtml(businessName)}</p>
-          <p class="muted">Final Invoice</p>
+
+        <div class="orderBlock">
+          <div class="orderLeft">
+            <p class="orderTitle">Order details</p>
+            <p class="orderText">${customerName}</p>
+            <p class="orderMuted">${orderServiceLineEscaped}</p>
+            <p class="orderText">${addressLine}${addressLine && pincodeLine ? ', ' : ''}${pincodeLine}</p>
+            <p class="orderMuted">Pickup: ${pickupDateLine} ${timeWindowLine}</p>
+          </div>
+
+          <div class="orderRight">
+            ${panLineEscaped ? `<p>${panLineEscaped}</p>` : ''}
+            ${gstLineEscaped ? `<p>${gstLineEscaped}</p>` : ''}
+            ${
+              branchAddressFull
+                ? `${branchName ? `<p class="branchName">${escapeHtml(branchName)}</p>` : ''}<p>${escapeHtml(branchAddressFull)}</p>`
+                : ''
+            }
+          </div>
         </div>
-        <div class="meta">
-          <p class="k">Issued</p>
-          <p class="v">${escapeHtml(issuedStr)}</p>
-          <p class="k">Order</p>
-          <p class="v">${escapeHtml(order?.id ?? '—')}</p>
+
+        <table>
+          <thead>
+            <tr>
+              ${
+                useMatrix
+                  ? `
+                    <th>Item</th>
+                    <th>Segment</th>
+                    <th>Service</th>
+                    <th class="tdRight">Qty</th>
+                    <th class="tdRight">Service cost (₹)</th>
+                    <th class="tdRight">Total cost (₹)</th>
+                  `
+                  : `
+                    <th>Type</th>
+                    <th>Name</th>
+                    <th class="tdRight">Qty</th>
+                    <th class="tdRight">Unit (₹)</th>
+                    <th class="tdRight">Amount (₹)</th>
+                  `
+              }
+            </tr>
+          </thead>
+          <tbody>
+            ${
+              items.length === 0
+                ? `<tr><td colspan="${useMatrix ? 6 : 5}" class="naCell">NA</td></tr>`
+                : items
+                    .map((it) => {
+                      if (useMatrix) {
+                        const segmentEscaped = escapeHtml(it.segmentLabel ?? '—');
+                        const serviceEscaped = escapeHtml(it.serviceLabel ?? '—');
+                        return `<tr>
+                          <td>${itemCell(it)}</td>
+                          <td>${segmentEscaped}</td>
+                          <td>${serviceEscaped}</td>
+                          <td class="tdRight">${escapeHtml(String(it.quantity))}</td>
+                          <td class="tdRight">${escapeHtml(money(it.unitPrice))}</td>
+                          <td class="tdRight">${escapeHtml(money(it.amount))}</td>
+                        </tr>`;
+                      }
+                      const nameEscaped = escapeHtml(it.name ?? '—');
+                      return `<tr>
+                        <td>—</td>
+                        <td>${itemCell(it)}</td>
+                        <td class="tdRight">${escapeHtml(String(it.quantity))}</td>
+                        <td class="tdRight">${escapeHtml(money(it.unitPrice))}</td>
+                        <td class="tdRight">${escapeHtml(money(it.amount))}</td>
+                      </tr>`;
+                    })
+                    .join('\n')
+            }
+          </tbody>
+        </table>
+
+        <div class="totals">
+          <p class="subtotalText">
+            Subtotal: ${escapeHtml(money(subtotal))}
+            ${
+              taxPercent > 0 ? ` · Tax (${taxPercent}%): ${escapeHtml(money(tax))}` : ''
+            }
+            ${
+              discountPaise > 0 ? ` · Discount (₹): -${escapeHtml(money(discountPaise))}` : ''
+            }
+          </p>
+          <p class="totalBig">Total: ${escapeHtml(money(inv.total))}</p>
+        </div>
+
+        ${termsText ? `<div class="terms"><p class="termsTitle">Terms and Conditions</p><div class="termsBody">${escapeHtml(termsText)}</div></div>` : ''}
+
+        <div class="footer">
+          <p style="white-space: pre-wrap;">${footerLine || ''}</p>
         </div>
       </div>
-
-      <div class="grid">
-        <div class="box">
-          <h3>Customer</h3>
-          <p>${customerName}</p>
-          <p class="muted" style="margin-top:4px;">${customerPhoneLine}</p>
-        </div>
-        <div class="box">
-          <h3>Pickup address</h3>
-          <p>${addressLine}${addressLine && pincodeLine ? ', ' : ''}${pincodeLine}</p>
-          <p style="margin-top:6px;"><span class="muted">Pickup:</span> ${pickupLine} ${timeWindowLine}</p>
-          <p style="margin-top:2px;"><span class="muted">Services:</span> ${servicesLine}</p>
-        </div>
-      </div>
-
-      <table>
-        <thead>
-          <tr>
-            <th style="width:55%;">Item</th>
-            <th class="right">Qty</th>
-            <th class="right">Unit</th>
-            <th class="right">Amount</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${
-            items.length
-              ? items
-                  .map((it) => {
-                    const meta = [it.segmentLabel, it.serviceLabel].filter(Boolean).join(' · ');
-                    const icon = iconDataUris[it.id] ?? null;
-                    return `<tr>
-                      <td>
-                        <div class="item">
-                          <div class="icon">${
-                            icon ? `<img src="${icon}" alt="" />` : ''
-                          }</div>
-                          <div style="min-width:0;">
-                            <p class="name">${escapeHtml(it.name)}</p>
-                            ${meta ? `<p class="sub">${escapeHtml(meta)}</p>` : ''}
-                          </div>
-                        </div>
-                      </td>
-                      <td class="right">${escapeHtml(String(it.quantity))}</td>
-                      <td class="right">${escapeHtml(money(it.unitPrice))}</td>
-                      <td class="right">${escapeHtml(money(it.amount))}</td>
-                    </tr>`;
-                  })
-                  .join('\n')
-              : `<tr><td colspan="4" class="muted">No items</td></tr>`
-          }
-        </tbody>
-      </table>
-
-      <div class="totals">
-        <div style="width: 280px;">
-          <div class="row"><span class="label">Subtotal</span><span class="value">${escapeHtml(money(subtotal))}</span></div>
-          ${tax > 0 ? `<div class="row"><span class="label">Tax</span><span class="value">${escapeHtml(money(tax))}</span></div>` : ''}
-          ${discountPaise > 0 ? `<div class="row"><span class="label">Discount</span><span class="value">- ${escapeHtml(money(discountPaise))}</span></div>` : ''}
-          <div class="row grand"><span>Total</span><span>${escapeHtml(money(inv.total))}</span></div>
-        </div>
-      </div>
-
-      ${
-        branchAddress || gstLine || panLine
-          ? `<div class="box" style="margin-top: 10px;">
-               <h3>Branch &amp; tax details</h3>
-               ${
-                 branchAddress
-                   ? `<p>${escapeHtml(branchAddress)}</p>`
-                   : ''
-               }
-               ${
-                 gstLine
-                   ? `<p>${escapeHtml(gstLine)}</p>`
-                   : ''
-               }
-               ${
-                 panLine
-                   ? `<p>${escapeHtml(panLine)}</p>`
-                   : ''
-               }
-             </div>`
-          : ''
-      }
-
-      ${
-        b?.termsAndConditions?.trim()
-          ? `<div class="terms"><h4>Terms and Conditions</h4><pre>${escapeHtml(b.termsAndConditions.trim())}</pre></div>`
-          : ''
-      }
-      <div class="footer">It's a computer generated invoice, Signature not required.</div>
     </div>
   </body>
 </html>`;
-  }, [brandingLogoFullUrl, imageToDataUri, orderDetail, userPhone, welcomeBranding]);
+    },
+    [brandingLogoFullUrl, imageToDataUri, orderDetail, userPhone, welcomeBranding]
+  );
 
   useEffect(() => {
     if (step === 'done' && homeScreen === 'addresses' && token) {
@@ -1367,6 +1553,42 @@ export default function App() {
     }
   };
 
+  const loadWebHolidayDates = useCallback(async (monthDate: Date, pincode: string) => {
+    const year = monthDate.getFullYear();
+    const month = monthDate.getMonth();
+    const cacheKey = `${pincode}:${year}-${month + 1}`;
+    const cached = webHolidayCacheRef.current[cacheKey];
+    if (cached) {
+      setWebHolidayDates((prev) => ({ ...prev, ...cached }));
+      return;
+    }
+    setWebHolidayLoading(true);
+    try {
+      const daysInMonth = new Date(year, month + 1, 0).getDate();
+      const keys = Array.from({ length: daysInMonth }, (_, i) =>
+        toLocalDateKey(new Date(year, month, i + 1))
+      );
+      const results = await Promise.all(
+        keys.map(async (dateKey) => {
+          try {
+            const avail = await getSlotAvailability(pincode, dateKey);
+            return avail.isHoliday ? dateKey : null;
+          } catch {
+            return null;
+          }
+        })
+      );
+      const monthHolidays: Record<string, true> = {};
+      results.forEach((d) => {
+        if (d) monthHolidays[d] = true;
+      });
+      webHolidayCacheRef.current[cacheKey] = monthHolidays;
+      setWebHolidayDates((prev) => ({ ...prev, ...monthHolidays }));
+    } finally {
+      setWebHolidayLoading(false);
+    }
+  }, []);
+
   const handleBookingTimeSelect = (timeSlot: string) => {
     setBookingTimeSlot(timeSlot);
     setBookingStep('confirm');
@@ -1756,7 +1978,17 @@ export default function App() {
               style={styles.googleMapsOpenRow}
               onPress={() => {
                 setLastGoogleMapsUrl(addGoogleUrl || 'https://www.google.com/maps');
-                setShowGoogleMapsPicker(true);
+                if (Platform.OS === 'web') {
+                  setShowGoogleMapsPicker(false);
+                  const w = (globalThis as { window?: { dispatchEvent?: (event: Event) => boolean; CustomEvent?: new (type: string, init?: Record<string, unknown>) => Event } }).window;
+                  if (w?.dispatchEvent && w?.CustomEvent) {
+                    w.dispatchEvent(new w.CustomEvent('weyou:pwa-map-popup-open'));
+                  } else {
+                    setShowGoogleMapsPicker(true);
+                  }
+                } else {
+                  setShowGoogleMapsPicker(true);
+                }
               }}
               activeOpacity={0.8}
             >
@@ -1831,6 +2063,28 @@ export default function App() {
               onChangeText={setAddGoogleUrl}
               autoCapitalize="none"
             />
+            <TouchableOpacity
+              style={[styles.buttonSecondary, addFromMapsLoading && styles.buttonDisabled]}
+              onPress={async () => {
+                const finalUrl = addGoogleUrl.trim() || lastGoogleMapsUrl.trim();
+                if (!finalUrl) {
+                  setError('Paste a Google Maps link first.');
+                  return;
+                }
+                setError(null);
+                setAddFromMapsLoading(true);
+                try {
+                  await applyGoogleMapsUrlToAddress(finalUrl);
+                } finally {
+                  setAddFromMapsLoading(false);
+                }
+              }}
+              disabled={addFromMapsLoading}
+            >
+              <Text style={styles.buttonSecondaryText}>
+                {addFromMapsLoading ? 'Getting address…' : 'Use Google Maps link'}
+              </Text>
+            </TouchableOpacity>
             <TouchableOpacity
               style={styles.checkRow}
               onPress={() => setAddIsDefault(!addIsDefault)}
@@ -2166,9 +2420,8 @@ export default function App() {
             maxDate = new Date(bookingSubscriptionValidTill + 'T23:59:59');
           }
         }
-        const pickerValue = bookingDate
-          ? new Date(bookingDate + 'T12:00:00')
-          : minDate;
+        const minDateKey = toLocalDateKey(minDate);
+        const maxDateKey = maxDate ? toLocalDateKey(maxDate) : undefined;
         content = (
           <ScrollView style={styles.scroll} contentContainerStyle={[styles.scrollContent, styles.scrollContentNoTopPadding]}>
             <View style={styles.card}>
@@ -2186,34 +2439,116 @@ export default function App() {
                 </Text>
               ) : null}
               {error && <Text style={styles.error}>{error}</Text>}
-              <TouchableOpacity
-                style={[styles.input, styles.datePickerButton]}
-                onPress={() => setShowDatePicker(true)}
-              >
-                <Text style={bookingDate ? styles.datePickerButtonText : styles.datePickerPlaceholder}>
-                  {bookingDate || 'Tap to choose date'}
-                </Text>
-              </TouchableOpacity>
-              {showDatePicker && (
-                <DateTimePicker
-                  value={pickerValue}
-                  mode="date"
-                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                  minimumDate={minDate}
-                  maximumDate={maxDate}
-                  onChange={(event, selectedDate) => {
-                    if (Platform.OS === 'android') setShowDatePicker(false);
-                    if (event.type === 'set' && selectedDate) {
-                      setBookingDate(toLocalDateKey(selectedDate));
-                    }
+              <>
+                <TouchableOpacity
+                  style={[styles.input, styles.datePickerButton]}
+                  onPress={() => {
+                    const seed = bookingDate ? new Date(bookingDate + 'T12:00:00') : minDate;
+                    const monthSeed = new Date(seed.getFullYear(), seed.getMonth(), 1);
+                    setWebCalendarMonth(monthSeed);
+                    setWebDatePickerVisible(true);
+                    const address = bookingAddress ?? (bookingAddressId ? savedAddresses.find((a) => a.id === bookingAddressId) : null);
+                    if (address?.pincode) void loadWebHolidayDates(monthSeed, address.pincode);
                   }}
-                />
-              )}
-              {Platform.OS === 'ios' && showDatePicker && (
-                <TouchableOpacity style={styles.button} onPress={() => setShowDatePicker(false)}>
-                  <Text style={styles.buttonText}>Done</Text>
+                >
+                  <Text style={bookingDate ? styles.datePickerButtonText : styles.datePickerPlaceholder}>
+                    {bookingDate || 'Tap to choose date'}
+                  </Text>
                 </TouchableOpacity>
-              )}
+                <Modal visible={webDatePickerVisible} transparent animationType="fade" onRequestClose={() => setWebDatePickerVisible(false)}>
+                  <View style={styles.webCalendarBackdrop}>
+                    <View style={styles.webCalendarCard}>
+                      <View style={styles.webCalendarHeader}>
+                        <TouchableOpacity
+                          onPress={() => {
+                            const prev = new Date(webCalendarMonth.getFullYear(), webCalendarMonth.getMonth() - 1, 1);
+                            const prevLast = new Date(prev.getFullYear(), prev.getMonth() + 1, 0);
+                            if (prevLast < minDate) return;
+                            setWebCalendarMonth(prev);
+                            const address = bookingAddress ?? (bookingAddressId ? savedAddresses.find((a) => a.id === bookingAddressId) : null);
+                            if (address?.pincode) void loadWebHolidayDates(prev, address.pincode);
+                          }}
+                          style={styles.webCalendarNavBtn}
+                        >
+                          <Text style={styles.webCalendarNavText}>‹</Text>
+                        </TouchableOpacity>
+                        <Text style={styles.webCalendarTitle}>
+                          {webCalendarMonth.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}
+                        </Text>
+                        <TouchableOpacity
+                          onPress={() => {
+                            const next = new Date(webCalendarMonth.getFullYear(), webCalendarMonth.getMonth() + 1, 1);
+                            if (maxDate && next > new Date(maxDate.getFullYear(), maxDate.getMonth(), 1)) return;
+                            setWebCalendarMonth(next);
+                            const address = bookingAddress ?? (bookingAddressId ? savedAddresses.find((a) => a.id === bookingAddressId) : null);
+                            if (address?.pincode) void loadWebHolidayDates(next, address.pincode);
+                          }}
+                          style={styles.webCalendarNavBtn}
+                        >
+                          <Text style={styles.webCalendarNavText}>›</Text>
+                        </TouchableOpacity>
+                      </View>
+                      <View style={styles.webCalendarWeekRow}>
+                        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((wd) => (
+                          <Text key={wd} style={styles.webCalendarWeekText}>{wd}</Text>
+                        ))}
+                      </View>
+                      <View style={styles.webCalendarDaysGrid}>
+                        {(() => {
+                          const y = webCalendarMonth.getFullYear();
+                          const m = webCalendarMonth.getMonth();
+                          const firstDow = new Date(y, m, 1).getDay();
+                          const daysInMonth = new Date(y, m + 1, 0).getDate();
+                          const cells: Array<{ key: string; day?: number }> = [];
+                          for (let i = 0; i < firstDow; i++) cells.push({ key: `e-${i}` });
+                          for (let d = 1; d <= daysInMonth; d++) cells.push({ key: `d-${d}`, day: d });
+                          while (cells.length % 7 !== 0) cells.push({ key: `t-${cells.length}` });
+                          return cells.map((c) => {
+                            if (!c.day) return <View key={c.key} style={styles.webCalendarDayCell} />;
+                            const dt = new Date(y, m, c.day);
+                            const dateKey = toLocalDateKey(dt);
+                            const isOutOfRange = dt < minDate || (maxDate ? dt > maxDate : false);
+                            const isHoliday = !!webHolidayDates[dateKey];
+                            const isDisabled = isOutOfRange || isHoliday;
+                            const isSelected = bookingDate === dateKey;
+                            return (
+                              <TouchableOpacity
+                                key={c.key}
+                                style={[
+                                  styles.webCalendarDayCell,
+                                  isSelected && styles.webCalendarDaySelected,
+                                  isDisabled && styles.webCalendarDayDisabled,
+                                  isHoliday && styles.webCalendarHolidayDay,
+                                ]}
+                                disabled={isDisabled}
+                                onPress={() => {
+                                  setBookingDate(dateKey);
+                                  setWebDatePickerVisible(false);
+                                }}
+                              >
+                                <Text
+                                  style={[
+                                    styles.webCalendarDayText,
+                                    isSelected && styles.webCalendarDayTextSelected,
+                                    isHoliday && styles.webCalendarHolidayText,
+                                  ]}
+                                >
+                                  {c.day}
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          });
+                        })()}
+                      </View>
+                      {webHolidayLoading ? <Text style={styles.muted}>Loading holidays…</Text> : null}
+                      <Text style={[styles.muted, { marginTop: 8 }]}>Red dates are holidays set in Admin and cannot be selected.</Text>
+                      <TouchableOpacity style={[styles.button, { marginTop: 12 }]} onPress={() => setWebDatePickerVisible(false)}>
+                        <Text style={styles.buttonText}>Done</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </Modal>
+              </>
               <TouchableOpacity
                 style={[styles.button, bookingDate.length < 10 && styles.buttonDisabled]}
                 onPress={() => bookingDate.length >= 10 && handleBookingDateSelect(bookingDate)}
@@ -2221,7 +2556,7 @@ export default function App() {
               >
                 <Text style={styles.buttonText}>{slotAvailabilityLoading ? 'Checking…' : 'Next: Choose time'}</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.textButton} onPress={() => { setBookingStep('address'); setBookingDate(''); setSlotAvailability(null); setShowDatePicker(false); }}>
+              <TouchableOpacity style={styles.textButton} onPress={() => { setBookingStep('address'); setBookingDate(''); setSlotAvailability(null); setWebDatePickerVisible(false); }}>
                 <Text style={styles.textButtonText}>Back</Text>
               </TouchableOpacity>
             </View>
@@ -2265,13 +2600,53 @@ export default function App() {
         );
       } else if (bookingStep === 'confirm') {
         const isSub = !!bookingSubscriptionId;
+        const formattedConfirmDate = (() => {
+          if (!bookingDate) return '—';
+          const d = new Date(`${bookingDate}T12:00:00`);
+          if (Number.isNaN(d.getTime())) return bookingDate;
+          const day = String(d.getDate()).padStart(2, '0');
+          const month = d.toLocaleDateString('en-IN', { month: 'long' }).toUpperCase();
+          const year = d.getFullYear();
+          return `${day} ${month} ${year}`;
+        })();
+        const formattedConfirmTime = (() => {
+          const raw = (bookingTimeSlot || '').trim();
+          if (!raw) return '—';
+          const start = raw.split('-')[0]?.trim() || raw;
+          const m = start.match(/^(\d{1,2}):(\d{2})$/);
+          if (!m) return start.toUpperCase();
+          let hh = Number(m[1]);
+          const mm = m[2];
+          const ampm = hh >= 12 ? 'PM' : 'AM';
+          hh = hh % 12 || 12;
+          return `${String(hh).padStart(2, '0')}:${mm} ${ampm}`;
+        })();
+        const confirmAddressMain = bookingAddress?.label || '—';
+        const confirmAddressLine = [bookingAddress?.addressLine, bookingAddress?.pincode].filter(Boolean).join(', ');
+        const confirmServicesLabel = isSub
+          ? 'Booking with subscription'
+          : selectedServiceIds.map((id) => SERVICE_TYPES.find((s) => s.id === id)?.label ?? id).join(', ');
         content = (
           <ScrollView style={styles.scroll} contentContainerStyle={[styles.scrollContent, styles.scrollContentNoTopPadding, styles.confirmScrollContent]} showsVerticalScrollIndicator={false}>
             <View style={styles.card}>
               <Text style={styles.title}>Confirm booking</Text>
-              <Text style={styles.subtitle}>Address: {bookingAddress?.label} – {bookingAddress?.addressLine}, {bookingAddress?.pincode}</Text>
-              <Text style={styles.subtitle}>Date: {bookingDate} · Time: {bookingTimeSlot}</Text>
-              <Text style={styles.subtitle}>{isSub ? 'Booking with subscription' : `Services: ${selectedServiceIds.map((id) => SERVICE_TYPES.find((s) => s.id === id)?.label ?? id).join(', ')}`}</Text>
+              <View style={styles.confirmSummaryCard}>
+                <Text style={styles.confirmSummaryLabel}>Address</Text>
+                <Text style={styles.confirmSummaryValue}>{confirmAddressMain}</Text>
+                <Text style={styles.confirmSummarySubValue}>{confirmAddressLine || '—'}</Text>
+
+                <View style={styles.confirmMetaRow}>
+                  <Text style={styles.confirmSummaryLabelInline}>Date</Text>
+                  <Text style={styles.confirmSummaryHighlight}>{formattedConfirmDate}</Text>
+                </View>
+                <View style={styles.confirmMetaRow}>
+                  <Text style={styles.confirmSummaryLabelInline}>Time</Text>
+                  <Text style={styles.confirmSummaryHighlight}>{formattedConfirmTime}</Text>
+                </View>
+
+                <Text style={[styles.confirmSummaryLabel, { marginTop: 8 }]}>Services</Text>
+                <Text style={styles.confirmSummaryValue}>{confirmServicesLabel}</Text>
+              </View>
               {error && <Text style={styles.error}>{error}</Text>}
               <TouchableOpacity style={styles.textButton} onPress={() => setBookingStep('time')}>
                 <Text style={styles.textButtonText}>Back</Text>
@@ -2794,34 +3169,54 @@ export default function App() {
             {error && <Text style={styles.error}>{error}</Text>}
             {orderDetail ? (
               <>
-                <View style={styles.orderDetailRow}>
-                  <Text style={styles.orderDetailLabel}>Status: </Text>
-                  <View style={styles.statusChip}>
-                    <Text style={styles.statusChipText}>{orderStatusLabel(orderDetail.status)}</Text>
-                  </View>
-                </View>
-                <View style={styles.orderDetailRow}>
-                  <Text style={styles.orderDetailLabel}>Pickup: </Text>
-                  <Text style={styles.orderDetailValue}>{String(orderDetail.pickupDate).slice(0, 10)} {orderDetail.timeWindow}</Text>
-                </View>
-                <View style={styles.orderDetailRow}>
-                  <Text style={styles.orderDetailLabel}>Services: </Text>
-                  <Text style={styles.orderDetailValue}>
-                    {(orderDetail.serviceTypes ?? (orderDetail.serviceType ? [orderDetail.serviceType] : [])).map(serviceTypeDisplayLabel).join(', ')}
-                  </Text>
-                </View>
-                {orderDetail.addressId && (() => {
-                  const addr = addresses.find((a) => a.id === orderDetail.addressId);
-                  const label = addr?.label ?? orderDetail.addressLabel ?? null;
-                  const line = addr?.addressLine ?? orderDetail.addressLine ?? null;
-                  const pincode = addr?.pincode ?? orderDetail.pincode ?? '';
-                  if (label || line || pincode) {
-                    const parts = [label, line].filter(Boolean).join(' – ');
-                    return (
-                      <Text style={styles.subtitle}>Address: {parts ? `${parts}, ${pincode}` : `Pincode ${pincode}`}</Text>
-                    );
-                  }
-                  return null;
+                {(() => {
+                  const isWalkInOrder =
+                    String(orderDetail.orderSource ?? '').toUpperCase() === 'WALK_IN'
+                    || String(orderDetail.orderType ?? '').toUpperCase() === 'WALK_IN';
+                  const d = new Date(`${String(orderDetail.pickupDate).slice(0, 10)}T12:00:00`);
+                  const formattedDate = Number.isNaN(d.getTime())
+                    ? String(orderDetail.pickupDate).slice(0, 10)
+                    : `${String(d.getDate()).padStart(2, '0')} ${d.toLocaleDateString('en-IN', { month: 'long' }).toUpperCase()} ${d.getFullYear()}`;
+                  const rawSlot = (orderDetail.timeWindow || '').trim();
+                  const slotStart = rawSlot.split('-')[0]?.trim() || rawSlot;
+                  const m = slotStart.match(/^(\d{1,2}):(\d{2})$/);
+                  const formattedTime = isWalkInOrder
+                    ? 'Walk in'
+                    : m
+                    ? `${String((Number(m[1]) % 12) || 12).padStart(2, '0')}:${m[2]} ${Number(m[1]) >= 12 ? 'PM' : 'AM'}`
+                    : slotStart.toUpperCase();
+                  const serviceLabel = (orderDetail.serviceTypes ?? (orderDetail.serviceType ? [orderDetail.serviceType] : []))
+                    .map(serviceTypeDisplayLabel)
+                    .join(', ');
+                  const addr = orderDetail.addressId ? addresses.find((a) => a.id === orderDetail.addressId) : null;
+                  const addressMain = isWalkInOrder ? 'Walk in Address' : (addr?.label ?? orderDetail.addressLabel ?? 'Address');
+                  const addressLine = isWalkInOrder ? 'Walk in' : (addr?.addressLine ?? orderDetail.addressLine ?? '');
+                  const pincode = isWalkInOrder ? '' : (addr?.pincode ?? orderDetail.pincode ?? '');
+                  return (
+                    <View style={styles.confirmSummaryCard}>
+                      <View style={styles.confirmMetaRow}>
+                        <Text style={styles.confirmSummaryLabelInline}>Status</Text>
+                        <View style={styles.statusChip}>
+                          <Text style={styles.statusChipText}>{orderStatusLabel(orderDetail.status)}</Text>
+                        </View>
+                      </View>
+                      <Text style={styles.confirmSummaryLabel}>Address</Text>
+                      <Text style={styles.confirmSummaryValue}>{addressMain}</Text>
+                      <Text style={styles.confirmSummarySubValue}>
+                        {[addressLine, pincode].filter(Boolean).join(', ') || '—'}
+                      </Text>
+                      <View style={styles.confirmMetaRow}>
+                        <Text style={styles.confirmSummaryLabelInline}>Date</Text>
+                        <Text style={styles.confirmSummaryHighlight}>{formattedDate}</Text>
+                      </View>
+                      <View style={styles.confirmMetaRow}>
+                        <Text style={styles.confirmSummaryLabelInline}>Time</Text>
+                        <Text style={styles.confirmSummaryHighlight}>{formattedTime}</Text>
+                      </View>
+                      <Text style={[styles.confirmSummaryLabel, { marginTop: 8 }]}>Services</Text>
+                      <Text style={styles.confirmSummaryValue}>{serviceLabel || '—'}</Text>
+                    </View>
+                  );
                 })()}
                 {(() => {
                   const finalInv = orderInvoices.find((i) => i.type === 'FINAL');
@@ -2892,6 +3287,7 @@ export default function App() {
                     const discountPaise = inv.discountPaise ?? 0;
                     const subtotal = inv.subtotal ?? inv.total;
                     const tax = inv.tax ?? 0;
+                    const ackInvoice = orderInvoices.find((i) => i.type === 'ACKNOWLEDGEMENT') ?? null;
                     const openInvoice = async (action: 'download' | 'share') => {
                       if (!token) return;
                       setInvoiceError(null);
@@ -2900,7 +3296,28 @@ export default function App() {
                         // FINAL invoice download should be a well-formatted PDF (logo, icons, tables).
                         // Use native print-to-PDF with HTML, so the result looks like the admin invoice view.
                         if (action === 'download' && inv.type === 'FINAL') {
-                          const html = await buildFinalInvoiceHtml(inv);
+                          if (Platform.OS === 'web') {
+                            // Open popup synchronously from user gesture to avoid blank/blocked windows.
+                            const w = window.open('about:blank', '_blank', 'width=960,height=1280');
+                            if (!w) {
+                              setInvoiceError('Popup blocked. Please allow popups and try again.');
+                              return;
+                            }
+                            w.document.open();
+                            w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>Invoice</title></head><body style="font-family:Arial,sans-serif;padding:16px;">Preparing invoice...</body></html>');
+                            w.document.close();
+
+                            const html = await buildFinalInvoiceHtml(inv, ackInvoice);
+                            w.document.open();
+                            w.document.write(html);
+                            w.document.close();
+                            setTimeout(() => {
+                              w.focus();
+                              w.print();
+                            }, 250);
+                            return;
+                          }
+                          const html = await buildFinalInvoiceHtml(inv, ackInvoice);
                           const printed = await Print.printToFileAsync({ html, base64: false });
                           const available = await Sharing.isAvailableAsync();
                           if (!available) {
@@ -3173,7 +3590,7 @@ export default function App() {
         </ScrollView>
       );
     } else {
-      const winWidth = Dimensions.get('window').width;
+      const winWidth = appScreenWidth;
       // Full width; height is adjustable (ratio of width, e.g. 0.5 = half, 9/16 ≈ 0.56 for banner)
       const carouselHeightRatio = 9 / 16;
       const carouselHeight = Math.round(winWidth * carouselHeightRatio);
@@ -3337,7 +3754,7 @@ export default function App() {
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
           {showBottomNav ? (
-            <View style={styles.mainWithNav}>
+            <View style={[styles.mainWithNav, isDesktopWeb && styles.mainWithNavDesktop, isDesktopWeb && { width: desktopMobileFrameWidth }]}>
               <View style={styles.topNavBar}>
                 <View style={styles.topNavLogo}>
                   {welcomeBranding?.logoUrl ? (
@@ -3354,16 +3771,27 @@ export default function App() {
                     </Text>
                   )}
                 </View>
-                <TouchableOpacity
-                  style={styles.topNavBell}
-                  onPress={() => {
-                    if (token) fetchOrders();
-                    setNotificationsModalVisible(true);
-                  }}
-                  accessibilityLabel="Notifications"
-                >
-                  <MaterialIcons name="notifications-none" size={26} color={colors.text} />
-                </TouchableOpacity>
+                <View style={styles.topNavActions}>
+                  <TouchableOpacity
+                    style={styles.topNavPriceListButton}
+                    onPress={() => {
+                      void openPriceListModal();
+                    }}
+                    accessibilityLabel="Price list"
+                  >
+                    <Text style={styles.topNavPriceListButtonText}>Price list</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.topNavBell}
+                    onPress={() => {
+                      if (token) fetchOrders();
+                      setNotificationsModalVisible(true);
+                    }}
+                    accessibilityLabel="Notifications"
+                  >
+                    <MaterialIcons name="notifications-none" size={26} color={colors.text} />
+                  </TouchableOpacity>
+                </View>
               </View>
               <View style={styles.contentArea}>{content}</View>
               <View style={styles.bottomNavWrapper}>
@@ -3428,7 +3856,7 @@ export default function App() {
               </View>
             </View>
           ) : (
-            content
+            <View style={[isDesktopWeb ? styles.authShellDesktop : undefined, isDesktopWeb && { width: desktopMobileFrameWidth }]}>{content}</View>
           )}
         </KeyboardAvoidingView>
         <Modal visible={!!purchaseConfirm} animationType="fade" transparent>
@@ -3550,6 +3978,89 @@ export default function App() {
           </View>
         </Modal>
         <Modal
+          visible={priceListModalVisible}
+          animationType="fade"
+          transparent
+          onRequestClose={() => setPriceListModalVisible(false)}
+        >
+          <View style={styles.notificationsModalOverlay}>
+            <TouchableWithoutFeedback onPress={() => setPriceListModalVisible(false)}>
+              <View style={StyleSheet.absoluteFill} />
+            </TouchableWithoutFeedback>
+            <View style={styles.notificationsModalCard}>
+              <View style={styles.notificationsModalHeader}>
+                <View style={styles.notificationsModalTitleRow}>
+                  <View style={styles.notificationsModalBellIcon}>
+                    <MaterialIcons name="list-alt" size={20} color={colors.primary} />
+                  </View>
+                  <Text style={styles.notificationsModalTitle}>Price list</Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => setPriceListModalVisible(false)}
+                  style={styles.notificationsModalCloseBtn}
+                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                >
+                  <MaterialIcons name="close" size={22} color={colors.primary} />
+                </TouchableOpacity>
+              </View>
+              {priceListLoading ? (
+                <View style={styles.priceListState}>
+                  <ActivityIndicator size="small" color={colors.primary} />
+                  <Text style={styles.notificationsEmptySubtext}>Loading catalog prices...</Text>
+                </View>
+              ) : priceListError ? (
+                <View style={styles.priceListState}>
+                  <Text style={styles.error}>{priceListError}</Text>
+                </View>
+              ) : priceListItems.length === 0 ? (
+                <View style={styles.priceListState}>
+                  <Text style={styles.notificationsEmptyText}>No price lines found</Text>
+                  <Text style={styles.notificationsEmptySubtext}>Please check again later.</Text>
+                </View>
+              ) : (
+                <ScrollView
+                  style={styles.notificationsListScroll}
+                  contentContainerStyle={styles.priceListContent}
+                  showsVerticalScrollIndicator={true}
+                >
+                  {priceListItems.map((item) => {
+                    const iconUri = item.icon && (item.icon.startsWith('http') || item.icon.startsWith('/'))
+                      ? brandingLogoFullUrl(item.icon)
+                      : null;
+                    return (
+                      <View key={item.itemId} style={styles.priceListItemCard}>
+                        <View style={styles.priceListItemHeader}>
+                          {iconUri ? (
+                            <Image source={{ uri: iconUri }} style={styles.priceListItemIcon} />
+                          ) : (
+                            <View style={styles.priceListItemIconFallback}>
+                              <MaterialIcons name="local-laundry-service" size={16} color={colors.primary} />
+                            </View>
+                          )}
+                          <Text style={styles.priceListItemName}>{item.name}</Text>
+                        </View>
+                        <View style={styles.priceListLines}>
+                          {item.lines.map((line, idx) => (
+                            <View
+                              key={`${item.itemId}-${line.segment}-${line.service}-${idx}`}
+                              style={styles.priceListLineRow}
+                            >
+                              <Text style={styles.priceListLineLabel}>
+                                {line.segment} - {line.service}
+                              </Text>
+                              <Text style={styles.priceListLinePrice}>Rs {line.priceRupees.toFixed(2)}</Text>
+                            </View>
+                          ))}
+                        </View>
+                      </View>
+                    );
+                  })}
+                </ScrollView>
+              )}
+            </View>
+          </View>
+        </Modal>
+        <Modal
           visible={notificationsModalVisible}
           animationType="fade"
           transparent
@@ -3634,44 +4145,55 @@ export default function App() {
                   <MaterialIcons name="close" size={24} color={colors.text} />
                 </TouchableOpacity>
               </View>
-              <WebView
-                ref={googleMapsWebViewRef}
-                source={{ uri: 'https://www.google.com/maps' }}
-                style={styles.googleMapsWebView}
-                onNavigationStateChange={(nav) => {
-                  if (nav?.url) setLastGoogleMapsUrl(nav.url);
-                }}
-                onMessage={(e) => {
-                  try {
-                    const data = JSON.parse(e.nativeEvent.data);
-                    if (data?.type === 'MAPS_URL' && typeof data?.url === 'string' && onMapsUrlReceivedRef.current) {
-                      const cb = onMapsUrlReceivedRef.current;
-                      onMapsUrlReceivedRef.current = null;
-                      cb(data.url);
-                    }
-                  } catch (_) {}
-                }}
-              />
+              {Platform.OS === 'web' ? (
+                <View style={{ padding: 16, gap: 10 }}>
+                  <Text style={styles.error}>Google Maps in-app view is not supported on web.</Text>
+                  <Text style={styles.muted}>
+                    Use popup map search for PWA. If popup was blocked, click below to reopen it.
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.buttonSecondary}
+                    onPress={() => {
+                      const w = (globalThis as { window?: { dispatchEvent?: (event: Event) => boolean; CustomEvent?: new (type: string, init?: Record<string, unknown>) => Event } }).window;
+                      if (w?.dispatchEvent && w?.CustomEvent) {
+                        w.dispatchEvent(new w.CustomEvent('weyou:pwa-map-popup-open'));
+                        setShowGoogleMapsPicker(false);
+                      }
+                    }}
+                  >
+                    <Text style={styles.buttonSecondaryText}>Open map popup</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <WebView
+                  ref={googleMapsWebViewRef}
+                  source={{ uri: 'https://www.google.com/maps' }}
+                  style={styles.googleMapsWebView}
+                  onNavigationStateChange={(nav) => {
+                    if (nav?.url) setLastGoogleMapsUrl(nav.url);
+                  }}
+                  onMessage={(e) => {
+                    try {
+                      const data = JSON.parse(e.nativeEvent.data);
+                      if (data?.type === 'MAPS_URL' && typeof data?.url === 'string' && onMapsUrlReceivedRef.current) {
+                        const cb = onMapsUrlReceivedRef.current;
+                        onMapsUrlReceivedRef.current = null;
+                        cb(data.url);
+                      }
+                    } catch (_) {}
+                  }}
+                />
+              )}
               <View style={styles.googleMapsModalFooter}>
                 <TouchableOpacity
                   style={[styles.button, addFromMapsLoading && styles.buttonDisabled]}
-                  disabled={addFromMapsLoading}
+                  disabled={addFromMapsLoading || Platform.OS === 'web'}
                   onPress={() => {
                     setAddFromMapsLoading(true);
                     onMapsUrlReceivedRef.current = async (url: string) => {
                       try {
                         const finalUrl = url || lastGoogleMapsUrl || 'https://www.google.com/maps';
-                        setAddGoogleUrl(finalUrl);
-                        const coords = parseLatLngFromMapsUrl(finalUrl);
-                        if (coords) {
-                          const result = await reverseGeocodeAddress(coords.lat, coords.lng);
-                          if (result) {
-                            setAddStreetArea([result.street, result.area].filter(Boolean).join(', '));
-                            setAddCity(result.city);
-                            setAddPincode(result.pincode);
-                            setAddAddressLine(result.addressLine);
-                          }
-                        }
+                        await applyGoogleMapsUrlToAddress(finalUrl);
                       } finally {
                         setAddFromMapsLoading(false);
                         setShowGoogleMapsPicker(false);
@@ -3760,6 +4282,26 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  topNavActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  topNavPriceListButton: {
+    height: 34,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primaryLight,
+  },
+  topNavPriceListButtonText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.primaryDark,
+  },
   container: {
     flex: 1,
     paddingHorizontal: 0,
@@ -3770,6 +4312,18 @@ const styles = StyleSheet.create({
   },
   mainWithNav: {
     flex: 1,
+  },
+  mainWithNavDesktop: {
+    flex: 1,
+    width: '100%',
+    maxWidth: 920,
+    alignSelf: 'center',
+  },
+  authShellDesktop: {
+    flex: 1,
+    width: '100%',
+    maxWidth: 560,
+    alignSelf: 'center',
   },
   contentArea: {
     flex: 1,
@@ -4275,6 +4829,76 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: 4,
   },
+  priceListState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 28,
+    gap: 10,
+  },
+  priceListContent: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 24,
+    gap: 10,
+  },
+  priceListItemCard: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    backgroundColor: colors.elevation2,
+    padding: 12,
+  },
+  priceListItemHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 10,
+  },
+  priceListItemIcon: {
+    width: 26,
+    height: 26,
+    borderRadius: 6,
+  },
+  priceListItemIconFallback: {
+    width: 26,
+    height: 26,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primaryLight,
+  },
+  priceListItemName: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  priceListLines: {
+    gap: 6,
+  },
+  priceListLineRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    borderRadius: 8,
+    backgroundColor: colors.elevation0,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  priceListLineLabel: {
+    flex: 1,
+    fontSize: 13,
+    color: colors.text,
+  },
+  priceListLinePrice: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.primaryDark,
+  },
   title: {
     fontSize: 24,
     fontWeight: '700',
@@ -4344,14 +4968,105 @@ const styles = StyleSheet.create({
   },
   datePickerButton: {
     justifyContent: 'center',
+    borderColor: colors.primaryLight,
+    borderWidth: 1,
+    borderRadius: 10,
+    backgroundColor: colors.white,
   },
   datePickerButtonText: {
     fontSize: 16,
-    color: colors.text,
+    color: colors.primary,
+    fontWeight: '700',
   },
   datePickerPlaceholder: {
     fontSize: 16,
     color: colors.textSecondary,
+  },
+  webCalendarBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.20)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 10,
+  },
+  webCalendarCard: {
+    backgroundColor: colors.white,
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: colors.primaryLight,
+    width: '100%',
+    maxWidth: 340,
+    maxHeight: 460,
+  },
+  webCalendarHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  webCalendarTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.primaryDark,
+  },
+  webCalendarNavBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.elevation2,
+  },
+  webCalendarNavText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.primaryDark,
+  },
+  webCalendarWeekRow: {
+    flexDirection: 'row',
+    marginBottom: 4,
+  },
+  webCalendarWeekText: {
+    flex: 1,
+    textAlign: 'center',
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  webCalendarDaysGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  webCalendarDayCell: {
+    width: '14.2857%',
+    aspectRatio: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+    marginBottom: 2,
+  },
+  webCalendarDayText: {
+    fontSize: 14,
+    color: colors.text,
+    fontWeight: '500',
+  },
+  webCalendarDaySelected: {
+    backgroundColor: colors.primary,
+  },
+  webCalendarDayTextSelected: {
+    color: colors.white,
+    fontWeight: '700',
+  },
+  webCalendarHolidayDay: {
+    backgroundColor: '#fff1f2',
+  },
+  webCalendarHolidayText: {
+    color: '#dc2626',
+    fontWeight: '700',
+  },
+  webCalendarDayDisabled: {
+    opacity: 0.55,
   },
   button: {
     backgroundColor: colors.primary,
@@ -4514,6 +5229,56 @@ const styles = StyleSheet.create({
   },
   confirmScrollContent: {
     paddingBottom: 120,
+  },
+  confirmSummaryCard: {
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    backgroundColor: colors.elevation0,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 8,
+  },
+  confirmSummaryLabel: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    fontWeight: '600',
+    marginBottom: 4,
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+  confirmSummaryLabelInline: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  confirmSummaryValue: {
+    fontSize: 16,
+    color: colors.text,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  confirmSummarySubValue: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    marginBottom: 10,
+    lineHeight: 20,
+  },
+  confirmMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: colors.primaryLight,
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    marginBottom: 8,
+  },
+  confirmSummaryHighlight: {
+    fontSize: 15,
+    color: colors.primary,
+    fontWeight: '700',
   },
   floatingSubmitWrapper: {
     paddingHorizontal: 16,

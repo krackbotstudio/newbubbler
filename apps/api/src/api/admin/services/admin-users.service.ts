@@ -21,6 +21,10 @@ import { generateTempPassword, hashAdminPassword } from '../../auth/password.uti
 /** This user cannot be deleted by anyone. */
 export const PROTECTED_ADMIN_EMAIL = 'weyou@admin.com';
 
+function isProtectedAdminEmail(email: string | null | undefined): boolean {
+  return (email ?? '').trim().toLowerCase() === PROTECTED_ADMIN_EMAIL;
+}
+
 @Injectable()
 export class AdminUsersService {
   constructor(
@@ -55,10 +59,20 @@ export class AdminUsersService {
   }
 
   async update(input: UpdateAdminUserInput, currentUser: AuthUser) {
+    const targetUser = await this.adminUsersRepo.getById(input.id);
+    if (!targetUser) {
+      throw new AppError('NOT_FOUND', 'User not found', { userId: input.id });
+    }
+    if (isProtectedAdminEmail(targetUser.email)) {
+      throw new AppError('CANNOT_UPDATE_PROTECTED', 'This user cannot be edited', {
+        email: PROTECTED_ADMIN_EMAIL,
+      });
+    }
+
     if (input.role && ![Role.ADMIN, Role.OPS].includes(input.role)) {
       throw new AppError('FEEDBACK_INVALID', 'Only Admin and Branch Head roles are allowed');
     }
-    const effectiveRole = input.role ?? (await this.adminUsersRepo.getById(input.id))?.role;
+    const effectiveRole = input.role ?? targetUser.role;
     if (effectiveRole === Role.OPS && input.branchId === undefined) {
       const existing = await this.adminUsersRepo.getById(input.id);
       if (!existing?.branchId) {
@@ -81,6 +95,11 @@ export class AdminUsersService {
     if (!user) {
       throw new AppError('NOT_FOUND', 'User not found', { userId });
     }
+    if (isProtectedAdminEmail(user.email)) {
+      throw new AppError('CANNOT_RESET_PROTECTED', 'Password cannot be reset for this user', {
+        email: PROTECTED_ADMIN_EMAIL,
+      });
+    }
     const tempPassword = generateTempPassword(12);
     await this.adminUsersRepo.setPasswordHash(userId, hashAdminPassword(tempPassword));
     return { tempPassword };
@@ -91,7 +110,7 @@ export class AdminUsersService {
     if (!user) {
       throw new AppError('NOT_FOUND', 'User not found', { userId });
     }
-    if (user.email === PROTECTED_ADMIN_EMAIL) {
+    if (isProtectedAdminEmail(user.email)) {
       throw new AppError('CANNOT_DELETE_PROTECTED', 'This user cannot be deleted', {
         email: PROTECTED_ADMIN_EMAIL,
       });

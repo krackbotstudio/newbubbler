@@ -18,7 +18,6 @@ import { toast } from 'sonner';
 import { getApiError } from '@/lib/api';
 
 const addPincodeSchema = z.object({
-  pincode: z.string().regex(/^\d{6}$/, 'Pincode must be exactly 6 digits'),
   branchId: z.string().min(1, 'Select a branch'),
   active: z.boolean(),
 });
@@ -31,43 +30,79 @@ interface AddPincodeModalProps {
 }
 
 export function AddPincodeModal({ open, onOpenChange }: AddPincodeModalProps) {
-  const [pincode, setPincode] = useState('');
+  const [pincodeInput, setPincodeInput] = useState('');
   const [branchId, setBranchId] = useState('');
   const [active, setActive] = useState(true);
   const createArea = useCreateServiceArea();
   const { data: branches = [] } = useBranches();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const parsePincodes = (input: string) => {
+    const tokens = input
+      .split(',')
+      .map((p) => p.trim())
+      .filter(Boolean);
+    const unique = Array.from(new Set(tokens));
+    const valid = unique.filter((p) => /^\d{6}$/.test(p));
+    const invalid = unique.filter((p) => !/^\d{6}$/.test(p));
+    return { valid, invalid };
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const result = addPincodeSchema.safeParse({ pincode: pincode.trim(), branchId: branchId || undefined, active });
+    const result = addPincodeSchema.safeParse({ branchId: branchId || undefined, active });
     if (!result.success) {
-      const msg = result.error.flatten().fieldErrors.pincode?.[0]
-        ?? result.error.flatten().fieldErrors.branchId?.[0]
+      const msg = result.error.flatten().fieldErrors.branchId?.[0]
         ?? result.error.message;
       toast.error(msg);
+      return;
+    }
+    const parsed = parsePincodes(pincodeInput);
+    if (parsed.valid.length === 0) {
+      toast.error('Enter at least one valid 6-digit pincode. For bulk, separate by comma.');
+      return;
+    }
+    if (parsed.invalid.length > 0) {
+      toast.error(`Invalid pincodes: ${parsed.invalid.join(', ')}`);
       return;
     }
     if (!branchId) {
       toast.error('Select a branch');
       return;
     }
-    createArea.mutate({ pincode: result.data.pincode, branchId, active }, {
-      onSuccess: () => {
-        toast.success('Pincode added');
-        setPincode('');
-        setBranchId('');
-        setActive(true);
-        onOpenChange(false);
-      },
-      onError: (err) => {
+    const failed: string[] = [];
+    let successCount = 0;
+    for (const pin of parsed.valid) {
+      try {
+        await createArea.mutateAsync({ pincode: pin, branchId, active });
+        successCount += 1;
+      } catch (err) {
         const apiErr = getApiError(err);
         if (apiErr.code === 'PINCODE_ALREADY_IN_OTHER_BRANCH') {
-          toast.error('This pincode is already added to another branch.');
+          failed.push(`${pin} (already in another branch)`);
         } else {
-          toast.error(apiErr.message);
+          failed.push(`${pin} (${apiErr.message})`);
         }
-      },
-    });
+      }
+    }
+
+    if (successCount > 0 && failed.length === 0) {
+      toast.success(successCount === 1 ? 'Pincode added' : `${successCount} pincodes added`);
+      setPincodeInput('');
+      setBranchId('');
+      setActive(true);
+      onOpenChange(false);
+      return;
+    }
+    if (successCount > 0) {
+      toast.success(`${successCount} pincodes added, ${failed.length} failed`);
+      toast.error(`Failed: ${failed.slice(0, 4).join(' | ')}${failed.length > 4 ? ' ...' : ''}`);
+      setPincodeInput('');
+      setBranchId('');
+      setActive(true);
+      onOpenChange(false);
+      return;
+    }
+    toast.error(`Could not add pincodes: ${failed.slice(0, 4).join(' | ')}${failed.length > 4 ? ' ...' : ''}`);
   };
 
   return (
@@ -99,16 +134,17 @@ export function AddPincodeModal({ open, onOpenChange }: AddPincodeModalProps) {
             </div>
             <div className="grid gap-2">
               <label htmlFor="add-pincode" className="text-sm font-medium">
-                Pincode (6 digits)
+                Pincode(s)
               </label>
               <Input
                 id="add-pincode"
-                inputMode="numeric"
-                maxLength={6}
-                value={pincode}
-                onChange={(e) => setPincode(e.target.value.replace(/\D/g, ''))}
-                placeholder="110001"
+                value={pincodeInput}
+                onChange={(e) => setPincodeInput(e.target.value)}
+                placeholder="110001, 500081, 500082"
               />
+              <p className="text-xs text-muted-foreground">
+                Enter one or more 6-digit pincodes separated by commas.
+              </p>
             </div>
             <div className="flex items-center gap-2">
               <Switch id="add-active" checked={active} onCheckedChange={setActive} />

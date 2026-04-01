@@ -54,6 +54,14 @@ function getDuplicateKeys(rows: PriceLineRow[]): Set<string> {
   return duplicates;
 }
 
+function mergeUniqueById<T extends { id: string; label?: string; code?: string }>(base: T[], extra: T[]): T[] {
+  const byId = new Map<string, T>();
+  for (const item of [...base, ...extra]) {
+    if (!byId.has(item.id)) byId.set(item.id, item);
+  }
+  return Array.from(byId.values());
+}
+
 interface EditItemModalProps {
   item: CatalogItemWithMatrix | null;
   serviceCategories: ServiceCategory[];
@@ -88,11 +96,11 @@ export function EditItemModal({
   const { data: branches = [] } = useBranches();
 
   const categories = useMemo(
-    () => [...serviceCategories, ...localCategories],
+    () => mergeUniqueById(serviceCategories, localCategories),
     [serviceCategories, localCategories],
   );
   const segments = useMemo(
-    () => [...segmentCategories, ...localSegments],
+    () => mergeUniqueById(segmentCategories, localSegments),
     [segmentCategories, localSegments],
   );
 
@@ -197,7 +205,10 @@ export function EditItemModal({
       { code, label },
       {
         onSuccess: (data) => {
-          setLocalCategories((prev) => [...prev, { ...data, createdAt: new Date().toISOString() }]);
+          setLocalCategories((prev) => {
+            if (prev.some((c) => c.id === data.id)) return prev;
+            return [...prev, { ...data, createdAt: new Date().toISOString() }];
+          });
           setNewServiceName('');
           toast.success('Service category added');
         },
@@ -220,7 +231,10 @@ export function EditItemModal({
       { code, label },
       {
         onSuccess: (data) => {
-          setLocalSegments((prev) => [...prev, { ...data, createdAt: new Date().toISOString() }]);
+          setLocalSegments((prev) => {
+            if (prev.some((s) => s.id === data.id)) return prev;
+            return [...prev, { ...data, createdAt: new Date().toISOString() }];
+          });
           setNewSegmentName('');
           toast.success('Segment added');
         },
@@ -410,9 +424,6 @@ export function EditItemModal({
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <p className="text-sm font-medium">Pricing lines</p>
-                <Button type="button" variant="outline" size="sm" onClick={addPriceLine}>
-                  Add price line
-                </Button>
               </div>
               {hasDuplicates && (
                 <p className="text-xs text-destructive">Duplicate segment + service in rows. Remove duplicates to save.</p>
@@ -502,6 +513,9 @@ export function EditItemModal({
                   <p className="p-4 text-center text-muted-foreground text-sm">No price lines. Click “Add price line”.</p>
                 )}
               </div>
+              <Button type="button" size="lg" className="w-full" onClick={addPriceLine}>
+                Add price line
+              </Button>
             </div>
             </div>
           </div>

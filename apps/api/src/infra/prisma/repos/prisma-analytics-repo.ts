@@ -1,5 +1,10 @@
 import { type PrismaClient } from '@prisma/client';
-import type { AnalyticsRepo, RevenueResult, RevenueBreakdownItem } from '../../../application/ports';
+import type {
+  AnalyticsRepo,
+  RevenueResult,
+  RevenueBreakdownItem,
+  CompletedCatalogItemQuantity,
+} from '../../../application/ports';
 
 type PrismaLike = PrismaClient;
 
@@ -117,5 +122,114 @@ export class PrismaAnalyticsRepo implements AnalyticsRepo {
       },
       breakdown,
     };
+  }
+
+  async getCompletedCatalogItemQuantities(
+    dateFrom: Date,
+    dateTo: Date,
+    branchId?: string,
+  ): Promise<CompletedCatalogItemQuantity[]> {
+    const invoices = await this.prisma.invoice.findMany({
+      where: {
+        type: 'FINAL',
+        status: 'ISSUED',
+        issuedAt: { gte: dateFrom, lt: dateTo },
+        order: {
+          status: 'DELIVERED',
+          ...(branchId ? { branchId } : {}),
+        },
+      },
+      select: {
+        items: true,
+      },
+    });
+
+    const allItems = invoices.flatMap((inv) => (inv as { items?: Array<{
+      name?: string;
+      quantity?: number;
+      segmentLabel?: string | null;
+      serviceLabel?: string | null;
+      segmentCategoryId?: string | null;
+      serviceCategoryId?: string | null;
+      catalogItemId?: string | null;
+    }> }).items ?? []);
+
+    const segmentIds = Array.from(
+      new Set(
+        allItems
+          .map((i) => i.segmentCategoryId)
+          .filter((v): v is string => !!v),
+      ),
+    );
+    const serviceIds = Array.from(
+      new Set(
+        allItems
+          .map((i) => i.serviceCategoryId)
+          .filter((v): v is string => !!v),
+      ),
+    );
+
+    const [segmentRows, serviceRows] = await Promise.all([
+      segmentIds.length
+        ? this.prisma.segmentCategory.findMany({
+            where: { id: { in: segmentIds } },
+            select: { id: true, label: true },
+          })
+        : Promise.resolve([] as Array<{ id: string; label: string }>),
+      serviceIds.length
+        ? this.prisma.serviceCategory.findMany({
+            where: { id: { in: serviceIds } },
+            select: { id: true, label: true },
+          })
+        : Promise.resolve([] as Array<{ id: string; label: string }>),
+    ]);
+
+    const segmentLabelById = new Map(segmentRows.map((r) => [r.id, r.label]));
+    const serviceLabelById = new Map(serviceRows.map((r) => [r.id, r.label]));
+
+    const agg = new Map<string, CompletedCatalogItemQuantity>();
+    for (const inv of invoices) {
+      const items = (inv as { items?: Array<{
+        name?: string;
+        quantity?: number;
+        segmentLabel?: string | null;
+        serviceLabel?: string | null;
+        segmentCategoryId?: string | null;
+        serviceCategoryId?: string | null;
+        catalogItemId?: string | null;
+      }> }).items ?? [];
+      for (const item of items) {
+        if (!item?.name) continue;
+        const qty = Number(item.quantity ?? 0);
+        if (!Number.isFinite(qty) || qty <= 0) continue;
+        const resolvedSegment =
+          (item.segmentLabel ?? '').trim()
+          || (item.segmentCategoryId ? (segmentLabelById.get(item.segmentCategoryId) ?? '').trim() : '');
+        const resolvedService =
+          (item.serviceLabel ?? '').trim()
+          || (item.serviceCategoryId ? (serviceLabelById.get(item.serviceCategoryId) ?? '').trim() : '');
+        const segment = resolvedSegment || '—';
+        const service = resolvedService || '—';
+        const key = `${item.name}__${segment}__${service}`;
+        const prev = agg.get(key);
+        if (prev) {
+          prev.quantity += qty;
+        } else {
+          agg.set(key, {
+            itemName: item.name,
+            segment,
+            service,
+            quantity: qty,
+          });
+        }
+      }
+    }
+
+    return Array.from(agg.values()).sort((a, b) => {
+      if (b.quantity !== a.quantity) return b.quantity - a.quantity;
+      if (a.itemName !== b.itemName) return a.itemName.localeCompare(b.itemName);
+      if (a.segment !== b.segment) return a.segment.localeCompare(b.segment);
+      return a.service.localeCompare(b.service);
+    });
   }
 }

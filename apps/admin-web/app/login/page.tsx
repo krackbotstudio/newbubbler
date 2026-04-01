@@ -112,11 +112,6 @@ export default function LoginPage() {
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? 'Signing in…' : 'Sign in'}
             </Button>
-            <p className="text-xs text-muted-foreground mt-4 space-y-1">
-              <span className="block">Ensure the API is running (e.g. port 3005).</span>
-              <span className="block">For seed-created accounts (e.g. weyou@admin.com), use password <code className="rounded bg-muted px-1 font-mono">dev-hash</code> exactly.</span>
-              <span className="block">If you get &quot;Invalid credentials&quot;, the user may have been deleted. From the project root run: <code className="rounded bg-muted px-1 text-[11px]">npm run prisma:seed</code> to restore admin users, then try again.</span>
-            </p>
           </form>
         </CardContent>
       </Card>

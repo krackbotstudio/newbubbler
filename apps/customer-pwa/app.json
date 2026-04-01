@@ -1,0 +1,22 @@
+{
+  "expo": {
+    "name": "Weyou Customer PWA",
+    "slug": "weyou-customer-pwa",
+    "scheme": "weyou-customer-pwa",
+    "version": "1.0.0",
+    "icon": "../customer-mobile/assets/icon.png",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "platforms": ["web"],
+    "splash": {
+      "image": "../customer-mobile/assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "favicon": "../customer-mobile/assets/favicon.png"
+    }
+  }
+}

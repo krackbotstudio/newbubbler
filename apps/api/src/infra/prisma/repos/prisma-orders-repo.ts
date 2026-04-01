@@ -541,8 +541,16 @@ export class PrismaOrdersRepo implements OrdersRepo {
     const address = order.address;
     const orderWithSnapshot = order as { addressLabel?: string | null; addressLine?: string | null };
     const pincode = order.pincode || address?.pincode;
-    let branchForSummary: { id: string; name: string; address: string; gstNumber: string | null; panNumber: string | null } | null = order.branch
-      ? { id: order.branch.id, name: order.branch.name, address: order.branch.address, gstNumber: order.branch.gstNumber ?? null, panNumber: order.branch.panNumber ?? null }
+    let branchForSummary: { id: string; name: string; address: string; phone: string | null; gstNumber: string | null; panNumber: string | null; footerNote: string | null } | null = order.branch
+      ? {
+          id: order.branch.id,
+          name: order.branch.name,
+          address: order.branch.address,
+          phone: order.branch.phone ?? null,
+          gstNumber: order.branch.gstNumber ?? null,
+          panNumber: order.branch.panNumber ?? null,
+          footerNote: order.branch.footerNote ?? null,
+        }
       : null;
     if (!branchForSummary && pincode) {
       const serviceArea = await this.prisma.serviceArea.findFirst({
@@ -554,8 +562,10 @@ export class PrismaOrdersRepo implements OrdersRepo {
           id: serviceArea.branch.id,
           name: serviceArea.branch.name,
           address: serviceArea.branch.address,
+          phone: serviceArea.branch.phone ?? null,
           gstNumber: serviceArea.branch.gstNumber ?? null,
           panNumber: serviceArea.branch.panNumber ?? null,
+          footerNote: serviceArea.branch.footerNote ?? null,
         };
       }
     }

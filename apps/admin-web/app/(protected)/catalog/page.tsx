@@ -1,21 +1,21 @@
 'use client';
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { getStoredUser } from '@/lib/auth';
 import { RoleGate } from '@/components/shared/RoleGate';
-import { BranchFilter } from '@/components/shared/BranchFilter';
 import { ErrorDisplay } from '@/components/shared/ErrorDisplay';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useCatalogItemsWithMatrix, useImportCatalog } from '@/hooks/useCatalog';
-import { api } from '@/lib/api';
+import { useCatalogItemsWithMatrix } from '@/hooks/useCatalog';
+import { useBranches } from '@/hooks/useBranches';
 import { AddItemModal } from '@/components/catalog/AddItemModal';
 import { EditItemModal } from '@/components/catalog/EditItemModal';
 import { ManageServicesSegmentsModal } from '@/components/catalog/ManageServicesSegmentsModal';
 import { CatalogCard } from '@/components/catalog/CatalogCard';
 import { toast } from 'sonner';
 import type { CatalogItemWithMatrix } from '@/types';
-import { Download, Upload, Settings2 } from 'lucide-react';
+import { Download, Settings2 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 
 export default function CatalogPage() {
   const user = getStoredUser();
@@ -26,13 +26,25 @@ export default function CatalogPage() {
   const [manageOpen, setManageOpen] = useState(false);
   const [editItem, setEditItem] = useState<CatalogItemWithMatrix | null>(null);
   const [editItemOpen, setEditItemOpen] = useState(false);
-  const [uploading, setUploading] = useState(false);
   const [selectedBranchIds, setSelectedBranchIds] = useState<string[]>(() =>
     isBranchHead && user?.branchId ? [user.branchId] : [],
   );
 
   const { data, isLoading, error } = useCatalogItemsWithMatrix();
-  const importCatalog = useImportCatalog();
+  const { data: branches = [] } = useBranches();
+  const selectedBranchId = selectedBranchIds[0] ?? '';
+
+  useEffect(() => {
+    if (isBranchHead && user?.branchId) {
+      if (selectedBranchIds.length !== 1 || selectedBranchIds[0] !== user.branchId) {
+        setSelectedBranchIds([user.branchId]);
+      }
+      return;
+    }
+    if (selectedBranchIds.length > 1) {
+      setSelectedBranchIds([selectedBranchIds[0]]);
+    }
+  }, [isBranchHead, user?.branchId, selectedBranchIds]);
 
   const allItems = data?.items ?? [];
   const items = useMemo(() => {
@@ -51,59 +63,36 @@ export default function CatalogPage() {
     setEditItemOpen(true);
   }, []);
 
-  const handleDownloadSample = useCallback(() => {
-    const fallback = 'itemName,segment,serviceCategoryCode,priceRupees,isActive\nShirt,MEN,STEAM_IRON,10,true\nShirt,MEN,DRY_CLEAN,50,true';
-    api.get<{ content: string }>('/admin/catalog/import/sample')
-      .then((r) => {
-        const content = r.data?.content ?? fallback;
-        const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(blob);
-        link.download = 'catalog-import-sample.csv';
-        link.click();
-        URL.revokeObjectURL(link.href);
-      })
-      .catch(() => {
-        const blob = new Blob([fallback], { type: 'text/csv;charset=utf-8;' });
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(blob);
-        link.download = 'catalog-import-sample.csv';
-        link.click();
-        URL.revokeObjectURL(link.href);
-      });
-  }, []);
-
-  const handleUpload = useCallback(() => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.csv,.txt';
-    input.onchange = (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
-      if (!file) return;
-      setUploading(true);
-      const reader = new FileReader();
-      reader.onload = () => {
-        const content = String(reader.result ?? '');
-        importCatalog.mutate(content, {
-          onSuccess: (result) => {
-            setUploading(false);
-            toast.success(
-              `Import done: ${result.createdItems} created, ${result.updatedItems} updated, ${result.upsertedPrices} prices. ${result.errors.length} errors.`,
-            );
-            if (result.errors.length > 0) {
-              result.errors.slice(0, 5).forEach((err) => toast.error(`Row ${err.row}: ${err.message}`));
-            }
-          },
-          onError: (err) => {
-            setUploading(false);
-            toast.error((err as Error).message);
-          },
-        });
-      };
-      reader.readAsText(file, 'UTF-8');
-    };
-    input.click();
-  }, [importCatalog]);
+  const handleDownloadCatalog = useCallback(() => {
+    const segmentMap = new Map(segmentCategories.map((s) => [s.id, s.label]));
+    const serviceMap = new Map(serviceCategories.map((s) => [s.id, s.label]));
+    const rows = items.flatMap((item) => {
+      if (item.segmentPrices.length === 0) {
+        return [{
+          'Item name': item.name,
+          Segment: '',
+          Service: '',
+          Cost: '',
+          'Active / Inactive': item.active ? 'Active' : 'Inactive',
+        }];
+      }
+      return item.segmentPrices.map((line) => ({
+        'Item name': item.name,
+        Segment: segmentMap.get(line.segmentCategoryId) ?? line.segmentCategoryId,
+        Service: serviceMap.get(line.serviceCategoryId) ?? line.serviceCategoryId,
+        Cost: line.priceRupees,
+        'Active / Inactive': line.isActive ? 'Active' : 'Inactive',
+      }));
+    });
+    if (rows.length === 0) {
+      toast.error('No catalog data to download.');
+      return;
+    }
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Catalog');
+    XLSX.writeFile(workbook, `catalog-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  }, [items, segmentCategories, serviceCategories]);
 
   if (error) {
     return (
@@ -116,31 +105,54 @@ export default function CatalogPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <h1 className="text-2xl font-semibold">Catalog</h1>
-        <div className="flex flex-wrap items-center gap-2">
-          <BranchFilter
-            selectedBranchIds={selectedBranchIds}
-            onChange={setSelectedBranchIds}
-            compactLabel
-            disabled={!!isBranchHead}
-          />
-          <RoleGate role={role} gate="catalogEdit">
-            <Button variant="outline" size="sm" onClick={() => setManageOpen(true)}>
-              <Settings2 className="mr-2 h-4 w-4" />
-              Manage Services &amp; Segments
-            </Button>
-            <Button variant="outline" size="sm" onClick={handleDownloadSample}>
-              <Download className="mr-2 h-4 w-4" />
-              Download sample
-            </Button>
-            <Button variant="outline" size="sm" onClick={handleUpload} disabled={uploading || importCatalog.isPending}>
-              <Upload className="mr-2 h-4 w-4" />
-              {uploading || importCatalog.isPending ? 'Uploading…' : 'Upload CSV'}
-            </Button>
-            <Button onClick={() => setAddOpen(true)}>Add item</Button>
-          </RoleGate>
+    <div className="space-y-5">
+      <div className="rounded-xl border bg-card p-4 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="space-y-1">
+            <h1 className="text-2xl font-semibold tracking-tight">Catalog</h1>
+            <p className="text-sm text-muted-foreground">
+              {items.length} item{items.length === 1 ? '' : 's'} shown
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {isBranchHead ? (
+              <select
+                className="h-10 min-h-[2.5rem] min-w-[140px] disabled:opacity-70"
+                value={selectedBranchId}
+                disabled
+                title="Your assigned branch (cannot change)"
+              >
+                <option value={user?.branchId ?? ''}>
+                  {branches.find((b) => b.id === user?.branchId)?.name ?? user?.branchId ?? '—'}
+                </option>
+              </select>
+            ) : (
+              <select
+                className="h-10 min-h-[2.5rem] min-w-[140px]"
+                value={selectedBranchId}
+                onChange={(e) => setSelectedBranchIds(e.target.value ? [e.target.value] : [])}
+                title="Filter catalog by branch name"
+              >
+                <option value="">All branches</option>
+                {branches.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name ?? b.id}
+                  </option>
+                ))}
+              </select>
+            )}
+            <RoleGate role={role} gate="catalogEdit">
+              <Button variant="outline" size="sm" onClick={() => setManageOpen(true)}>
+                <Settings2 className="mr-2 h-4 w-4" />
+                Manage Services &amp; Segments
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleDownloadCatalog}>
+                <Download className="mr-2 h-4 w-4" />
+                Download catalog
+              </Button>
+              <Button onClick={() => setAddOpen(true)}>Add item</Button>
+            </RoleGate>
+          </div>
         </div>
       </div>
 
@@ -151,7 +163,7 @@ export default function CatalogPage() {
           ))}
         </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {items.map((item) => (
             <CatalogCard
               key={item.id}
