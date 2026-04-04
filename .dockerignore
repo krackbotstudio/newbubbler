@@ -23,7 +23,14 @@ Thumbs.db
 coverage
 .nyc_output
 
-# Optional: exclude other apps if only building API (keeps context smaller)
-# apps/admin-web
-# apps/customer-mobile
-# apps/customer-web
+# Expo/React Native caches
+**/.expo
+**/web-build
+**/.expo-shared
+
+# Mobile build outputs (not needed for PWA)
+apps/customer-mobile/android
+apps/customer-mobile/ios
+
+# PWA dist is rebuilt in container
+apps/customer-pwa/dist

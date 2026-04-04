@@ -144,9 +144,9 @@ export class PrismaAnalyticsRepo implements AnalyticsRepo {
       },
     });
 
-    const allItems = invoices.flatMap((inv) => (inv as { items?: Array<{
+    const allItems = invoices.flatMap((inv) => (inv as unknown as { items?: Array<{
       name?: string;
-      quantity?: number;
+      quantity?: unknown;
       segmentLabel?: string | null;
       serviceLabel?: string | null;
       segmentCategoryId?: string | null;
@@ -189,9 +189,9 @@ export class PrismaAnalyticsRepo implements AnalyticsRepo {
 
     const agg = new Map<string, CompletedCatalogItemQuantity>();
     for (const inv of invoices) {
-      const items = (inv as { items?: Array<{
+      const items = (inv as unknown as { items?: Array<{
         name?: string;
-        quantity?: number;
+        quantity?: unknown;
         segmentLabel?: string | null;
         serviceLabel?: string | null;
         segmentCategoryId?: string | null;

@@ -91,7 +91,7 @@ export default function CatalogPage() {
           'Item name': item.name,
           Segment: '',
           Service: '',
-          Cost: '',
+          Cost: 0,
           'Active / Inactive': item.active ? 'Active' : 'Inactive',
         }];
       }
