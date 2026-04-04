@@ -512,6 +512,10 @@ export default function DashboardPage() {
                 <p className="font-semibold text-base">
                   {previewSummary.customer.name?.trim() || '—'}
                 </p>
+                <p className="mt-2 text-xs font-medium text-muted-foreground">Mobile</p>
+                <p className="text-sm font-medium tabular-nums">
+                  {previewSummary.customer.phone?.trim() || '—'}
+                </p>
               </div>
               <div>
                 <p className="text-xs font-medium text-muted-foreground">Address</p>

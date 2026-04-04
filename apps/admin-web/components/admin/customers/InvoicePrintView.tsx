@@ -156,6 +156,9 @@ export const InvoicePrintView = forwardRef<HTMLDivElement, InvoicePrintViewProps
           <div className="flex-1 min-w-[200px]">
             <p className="font-bold mb-1">Order details</p>
             <p>{customer.name ?? '—'}</p>
+            <p className="text-gray-700 tabular-nums">
+              Phone: {customer.phone?.trim() || '—'}
+            </p>
             {order.orderType === 'SUBSCRIPTION' && (
               <p className="text-gray-600">
                 Subscription booking{summary.subscription?.planName ? ` (${summary.subscription.planName})` : ''}
