@@ -1446,7 +1446,7 @@ export default function App() {
             </TouchableOpacity>
           </>
         )}
-        <View style={styles.row}>
+        <View style={styles.phoneInputRow}>
           <TextInput
             style={[styles.input, styles.countryCodeInput]}
             placeholder="+91"
@@ -4612,12 +4612,27 @@ const styles = StyleSheet.create({
     backgroundColor: colors.elevation1,
     color: colors.textSecondary,
   },
+  /** Login phone row: keep both fields inside the card on narrow widths (e.g. Galaxy Z Fold). */
+  phoneInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'stretch',
+    width: '100%',
+    minWidth: 0,
+    marginTop: 4,
+  },
   countryCodeInput: {
-    width: 90,
-    marginRight: 8,
+    width: 62,
+    minWidth: 62,
+    maxWidth: 62,
+    marginRight: 6,
+    paddingHorizontal: 6,
+    textAlign: 'center',
+    flexShrink: 0,
   },
   mobileInput: {
     flex: 1,
+    minWidth: 0,
   },
   datePickerButton: {
     justifyContent: 'center',
