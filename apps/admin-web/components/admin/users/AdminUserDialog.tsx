@@ -148,6 +148,8 @@ export function AdminUserDialog({
   }
 
   const title = mode === "create" ? "New admin user" : "Edit admin user";
+  /** `role` state is `Role | ""` until selected; narrow before `isBranchScopedStaff(Role)`. */
+  const branchFieldVisible = role !== "" && isBranchScopedStaff(role);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -201,13 +203,13 @@ export function AdminUserDialog({
               </SelectContent>
             </Select>
           </div>
-          {isBranchScopedStaff(role) && (
+          {branchFieldVisible && (
             <div className="space-y-1">
               <label className="text-sm font-medium">Branch</label>
               <Select
                 value={branchId || ""}
                 onValueChange={setBranchId}
-                required={isBranchScopedStaff(role)}
+                required
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select branch (required)" />
