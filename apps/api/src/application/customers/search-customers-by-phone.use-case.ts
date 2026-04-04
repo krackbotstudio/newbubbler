@@ -7,6 +7,7 @@ export interface SearchCustomersByPhoneDeps {
 export async function searchCustomersByPhone(
   phoneLike: string,
   deps: SearchCustomersByPhoneDeps,
+  branchId?: string | null,
 ): Promise<CustomerRecord[]> {
-  return deps.customersRepo.findByPhone(phoneLike);
+  return deps.customersRepo.findByPhone(phoneLike, branchId);
 }

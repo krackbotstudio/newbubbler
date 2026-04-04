@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, type RefObject } from 'react';
+import { useState, useEffect, useMemo, type RefObject } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import type { InvoiceItemType, InvoiceOrderMode } from '@/types';
@@ -8,10 +8,14 @@ import type { LaundryItem, CatalogMatrixResponse } from '@/types/catalog';
 import type { ServiceType } from '@/types/order';
 import { formatMoney } from '@/lib/format';
 import { getApiOrigin } from '@/lib/api';
+import { cn } from '@/lib/utils';
 import { getToken } from '@/lib/auth';
+import { useIssuedInvoiceShareActions } from '@/hooks/useIssuedInvoiceShareActions';
 import { AddItemsToInvoiceDialog } from './AddItemsToInvoiceDialog';
+import { PrintLineTagDialog, type PrintLineTagPayload } from './PrintLineTagDialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { CatalogItemIcon } from '@/components/catalog/CatalogItemIcon';
+import { Printer, Trash2 } from 'lucide-react';
 
 const ITEM_TYPES: InvoiceItemType[] = ['SERVICE', 'FEE', 'ADDON', 'DRYCLEAN_ITEM', 'DISCOUNT'];
 
@@ -36,6 +40,18 @@ export interface InvoiceLineRow {
   catalogItemId?: string;
   segmentCategoryId?: string;
   serviceCategoryId?: string;
+}
+
+/** Config for issued invoice print / PDF / WhatsApp (Ack-dialog parity). */
+export interface InvoiceBuilderIssuedShareAdvanced {
+  orderId: string;
+  invoiceLabelForFile: string;
+  shareFileLabelPrefix: 'Ack' | 'Final';
+  buildWhatsAppMessage: () => string;
+  customerPhone: string | null | undefined;
+  printStyleId: string;
+  printRootId: string;
+  printCloneClass: string;
 }
 
 interface InvoiceBuilderProps {
@@ -95,6 +111,8 @@ interface InvoiceBuilderProps {
   issueDisabled?: boolean;
   /** When true, Submit is enabled even when draft does not exist (parent should save then issue on click). */
   allowSubmitWithoutDraft?: boolean;
+  /** When true, hide Save draft; parent should use Submit only (e.g. save+issue in one handler). */
+  hideSaveDraftButton?: boolean;
   /** For subscription-based invoice: show "KG" or "Nos" after the quantity for the subscription usage line. */
   subscriptionUnit?: 'KG' | 'Nos';
   /** Row index of the subscription usage line (e.g. 0) when subscriptionUnit is set. */
@@ -105,6 +123,65 @@ interface InvoiceBuilderProps {
   whatsappShareThankYouNote?: string;
   /** Ref to the print-area element (same as printed). When set, Download PDF generates PDF from this element so it matches the print view. */
   printAreaRef?: RefObject<HTMLElement | null>;
+  /** When true (e.g. order cancelled), line items are read-only and Add items / tax / discount / comments cannot be edited. */
+  disableEditing?: boolean;
+  /** When set (e.g. order UUID on order detail), each line shows “Print tag” for thermal labels. */
+  tagPrintOrderLabel?: string | null;
+  /** Printed top-center on line tags; defaults in dialog if omitted. */
+  tagBrandName?: string | null;
+  /**
+   * When issued + showPrintOnly + printAreaRef, use Ack-dialog-style print / download / WhatsApp
+   * (clone print, html2pdf, JPEG + wa.me) instead of the legacy toolbar.
+   */
+  issuedShareAdvanced?: InvoiceBuilderIssuedShareAdvanced | null;
+}
+
+function IssuedInvoiceShareToolbar({
+  printRef,
+  pdfUrl,
+  config,
+}: {
+  printRef: RefObject<HTMLElement | null>;
+  pdfUrl: string | null | undefined;
+  config: InvoiceBuilderIssuedShareAdvanced;
+}) {
+  const resolvedPdf =
+    pdfUrl?.startsWith('http') ? pdfUrl : pdfUrl ? `${getApiOrigin()}${pdfUrl}` : null;
+  const { handlePrint, handleDownload, handleWhatsAppShare, downloadLoading, shareLoading } =
+    useIssuedInvoiceShareActions(printRef, {
+      pdfUrl: resolvedPdf,
+      orderId: config.orderId,
+      invoiceLabelForFile: config.invoiceLabelForFile,
+      buildWhatsAppMessage: config.buildWhatsAppMessage,
+      customerPhone: config.customerPhone,
+      shareFileLabelPrefix: config.shareFileLabelPrefix,
+      printStyleId: config.printStyleId,
+      printRootId: config.printRootId,
+      printCloneClass: config.printCloneClass,
+    });
+  return (
+    <>
+      <Button variant="outline" className="ack-print-hide" onClick={handlePrint}>
+        Print
+      </Button>
+      <Button
+        variant="outline"
+        className="ack-print-hide"
+        onClick={handleDownload}
+        disabled={downloadLoading}
+      >
+        {downloadLoading ? 'Downloading…' : 'Download PDF'}
+      </Button>
+      <Button
+        variant="default"
+        className="ack-print-hide"
+        onClick={handleWhatsAppShare}
+        disabled={shareLoading}
+      >
+        {shareLoading ? 'Preparing…' : 'Share on WhatsApp'}
+      </Button>
+    </>
+  );
 }
 
 export function InvoiceBuilder({
@@ -145,11 +222,16 @@ export function InvoiceBuilder({
   subscriptionLines,
   issueDisabled = false,
   allowSubmitWithoutDraft = false,
+  hideSaveDraftButton = false,
   subscriptionUnit,
   subscriptionUsageRowIndex,
   whatsappShareMessage,
   whatsappShareThankYouNote = 'Thank you for your order! Please find your invoice attached.',
   printAreaRef,
+  disableEditing = false,
+  tagPrintOrderLabel = null,
+  tagBrandName = null,
+  issuedShareAdvanced = null,
 }: InvoiceBuilderProps) {
   const isSubscriptionOnly = orderMode === 'SUBSCRIPTION_ONLY';
   const canSaveSubscriptionOnly = !isSubscriptionOnly || subscriptionOnlyCanSave;
@@ -165,6 +247,16 @@ export function InvoiceBuilder({
   const [matrixServiceId, setMatrixServiceId] = useState('');
   const [matrixQty, setMatrixQty] = useState(1);
   const [addItemsDialogOpen, setAddItemsDialogOpen] = useState(false);
+  /** While editing line qty, hold raw string so decimals like "2." work; commit on blur. */
+  const [qtyDraftByRowIndex, setQtyDraftByRowIndex] = useState<Record<number, string>>({});
+  const [tagDialogRowIndex, setTagDialogRowIndex] = useState<number | null>(null);
+  /** Draft strings so Tax % and Discount can be cleared and retyped; commit on blur. */
+  const [taxPercentDraft, setTaxPercentDraft] = useState<string | null>(null);
+  const [discountValueDraft, setDiscountValueDraft] = useState<string | null>(null);
+
+  useEffect(() => {
+    setDiscountValueDraft(null);
+  }, [discountType]);
 
   const catalogItemsForService =
     catalog?.filter(
@@ -222,6 +314,38 @@ export function InvoiceBuilder({
   );
   const matrixPricePaise = matrixPriceRow ? Math.round(matrixPriceRow.priceRupees * 100) : 0;
 
+  const lineTagPayload: PrintLineTagPayload | null = useMemo(() => {
+    if (tagDialogRowIndex == null || !tagPrintOrderLabel?.trim()) return null;
+    const row = items[tagDialogRowIndex];
+    if (!row) return null;
+    let segment = '—';
+    let service = '—';
+    if (useMatrix && catalogMatrix && row.catalogItemId && row.segmentCategoryId && row.serviceCategoryId) {
+      segment =
+        catalogMatrix.segmentCategories.find((s) => s.id === row.segmentCategoryId)?.label ??
+        row.segmentCategoryId;
+      service =
+        catalogMatrix.serviceCategories.find((s) => s.id === row.serviceCategoryId)?.label ??
+        row.serviceCategoryId;
+    }
+    const defaultCopies = Math.ceil(Number(row.quantity) || 1);
+    const brand = tagBrandName?.trim() || 'We You';
+    return {
+      brandName: brand,
+      orderNumber: tagPrintOrderLabel.trim(),
+      itemName: row.name ?? '—',
+      segment,
+      service,
+      defaultCopies: Math.max(1, Math.min(999, defaultCopies)),
+    };
+  }, [tagDialogRowIndex, items, tagPrintOrderLabel, tagBrandName, catalogMatrix, useMatrix]);
+
+  useEffect(() => {
+    if (tagDialogRowIndex != null && (tagDialogRowIndex < 0 || tagDialogRowIndex >= items.length)) {
+      setTagDialogRowIndex(null);
+    }
+  }, [tagDialogRowIndex, items.length]);
+
   useEffect(() => {
     if (selectedPrice != null) setNewUnitPrice(selectedPrice.unitPricePaise);
   }, [catalogItemId, catalogService, selectedPrice?.unitPricePaise]);
@@ -230,13 +354,18 @@ export function InvoiceBuilder({
   const subtotal = isSubscriptionOnly
     ? (subscriptionAmountPaise ?? 0)
     : itemsSubtotal + (subscriptionAmountPaise ?? 0);
-  const taxFromPercent = taxAsPercent && onTaxPercentChange != null ? Math.round(subtotal * (taxPercent ?? 0) / 100) : 0;
   const discountFromInput = discountAsPercentOrAmount
     ? (discountType === 'percent' ? Math.round(subtotal * (discountValue ?? 0) / 100) : (discountValue ?? 0))
     : 0;
-  const taxPaiseEffective = taxAsPercent ? taxFromPercent : taxPaise;
   const discountPaiseEffective = discountAsPercentOrAmount ? discountFromInput : discountPaise;
-  const total = subtotal + taxPaiseEffective - discountPaiseEffective;
+  /** Tax % applies to amount after discount (taxable base), not gross subtotal. */
+  const taxableBasePaise = Math.max(0, subtotal - discountPaiseEffective);
+  const taxFromPercent =
+    taxAsPercent && onTaxPercentChange != null
+      ? Math.round(taxableBasePaise * (taxPercent ?? 0) / 100)
+      : 0;
+  const taxPaiseEffective = taxAsPercent ? taxFromPercent : taxPaise;
+  const total = subtotal - discountPaiseEffective + taxPaiseEffective;
 
   function addLineFromMatrix() {
     if (!matrixItem || !matrixSegmentId || !matrixServiceId) return;
@@ -333,7 +462,7 @@ export function InvoiceBuilder({
     onItemsChange(next);
   }
 
-  const canEdit = !issued;
+  const allowMutation = !issued && !disableEditing;
   const useCatalog = Boolean(catalog?.length) && !useMatrix;
 
   const hasSubscriptionLines = (subscriptionLines?.length ?? 0) > 0;
@@ -433,7 +562,7 @@ export function InvoiceBuilder({
     <div className="space-y-4">
       {showItemsTable && (
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="w-full border-collapse text-sm">
           <thead>
             <tr className="border-b">
               {useMatrix ? (
@@ -460,13 +589,18 @@ export function InvoiceBuilder({
                   <th className="text-right py-2">Amount (₹)</th>
                 </>
               )}
-              {canEdit && <th className="w-10" />}
+              {(allowMutation || tagPrintOrderLabel) && (
+                <th className="text-right py-2 w-[1%] whitespace-nowrap">Actions</th>
+              )}
             </tr>
           </thead>
           <tbody>
             {items.length === 0 && !hasSubscriptionLines ? (
               <tr className="border-b">
-                <td colSpan={(useMatrix ? 6 : 5) + (canEdit ? 1 : 0)} className="py-3 text-center text-muted-foreground">
+                <td
+                  colSpan={(useMatrix ? 6 : 5) + (allowMutation || tagPrintOrderLabel ? 1 : 0)}
+                  className="py-3 text-center text-muted-foreground"
+                >
                   NA
                 </td>
               </tr>
@@ -474,6 +608,12 @@ export function InvoiceBuilder({
             <>
             {items.map((row, i) => {
               const isMatrixRow = useMatrix && row.catalogItemId && catalogMatrix;
+              const qtyMin =
+                subscriptionUsageRowIndex === i && subscriptionUnit
+                  ? 0
+                  : isMatrixRow
+                    ? 0.1
+                    : 1;
               const rowSegments = isMatrixRow && row.catalogItemId ? getSegmentsForItem(row.catalogItemId) : [];
               const rowServices =
                 isMatrixRow && row.catalogItemId && row.segmentCategoryId
@@ -484,8 +624,8 @@ export function InvoiceBuilder({
                   {useMatrix ? (
                     isMatrixRow && catalogMatrix ? (
                       <>
-                        <td className="py-1">
-                          {canEdit ? (
+                        <td className="align-middle py-2">
+                          {allowMutation ? (
                             <Select
                               value={row.catalogItemId}
                               onValueChange={(newItemId) => {
@@ -548,11 +688,13 @@ export function InvoiceBuilder({
                                 ? catalogMatrix.items.find((x) => x.id === row.catalogItemId)
                                 : null;
                               return it ? (
-                                <span className="flex items-center gap-2">
-                                  <span className="flex shrink-0 items-center">
-                                    <CatalogItemIcon icon={it.icon} size={18} className="shrink-0 inline-block align-middle" cacheBuster={it.updatedAt} />
+                                <span className="flex min-h-[24px] w-full items-center gap-2.5">
+                                  <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center [&_svg]:block">
+                                    <CatalogItemIcon icon={it.icon} size={18} className="shrink-0" cacheBuster={it.updatedAt} />
                                   </span>
-                                  <span className="truncate">{row.name}</span>
+                                  <span className="min-w-0 flex-1 whitespace-normal break-words text-left text-sm leading-6">
+                                    {row.name}
+                                  </span>
                                 </span>
                               ) : (
                                 row.name
@@ -560,8 +702,8 @@ export function InvoiceBuilder({
                             })()
                           )}
                         </td>
-                        <td className="py-1">
-                          {canEdit ? (
+                        <td className="align-middle py-2">
+                          {allowMutation ? (
                             <select
                               className="h-8 w-full max-w-[120px] rounded border pl-2 pr-6 text-sm"
                               value={row.segmentCategoryId}
@@ -583,8 +725,8 @@ export function InvoiceBuilder({
                             catalogMatrix.segmentCategories.find((s) => s.id === row.segmentCategoryId)?.label ?? row.segmentCategoryId
                           )}
                         </td>
-                        <td className="py-1">
-                          {canEdit ? (
+                        <td className="align-middle py-2">
+                          {allowMutation ? (
                             <select
                               className="h-8 w-full max-w-[120px] rounded border pl-2 pr-6 text-sm"
                               value={row.serviceCategoryId}
@@ -607,7 +749,7 @@ export function InvoiceBuilder({
                   ) : (
                     <>
                       <td className="py-1">
-                        {canEdit ? (
+                        {allowMutation ? (
                           <select
                             className="h-8 w-full max-w-[120px] rounded border pl-2 pr-6 text-sm"
                             value={row.type}
@@ -622,7 +764,7 @@ export function InvoiceBuilder({
                         )}
                       </td>
                       <td className="py-1">
-                        {canEdit ? (
+                        {allowMutation ? (
                           <Input
                             className="h-8 min-w-0 max-w-[180px]"
                             value={row.name}
@@ -634,18 +776,46 @@ export function InvoiceBuilder({
                       </td>
                     </>
                   )}
-                  <td className="text-right py-1">
-                    <span className="inline-flex items-center gap-1">
-                      {canEdit ? (
+                  <td className="align-middle py-2 text-right">
+                    <span className="inline-flex items-center justify-end gap-1">
+                      {allowMutation ? (
                         <Input
-                          type="number"
-                          min={subscriptionUsageRowIndex === i && subscriptionUnit ? 0 : 1}
-                          className="h-8 w-16 text-right"
-                          value={row.quantity}
+                          type="text"
+                          inputMode="decimal"
+                          autoComplete="off"
+                          className="h-8 w-[4.25rem] text-right tabular-nums"
+                          value={
+                            qtyDraftByRowIndex[i] !== undefined
+                              ? qtyDraftByRowIndex[i]
+                              : String(row.quantity)
+                          }
+                          onFocus={() => {
+                            setQtyDraftByRowIndex((p) => ({
+                              ...p,
+                              [i]: p[i] ?? String(row.quantity),
+                            }));
+                          }}
                           onChange={(e) => {
-                            const raw = Number(e.target.value) || 0;
-                            const minVal = subscriptionUsageRowIndex === i && subscriptionUnit ? 0 : 1;
-                            updateLine(i, { quantity: Math.max(minVal, raw) });
+                            let v = e.target.value.replace(',', '.');
+                            if (v === '' || /^\d*\.?\d*$/.test(v)) {
+                              setQtyDraftByRowIndex((p) => ({ ...p, [i]: v }));
+                            }
+                          }}
+                          onBlur={(e) => {
+                            const rawDraft = e.target.value.replace(',', '.').trim();
+                            setQtyDraftByRowIndex((p) => {
+                              const next = { ...p };
+                              delete next[i];
+                              return next;
+                            });
+                            let q = row.quantity;
+                            if (rawDraft !== '' && rawDraft !== '.') {
+                              const n = Number(rawDraft);
+                              if (Number.isFinite(n)) q = Math.max(qtyMin, n);
+                            } else {
+                              q = Math.max(qtyMin, row.quantity);
+                            }
+                            updateLine(i, { quantity: q });
                           }}
                         />
                       ) : (
@@ -656,17 +826,42 @@ export function InvoiceBuilder({
                       )}
                     </span>
                   </td>
-                  <td className="text-right py-1">
+                  <td className="align-middle py-2 text-right">
                     {formatMoney(row.unitPricePaise)}
                   </td>
-                  <td className="text-right py-1">
+                  <td className="align-middle py-2 text-right">
                     {formatMoney(row.amountPaise ?? row.quantity * row.unitPricePaise)}
                   </td>
-                  {canEdit && (
-                    <td className="py-1">
-                      <Button type="button" variant="ghost" size="sm" onClick={() => removeLine(i)}>
-                        Remove
-                      </Button>
+                  {(allowMutation || tagPrintOrderLabel) && (
+                    <td className="align-middle py-2">
+                      <div className="flex flex-nowrap items-center justify-end gap-0.5">
+                        {tagPrintOrderLabel && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            className="h-8 w-8 shrink-0"
+                            title="Print tag"
+                            aria-label="Print tag"
+                            onClick={() => setTagDialogRowIndex(i)}
+                          >
+                            <Printer className="h-4 w-4" />
+                          </Button>
+                        )}
+                        {allowMutation && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
+                            title="Remove line"
+                            aria-label="Remove line"
+                            onClick={() => removeLine(i)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
                     </td>
                   )}
                 </tr>
@@ -691,7 +886,7 @@ export function InvoiceBuilder({
                   <td className="text-right py-1">{sub.quantity}</td>
                   <td className="text-right py-1">{formatMoney(sub.unitPricePaise)}</td>
                   <td className="text-right py-1">{formatMoney(amount)}</td>
-                  {canEdit && <td className="py-1" />}
+                  {(allowMutation || tagPrintOrderLabel) && <td className="py-1" />}
                 </tr>
               );
             })}
@@ -702,7 +897,7 @@ export function InvoiceBuilder({
       </div>
       )}
 
-      {canEdit && !isSubscriptionOnly && (
+      {!issued && !isSubscriptionOnly && (
         <div className="w-full space-y-2">
           {useMatrix && catalogMatrix ? (
             <>
@@ -710,6 +905,7 @@ export function InvoiceBuilder({
                 type="button"
                 variant="default"
                 className="w-full"
+                disabled={!allowMutation}
                 onClick={() => setAddItemsDialogOpen(true)}
               >
                 Add items
@@ -731,6 +927,7 @@ export function InvoiceBuilder({
                   <select
                     className="h-9 rounded-md border px-2 text-sm"
                     value={catalogService}
+                    disabled={!allowMutation}
                     onChange={(e) => {
                       setCatalogService(e.target.value as ServiceType);
                       setCatalogItemId('');
@@ -746,6 +943,7 @@ export function InvoiceBuilder({
                   <select
                     className="h-9 min-w-[140px] rounded-md border px-2 text-sm"
                     value={catalogItemId}
+                    disabled={!allowMutation}
                     onChange={(e) => setCatalogItemId(e.target.value)}
                   >
                     <option value="">Select item</option>
@@ -767,6 +965,7 @@ export function InvoiceBuilder({
                     type="number"
                     min={1}
                     value={newQty}
+                    disabled={!allowMutation}
                     onChange={(e) => setNewQty(Number(e.target.value) || 1)}
                     className="w-20 h-9"
                     placeholder="Qty"
@@ -778,7 +977,7 @@ export function InvoiceBuilder({
                 variant="default"
                 className="w-full"
                 onClick={addLine}
-                disabled={!catalogItemId}
+                disabled={!catalogItemId || !allowMutation}
               >
                 Add line
               </Button>
@@ -788,6 +987,7 @@ export function InvoiceBuilder({
               <select
                 className="h-9 rounded-md border px-2 text-sm"
                 value={newType}
+                disabled={!allowMutation}
                 onChange={(e) => setNewType(e.target.value as InvoiceItemType)}
               >
                 {ITEM_TYPES.map((t) => (
@@ -797,6 +997,7 @@ export function InvoiceBuilder({
               <Input
                 placeholder="Item name"
                 value={newName}
+                readOnly={!allowMutation}
                 onChange={(e) => setNewName(e.target.value)}
                 className="w-40"
               />
@@ -804,6 +1005,7 @@ export function InvoiceBuilder({
                 type="number"
                 min={1}
                 value={newQty}
+                disabled={!allowMutation}
                 onChange={(e) => setNewQty(Number(e.target.value) || 1)}
                 className="w-20"
               />
@@ -812,6 +1014,7 @@ export function InvoiceBuilder({
                 min={0}
                 placeholder="Unit price (paise)"
                 value={newUnitPrice || ''}
+                disabled={!allowMutation}
                 onChange={(e) => setNewUnitPrice(Number(e.target.value) || 0)}
                 className="w-28"
               />
@@ -820,7 +1023,7 @@ export function InvoiceBuilder({
                 variant="outline"
                 size="sm"
                 onClick={addLine}
-                disabled={!newName.trim()}
+                disabled={!newName.trim() || !allowMutation}
               >
                 Add line
               </Button>
@@ -829,34 +1032,9 @@ export function InvoiceBuilder({
         </div>
       )}
 
-      <div className="flex flex-wrap gap-4 items-end">
-        {canEdit && showTaxAndDiscount && (
-          <>
-            {taxAsPercent && onTaxPercentChange != null ? (
-              <div className="space-y-1 ack-print-hide">
-                <label className="text-xs text-muted-foreground">Tax (%)</label>
-                <Input
-                  type="number"
-                  min={0}
-                  max={100}
-                  step={0.5}
-                  value={taxPercent}
-                  onChange={(e) => onTaxPercentChange(Number(e.target.value) || 0)}
-                  className="w-24"
-                />
-              </div>
-            ) : (
-              <div className="space-y-1 ack-print-hide">
-                <label className="text-xs text-muted-foreground">Tax (paise)</label>
-                <Input
-                  type="number"
-                  min={0}
-                  value={taxPaise}
-                  onChange={(e) => onTaxChange(Number(e.target.value) || 0)}
-                  className="w-28"
-                />
-              </div>
-            )}
+      {showTaxAndDiscount && !issued && (
+        <div className="flex w-full flex-wrap items-end justify-between gap-x-6 gap-y-4">
+          <div className="flex flex-wrap items-end gap-4">
             {discountAsPercentOrAmount && onDiscountTypeChange != null && onDiscountValueChange != null ? (
               <>
                 <div className="space-y-1 ack-print-hide">
@@ -864,6 +1042,7 @@ export function InvoiceBuilder({
                   <select
                     className="h-9 rounded-md border px-2 text-sm"
                     value={discountType}
+                    disabled={!allowMutation}
                     onChange={(e) => onDiscountTypeChange(e.target.value as 'percent' | 'amount')}
                   >
                     <option value="percent">Percent (%)</option>
@@ -873,13 +1052,50 @@ export function InvoiceBuilder({
                 <div className="space-y-1 ack-print-hide">
                   <label className="text-xs text-muted-foreground">{discountType === 'percent' ? 'Discount (%)' : 'Discount (₹)'}</label>
                   <Input
-                    type="number"
-                    min={0}
-                    step={discountType === 'percent' ? 0.5 : 0.01}
-                    value={discountType === 'percent' ? discountValue : (discountValue / 100)}
+                    type="text"
+                    inputMode="decimal"
+                    autoComplete="off"
+                    value={
+                      discountValueDraft !== null
+                        ? discountValueDraft
+                        : discountType === 'percent'
+                          ? String(discountValue ?? 0)
+                          : String((discountValue ?? 0) / 100)
+                    }
+                    disabled={!allowMutation}
+                    onFocus={() => {
+                      setDiscountValueDraft(
+                        discountType === 'percent'
+                          ? String(discountValue ?? 0)
+                          : String((discountValue ?? 0) / 100)
+                      );
+                    }}
                     onChange={(e) => {
-                      const v = Number(e.target.value) || 0;
-                      onDiscountValueChange(discountType === 'percent' ? v : Math.round(v * 100));
+                      let v = e.target.value.replace(',', '.');
+                      if (v === '' || /^\d*\.?\d*$/.test(v)) {
+                        setDiscountValueDraft(v);
+                      }
+                    }}
+                    onBlur={() => {
+                      const fallback =
+                        discountType === 'percent'
+                          ? String(discountValue ?? 0)
+                          : String((discountValue ?? 0) / 100);
+                      const raw = (discountValueDraft ?? fallback).replace(',', '.').trim();
+                      setDiscountValueDraft(null);
+                      if (raw === '' || raw === '.') {
+                        onDiscountValueChange(0);
+                        return;
+                      }
+                      const n = parseFloat(raw);
+                      if (!Number.isFinite(n)) {
+                        return;
+                      }
+                      if (discountType === 'percent') {
+                        onDiscountValueChange(Math.min(100, Math.max(0, n)));
+                      } else {
+                        onDiscountValueChange(Math.max(0, Math.round(n * 100)));
+                      }
                     }}
                     className="w-28"
                   />
@@ -892,37 +1108,98 @@ export function InvoiceBuilder({
                   type="number"
                   min={0}
                   value={discountPaise}
+                  disabled={!allowMutation}
                   onChange={(e) => onDiscountChange(Number(e.target.value) || 0)}
                   className="w-28"
                 />
               </div>
             )}
-          </>
-        )}
-      </div>
+          </div>
+          <div className="flex flex-wrap items-end gap-4">
+            {taxAsPercent && onTaxPercentChange != null ? (
+              <div className="space-y-1 ack-print-hide">
+                <label className="text-xs text-muted-foreground">Tax (%)</label>
+                <Input
+                  type="text"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  value={taxPercentDraft !== null ? taxPercentDraft : String(taxPercent ?? 0)}
+                  disabled={!allowMutation}
+                  onFocus={() => {
+                    setTaxPercentDraft(String(taxPercent ?? 0));
+                  }}
+                  onChange={(e) => {
+                    let v = e.target.value.replace(',', '.');
+                    if (v === '' || /^\d*\.?\d*$/.test(v)) {
+                      setTaxPercentDraft(v);
+                    }
+                  }}
+                  onBlur={() => {
+                    const raw = (taxPercentDraft ?? String(taxPercent ?? 0)).replace(',', '.').trim();
+                    setTaxPercentDraft(null);
+                    if (raw === '' || raw === '.') {
+                      onTaxPercentChange(0);
+                      return;
+                    }
+                    const n = parseFloat(raw);
+                    if (!Number.isFinite(n)) {
+                      onTaxPercentChange(taxPercent ?? 0);
+                      return;
+                    }
+                    onTaxPercentChange(Math.min(100, Math.max(0, n)));
+                  }}
+                  className="w-24"
+                />
+              </div>
+            ) : (
+              <div className="space-y-1 ack-print-hide">
+                <label className="text-xs text-muted-foreground">Tax (paise)</label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={taxPaise}
+                  disabled={!allowMutation}
+                  onChange={(e) => onTaxChange(Number(e.target.value) || 0)}
+                  className="w-28"
+                />
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {onCommentsChange != null && (
         <div className="space-y-1">
           <label className="text-xs text-muted-foreground ack-print-hide">Comments (included in invoice)</label>
           <textarea
-            className="min-h-[60px] w-full rounded-md border px-3 py-2 text-sm ack-comments-input"
+            className={cn(
+              'min-h-[60px] w-full rounded-md border px-3 py-2 text-sm ack-comments-input',
+              !allowMutation && 'cursor-not-allowed bg-muted/50 text-muted-foreground',
+            )}
             value={comments}
-            onChange={(e) => onCommentsChange(e.target.value)}
+            readOnly={!allowMutation}
+            disabled={!allowMutation}
+            onChange={(e) => {
+              if (!allowMutation) return;
+              onCommentsChange(e.target.value);
+            }}
             placeholder="Thank you"
           />
         </div>
       )}
 
       <div className="flex gap-2">
-        {canEdit && (
+        {allowMutation && (
           <>
-            <Button
-              variant="secondary"
-              onClick={onSaveDraft}
-              disabled={saveDraftLoading || (canSaveDraft !== true && (!canSaveSubscriptionOnly || (!isSubscriptionOnly && items.length === 0)))}
-            >
-              {saveDraftLoading ? 'Saving…' : (saveDraftLabel ?? 'Save draft')}
-            </Button>
+            {!hideSaveDraftButton && (
+              <Button
+                variant="secondary"
+                onClick={onSaveDraft}
+                disabled={saveDraftLoading || (canSaveDraft !== true && (!canSaveSubscriptionOnly || (!isSubscriptionOnly && items.length === 0)))}
+              >
+                {saveDraftLoading ? 'Saving…' : (saveDraftLabel ?? 'Save draft')}
+              </Button>
+            )}
             <Button
               onClick={onIssue}
               disabled={issueLoading || (!draftExists && !allowSubmitWithoutDraft) || issueDisabled}
@@ -931,28 +1208,40 @@ export function InvoiceBuilder({
             </Button>
           </>
         )}
-        {issued && (pdfUrl || printAreaRef) && (
-          <Button
-            variant="default"
-            className="ack-print-hide"
-            onClick={handleDownloadPdf}
-            disabled={downloadLoading}
-          >
-            {downloadLoading ? 'Downloading…' : 'Download PDF'}
-          </Button>
-        )}
-        {issued && showPrintOnly && onPrint && (
-          <Button variant="outline" className="ack-print-hide" onClick={onPrint}>Print</Button>
-        )}
-        {issued && whatsappShareMessage && (
-          <Button
-            variant="outline"
-            className="ack-print-hide"
-            onClick={handleShareOnWhatsApp}
-            disabled={shareLoading}
-          >
-            {shareLoading ? 'Sharing…' : 'Share on WhatsApp'}
-          </Button>
+        {issued &&
+        showPrintOnly &&
+        (pdfUrl || printAreaRef) &&
+        issuedShareAdvanced &&
+        printAreaRef ? (
+          <IssuedInvoiceShareToolbar printRef={printAreaRef} pdfUrl={pdfUrl} config={issuedShareAdvanced} />
+        ) : (
+          <>
+            {issued && (pdfUrl || printAreaRef) && (
+              <Button
+                variant="default"
+                className="ack-print-hide"
+                onClick={handleDownloadPdf}
+                disabled={downloadLoading}
+              >
+                {downloadLoading ? 'Downloading…' : 'Download PDF'}
+              </Button>
+            )}
+            {issued && showPrintOnly && onPrint && (
+              <Button variant="outline" className="ack-print-hide" onClick={onPrint}>
+                Print
+              </Button>
+            )}
+            {issued && whatsappShareMessage && (
+              <Button
+                variant="outline"
+                className="ack-print-hide"
+                onClick={handleShareOnWhatsApp}
+                disabled={shareLoading}
+              >
+                {shareLoading ? 'Sharing…' : 'Share on WhatsApp'}
+              </Button>
+            )}
+          </>
         )}
         {issued && !showPrintOnly && pdfUrl && (
           <a
@@ -975,6 +1264,14 @@ export function InvoiceBuilder({
           />
         </div>
       )}
+
+      <PrintLineTagDialog
+        open={tagDialogRowIndex !== null && lineTagPayload !== null}
+        onOpenChange={(o) => {
+          if (!o) setTagDialogRowIndex(null);
+        }}
+        payload={lineTagPayload}
+      />
     </div>
   );
 }

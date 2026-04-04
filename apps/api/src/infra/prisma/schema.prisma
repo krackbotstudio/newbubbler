@@ -15,7 +15,7 @@ model User {
   email         String?        @unique
   passwordHash  String?
   role          Role
-  /** For Branch Head (OPS): the branch they are head of; required when role is OPS. */
+  /** For Branch Head (OPS) and Agent (AGENT): assigned branch; required when role is OPS or AGENT. */
   branchId      String?
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
@@ -507,6 +507,7 @@ enum Role {
   ADMIN
   OPS
   BILLING
+  AGENT
 }
 
 enum ServiceType {

@@ -37,6 +37,8 @@ export enum Role {
   CUSTOMER = 'CUSTOMER',
   ADMIN = 'ADMIN',
   OPS = 'OPS',
+  /** Branch-scoped staff: dashboard, orders, walk-in, customers, feedback only (admin-web). */
+  AGENT = 'AGENT',
   BILLING = 'BILLING',
 }
 

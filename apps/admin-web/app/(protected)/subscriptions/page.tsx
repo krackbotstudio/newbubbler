@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { getStoredUser } from '@/lib/auth';
+import { getStoredUser, isBranchScopedStaff } from '@/lib/auth';
 import { useSubscriptionInvoices, type AdminSubscriptionInvoiceRow } from '@/hooks/useSubscriptionInvoices';
 import { BranchFilter } from '@/components/shared/BranchFilter';
 import { Button } from '@/components/ui/button';
@@ -25,7 +25,7 @@ export default function SubscriptionsPage() {
   const router = useRouter();
   const user = useMemo(() => getStoredUser(), []);
   const role = user?.role ?? 'CUSTOMER';
-  const isBranchHead = role === 'OPS' && !!user?.branchId;
+  const isBranchHead = isBranchScopedStaff(role) && !!user?.branchId;
   const [selectedBranchIds, setSelectedBranchIds] = useState<string[]>(() =>
     isBranchHead && user?.branchId ? [user.branchId] : [],
   );

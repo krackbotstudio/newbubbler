@@ -52,4 +52,16 @@ export class AdminAnalyticsService {
     ]);
     return { activeSubscriptionsCount, totalCustomersCount };
   }
+
+  /** KPIs scoped to one branch (Branch Head / Agent dashboard). */
+  async getDashboardKpisForBranch(branchId: string): Promise<{
+    activeSubscriptionsCount: number;
+    totalCustomersCount: number;
+  }> {
+    const [activeSubscriptionsCount, totalCustomersCount] = await Promise.all([
+      this.subscriptionsRepo.countActiveForBranch(branchId),
+      this.customersRepo.countWithOrdersInBranch(branchId),
+    ]);
+    return { activeSubscriptionsCount, totalCustomersCount };
+  }
 }

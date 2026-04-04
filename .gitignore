@@ -20,6 +20,32 @@ build/
 !.env*.example
 !**/.env*.example
 .envrc
+.direnv/
+
+# API / auth files that must never be committed
+*.pem
+*.key
+*.p8
+*.p12
+*.jks
+*.keystore
+credentials.json
+
+# Sentry CLI (may contain auth tokens)
+.sentryclirc
+sentry.properties
+
+# EAS (Expo Application Services) — local credentials export
+eas.json.local
+
+# Supabase CLI (local linked state; safe to ignore if you add supabase/ later)
+supabase/.branches
+supabase/.temp
+
+# Terraform (if used) — keep .terraform.lock.hcl committed for provider pins
+.terraform/
+*.tfstate
+*.tfstate.*
 
 # Local API file storage (dev disk uploads — logos, PDFs, etc.)
 /storage/
@@ -49,9 +75,6 @@ yarn-error.log*
 .expo/
 .expo-shared/
 web-build/
-*.jks
-*.p8
-*.p12
 *.mobileprovision
 
 # Mobile release binaries (build on CI / EAS; do not commit)
@@ -70,6 +93,10 @@ apps/api/src/infra/generated/
 # Testing
 coverage/
 .nyc_output/
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
 
 # OS
 .DS_Store
@@ -80,10 +107,14 @@ ehthumbs.db
 # Misc caches & temp
 *.log
 .cache/
-*.pem
 *.orig
 *.bak
 .eslintcache
+
+# Local databases (dev / accidental dumps)
+*.sqlite
+*.sqlite3
+*.db
 
 # Optional local files
 *.local

@@ -1,15 +1,25 @@
 const TOKEN_KEY = 'admin_jwt';
 const USER_KEY = 'admin_user';
 
-export type Role = 'ADMIN' | 'OPS' | 'BILLING' | 'CUSTOMER';
+export type Role = 'ADMIN' | 'OPS' | 'AGENT' | 'BILLING' | 'CUSTOMER';
 
 export interface AuthUser {
   id: string;
   email?: string;
   phone?: string;
   role: Role;
-  /** Set for OPS (branch head) users; used to restrict walk-in orders to their branch. */
+  /** Set for Branch Head (OPS) and Agent (AGENT); walk-in and list APIs are scoped to this branch. */
   branchId?: string | null;
+}
+
+/** Branch Head or Agent: assigned a single branch for data access. */
+export function isBranchScopedStaff(role: Role): boolean {
+  return role === 'OPS' || role === 'AGENT';
+}
+
+/** Branch filter is fixed to `branchId` (no “all branches” for OPS/AGENT with an assignment). */
+export function isBranchFilterLocked(role: Role, branchId: string | null | undefined): boolean {
+  return isBranchScopedStaff(role) && !!branchId;
 }
 
 export function getToken(): string | null {
@@ -58,7 +68,7 @@ export function canAccessPaymentEdit(role: Role): boolean {
 }
 
 export function canAccessOrders(role: Role): boolean {
-  return ['ADMIN', 'OPS', 'BILLING'].includes(role);
+  return ['ADMIN', 'OPS', 'BILLING', 'AGENT'].includes(role);
 }
 
 export function canAccessBrandingEdit(role: Role): boolean {

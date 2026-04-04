@@ -1,4 +1,10 @@
-export type ServiceTypeId = 'WASH_FOLD' | 'WASH_IRON' | 'DRY_CLEAN' | 'SHOES' | 'STEAM_IRON';
+export type ServiceTypeId =
+  | 'WASH_FOLD'
+  | 'WASH_IRON'
+  | 'DRY_CLEAN'
+  | 'SHOES'
+  | 'STEAM_IRON'
+  | 'HOME_LINEN';
 
 export interface CustomerAddress {
   id: string;
@@ -18,4 +24,5 @@ export const SERVICE_TYPES: { id: ServiceTypeId; label: string; icon: string }[]
   { id: 'DRY_CLEAN', label: 'Dry cleaning', icon: '🧥' },
   { id: 'SHOES', label: 'Shoe', icon: '👟' },
   { id: 'STEAM_IRON', label: 'Steam Iron', icon: '♨️' },
+  { id: 'HOME_LINEN', label: 'Home linen', icon: '🛏️' },
 ];

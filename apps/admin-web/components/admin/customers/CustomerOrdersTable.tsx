@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState, useRef } from 'react';
+import { useCallback, useMemo, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useOrders } from '@/hooks/useOrders';
 import { useOrderSummary } from '@/hooks/useOrderSummary';
@@ -30,8 +30,10 @@ import { InvoicePrintView } from '@/components/admin/customers/InvoicePrintView'
 import { formatDate } from '@/lib/format';
 import { getApiOrigin } from '@/lib/api';
 import { getToken } from '@/lib/auth';
+import { mergeInvoiceDisplayBranding } from '@/lib/invoice-display-branding';
 import type { OrderRecord } from '@/types';
-import type { Role } from '@/lib/auth';
+import { isBranchFilterLocked, type Role } from '@/lib/auth';
+import { LockedBranchSelect } from '@/components/shared/LockedBranchSelect';
 import { Eye } from 'lucide-react';
 
 const SERVICE_LABELS: Record<string, string> = {
@@ -54,8 +56,8 @@ type InvoiceModalType = 'ACK' | 'FINAL';
 
 export function CustomerOrdersTable({ userId, role, userBranchId }: CustomerOrdersTableProps) {
   const router = useRouter();
-  const isBranchHead = role === 'OPS' && userBranchId;
-  const [branchIdFilter, setBranchIdFilter] = useState<string>(() => (isBranchHead ? userBranchId ?? '' : ''));
+  const branchLocked = !!role && isBranchFilterLocked(role, userBranchId);
+  const [branchIdFilter, setBranchIdFilter] = useState<string>(() => (branchLocked ? userBranchId ?? '' : ''));
   const [cursor, setCursor] = useState<string | undefined>(undefined);
   const [invoiceModal, setInvoiceModal] = useState<{ orderId: string; type: InvoiceModalType } | null>(null);
   const [downloadLoading, setDownloadLoading] = useState(false);
@@ -63,7 +65,7 @@ export function CustomerOrdersTable({ userId, role, userBranchId }: CustomerOrde
   const invoicePrintRef = useRef<HTMLDivElement>(null);
   const limit = 20;
 
-  const effectiveBranchId = isBranchHead ? (userBranchId ?? '') : branchIdFilter;
+  const effectiveBranchId = branchLocked ? (userBranchId ?? '') : branchIdFilter;
   const { data: branches = [] } = useBranches();
   const { data, isLoading, error } = useOrders({
     customerId: userId,
@@ -116,6 +118,24 @@ export function CustomerOrdersTable({ userId, role, userBranchId }: CustomerOrde
   const subscriptionUsageRowIndex =
     invoiceModal?.type === 'FINAL' && hasSubscription && (invoice?.items?.length ?? 0) > 0 ? 0 : undefined;
 
+  const mergedInvoiceBranding = useMemo(
+    () => mergeInvoiceDisplayBranding(invoice?.brandingSnapshotJson, branding ?? undefined),
+    [invoice, branding],
+  );
+  const brandingForPrintView = mergedInvoiceBranding
+    ? {
+        businessName: mergedInvoiceBranding.businessName,
+        logoUrl: mergedInvoiceBranding.logoUrl,
+        address: mergedInvoiceBranding.address,
+        phone: mergedInvoiceBranding.phone,
+        email: mergedInvoiceBranding.email,
+        panNumber: mergedInvoiceBranding.panNumber,
+        gstNumber: mergedInvoiceBranding.gstNumber,
+        termsAndConditions: mergedInvoiceBranding.termsAndConditions,
+      }
+    : null;
+  const invoiceLogoCacheBuster = branding?.updatedAt ?? mergedInvoiceBranding?.logoUrlCacheBuster ?? undefined;
+
   const printStyleId = 'customer-invoice-print-style';
   const handlePrint = useCallback(() => {
     const el = invoicePrintRef.current;
@@ -128,7 +148,7 @@ export function CustomerOrdersTable({ userId, role, userBranchId }: CustomerOrde
     wrapper.appendChild(clone);
     const style = document.createElement('style');
     style.id = printStyleId;
-    style.textContent = `@media print{html,body{margin:0!important;padding:0!important}body>*{display:none!important}body>#customer-invoice-print-root{display:block!important}#customer-invoice-print-root{position:static!important;margin:0!important;padding:0!important}.customer-invoice-print-clone{margin:0!important;padding:0 0.5rem 0.5rem!important;max-width:100%!important;page-break-inside:avoid!important}.customer-invoice-print-clone.invoice-print-view{padding:0.25rem 0.5rem!important;gap:0.25rem!important}.customer-invoice-print-clone.invoice-print-view>*{margin-top:0.25rem!important;margin-bottom:0!important}.customer-invoice-print-clone .flex.gap-4{border-bottom-width:1px!important;padding-bottom:0.25rem!important;gap:0.25rem!important}.customer-invoice-print-clone [class*="pb-4"]{padding-bottom:0.25rem!important}.customer-invoice-print-clone [class*="py-2"]{padding-top:0.15rem!important;padding-bottom:0.15rem!important}.customer-invoice-print-clone [class*="py-3"]{padding-top:0.2rem!important;padding-bottom:0.2rem!important}.customer-invoice-print-clone [class*="p-3"]{padding:0.25rem!important}.customer-invoice-print-clone [class*="p-2"]{padding:0.2rem!important}.customer-invoice-print-clone [class*="mt-4"],[class*="mt-6"]{margin-top:0.25rem!important}.customer-invoice-print-clone [class*="pt-4"]{padding-top:0.25rem!important}.customer-invoice-print-clone table th,.customer-invoice-print-clone table td{padding-top:0.15rem!important;padding-bottom:0.15rem!important}.customer-invoice-print-clone img{max-height:2rem!important;height:2rem!important}}@media screen{#customer-invoice-print-root{display:none!important}}`;
+    style.textContent = `@media print{html,body{margin:0!important;padding:0!important}body #customer-invoice-print-root,body #customer-invoice-print-root *{visibility:visible!important}body>*{display:none!important}body>#customer-invoice-print-root{display:block!important}#customer-invoice-print-root{position:static!important;margin:0!important;padding:0!important}.customer-invoice-print-clone{margin:0!important;padding:0 0.5rem 0.5rem!important;max-width:100%!important;page-break-inside:avoid!important}.customer-invoice-print-clone.invoice-print-view{padding:0.25rem 0.5rem!important;gap:0.25rem!important}.customer-invoice-print-clone.invoice-print-view>*{margin-top:0.25rem!important;margin-bottom:0!important}.customer-invoice-print-clone .invoice-print-header-logo{border-bottom-width:1px!important;padding-bottom:0.25rem!important}.customer-invoice-print-clone [class*="pb-4"]{padding-bottom:0.25rem!important}.customer-invoice-print-clone [class*="py-2"]{padding-top:0.15rem!important;padding-bottom:0.15rem!important}.customer-invoice-print-clone [class*="py-3"]{padding-top:0.2rem!important;padding-bottom:0.2rem!important}.customer-invoice-print-clone [class*="p-3"]{padding:0.25rem!important}.customer-invoice-print-clone [class*="p-2"]{padding:0.2rem!important}.customer-invoice-print-clone [class*="mt-4"],[class*="mt-6"]{margin-top:0.25rem!important}.customer-invoice-print-clone [class*="pt-4"]{padding-top:0.25rem!important}.customer-invoice-print-clone table th,.customer-invoice-print-clone table td{padding-top:0.15rem!important;padding-bottom:0.15rem!important}.customer-invoice-print-clone img{max-height:2rem!important;height:2rem!important}}@media screen{#customer-invoice-print-root{display:none!important}}`;
     document.body.appendChild(style);
     document.body.insertBefore(wrapper, document.body.firstChild);
     requestAnimationFrame(() => {
@@ -238,21 +258,24 @@ export function CustomerOrdersTable({ userId, role, userBranchId }: CustomerOrde
           <label htmlFor="orders-branch-filter" className="text-sm text-muted-foreground whitespace-nowrap">
             Branch
           </label>
-          <select
-            id="orders-branch-filter"
-            className="h-9 min-w-[160px] rounded-md border border-input bg-background px-3 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
-            value={effectiveBranchId}
-            disabled={!!isBranchHead}
-            onChange={(e) => setBranchIdFilter(e.target.value)}
-            title={isBranchHead ? 'Your assigned branch (filter locked)' : 'Filter by branch'}
-          >
-            <option value="">All branches</option>
-            {branches.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.name ?? b.id}
-              </option>
-            ))}
-          </select>
+          {branchLocked ? (
+            <LockedBranchSelect branchId={userBranchId} selectClassName="h-9 min-w-[160px]" />
+          ) : (
+            <select
+              id="orders-branch-filter"
+              className="h-9 min-w-[160px] rounded-md border border-input bg-background px-3 text-sm"
+              value={effectiveBranchId}
+              onChange={(e) => setBranchIdFilter(e.target.value)}
+              title="Filter by branch"
+            >
+              <option value="">All branches</option>
+              {branches.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name ?? b.id}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
       </CardHeader>
       <CardContent>
@@ -443,14 +466,8 @@ export function CustomerOrdersTable({ userId, role, userBranchId }: CustomerOrde
                 summary={orderSummary}
                 invoice={invoice}
                 type={invoiceModal!.type}
-                branding={(() => {
-                  const snap = invoice?.brandingSnapshotJson;
-                  const base = (snap ?? branding) ?? null;
-                  if (!base) return null;
-                  const snapTerms = (snap as { termsAndConditions?: string | null } | undefined)?.termsAndConditions;
-                  const terms = (snapTerms?.trim() ? snapTerms : branding?.termsAndConditions) ?? null;
-                  return { ...base, termsAndConditions: terms };
-                })()}
+                branding={brandingForPrintView}
+                logoUrlCacheBuster={invoiceLogoCacheBuster}
                 ackInvoice={invoiceModal!.type === 'FINAL' ? ackInvoice ?? null : undefined}
                 catalogMatrix={catalogMatrix ?? null}
                 subscriptionUnit={subscriptionUnit}

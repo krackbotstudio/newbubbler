@@ -25,7 +25,8 @@ import { formatDateTime } from '@/lib/format';
 import type { FeedbackRecord, FeedbackStatus, FeedbackType } from '@/types';
 import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
-import { getStoredUser } from '@/lib/auth';
+import { getStoredUser, isBranchFilterLocked } from '@/lib/auth';
+import { LockedBranchSelect } from '@/components/shared/LockedBranchSelect';
 
 const STATUS_OPTIONS: FeedbackStatus[] = ['NEW', 'REVIEWED', 'RESOLVED'];
 const TYPE_OPTIONS: FeedbackType[] = ['ORDER', 'GENERAL'];
@@ -42,11 +43,11 @@ export default function FeedbackPage() {
   const [editNotes, setEditNotes] = useState('');
 
   const user = useMemo(() => getStoredUser(), []);
-  const isBranchHead = user?.role === 'OPS' && user?.branchId;
-  const effectiveOpsBranchId = isBranchHead ? user?.branchId ?? null : null;
+  const branchLocked = !!(user && isBranchFilterLocked(user.role, user.branchId));
+  const effectiveScopedBranchId = branchLocked ? user?.branchId ?? null : null;
   const { data: branches = [], isLoading: branchesLoading } = useBranches();
   const [branchId, setBranchId] = useState<string>('');
-  const effectiveBranchId = effectiveOpsBranchId ?? (branchId || null);
+  const effectiveBranchId = effectiveScopedBranchId ?? (branchId || null);
 
   const filters = {
     type: type || undefined,
@@ -133,26 +134,30 @@ export default function FeedbackPage() {
           </div>
           <div className="space-y-1">
             <label className="text-xs text-muted-foreground">Branch</label>
-            <select
-              className="h-9 rounded border bg-background px-3 text-sm min-w-[200px]"
-              value={effectiveBranchId ?? ''}
-              onChange={(e) => {
-                setBranchId(e.target.value);
-                setCursor(undefined);
-              }}
-              disabled={branchesLoading || !!isBranchHead}
-            >
-              {!isBranchHead ? <option value="">All branches</option> : null}
-              {(branches ?? []).map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name}
-                </option>
-              ))}
-            </select>
+            {branchLocked ? (
+              <LockedBranchSelect branchId={user?.branchId} selectClassName="h-9 min-w-[200px]" />
+            ) : (
+              <select
+                className="h-9 rounded border bg-background px-3 text-sm min-w-[200px]"
+                value={effectiveBranchId ?? ''}
+                onChange={(e) => {
+                  setBranchId(e.target.value);
+                  setCursor(undefined);
+                }}
+                disabled={branchesLoading}
+              >
+                <option value="">All branches</option>
+                {(branches ?? []).map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
-          {isBranchHead ? (
-            <div className="text-xs text-muted-foreground mt-2">
-              OPS scoped to your branch.
+          {branchLocked ? (
+            <div className="text-xs text-muted-foreground mt-2 self-end">
+              Showing feedback for your assigned branch only.
             </div>
           ) : null}
           <div className="space-y-1">

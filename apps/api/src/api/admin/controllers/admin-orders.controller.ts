@@ -1,15 +1,17 @@
 import { Controller, Get, Param, Query, UseGuards, Req } from '@nestjs/common';
 import { Role } from '@shared/enums';
+import { AGENT_ROLE } from '../../common/agent-role';
 import { JwtAuthGuard } from '../../common/jwt-auth.guard';
 import { Roles } from '../../common/roles.decorator';
 import { RolesGuard } from '../../common/roles.guard';
 import type { AuthUser } from '../../common/roles.guard';
+import { effectiveBranchIdForAdminQuery } from '../../common/branch-scope.util';
 import { AdminOrdersService } from '../services/admin-orders.service';
 import { AdminListOrdersQueryDto } from '../dto/admin-list-orders-query.dto';
 
 @Controller('admin/orders')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.ADMIN, Role.OPS, Role.BILLING)
+@Roles(Role.ADMIN, Role.OPS, Role.BILLING, AGENT_ROLE)
 export class AdminOrdersController {
   constructor(private readonly adminOrdersService: AdminOrdersService) {}
 
@@ -29,7 +31,8 @@ export class AdminOrdersController {
       pickupDateTo = new Date(query.pickupDateTo);
       pickupDateTo.setHours(23, 59, 59, 999);
     }
-    const branchId = user.role === Role.OPS && user.branchId ? user.branchId : query.branchId ?? undefined;
+    const branchId = effectiveBranchIdForAdminQuery(user, query.branchId ?? null);
+    const search = query.search?.trim() ? query.search.trim() : undefined;
     const filters = {
       status: query.status,
       pincode: query.pincode,
@@ -37,6 +40,7 @@ export class AdminOrdersController {
       customerId: query.customerId,
       branchId: branchId ?? null,
       orderSource: query.orderSource ?? null,
+      search,
       dateFrom,
       dateTo,
       pickupDateFrom,

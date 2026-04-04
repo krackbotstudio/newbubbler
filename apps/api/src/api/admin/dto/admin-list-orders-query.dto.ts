@@ -1,4 +1,4 @@
-import { IsEnum, IsOptional, IsString, IsInt, Min, Max, Matches } from 'class-validator';
+import { IsEnum, IsOptional, IsString, IsInt, Min, Max, Matches, MaxLength } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ServiceType, OrderStatus } from '@shared/enums';
 
@@ -23,6 +23,12 @@ export class AdminListOrdersQueryDto {
   @IsOptional()
   @IsString()
   branchId?: string;
+
+  /** Partial match on order id, customer name, or customer phone. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  search?: string;
 
   /** e.g. WALK_IN to list only walk-in orders. */
   @IsOptional()

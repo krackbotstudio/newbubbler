@@ -196,8 +196,8 @@ export const PDF_GENERATOR = Symbol('PdfGenerator');
       useFactory: (): StorageAdapter => {
         const url = process.env.SUPABASE_URL;
         const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-        const bucket = process.env.SUPABASE_STORAGE_BUCKET;
-        if (url && key && bucket) {
+        const bucket = process.env.SUPABASE_STORAGE_BUCKET ?? 'assets';
+        if (url && key) {
           return new SupabaseStorageAdapter({ url, serviceRoleKey: key, bucket });
         }
         return new LocalStorageAdapter(process.env.LOCAL_STORAGE_ROOT ?? './storage');

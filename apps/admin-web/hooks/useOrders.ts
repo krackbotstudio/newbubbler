@@ -10,6 +10,7 @@ function fetchOrders(filters: AdminOrdersFilters): Promise<AdminOrdersResponse> 
   if (filters.customerId) params.set('customerId', filters.customerId);
   if (filters.branchId) params.set('branchId', filters.branchId);
   if (filters.orderSource) params.set('orderSource', filters.orderSource);
+  if (filters.search) params.set('search', filters.search);
   if (filters.dateFrom) params.set('dateFrom', filters.dateFrom);
   if (filters.dateTo) params.set('dateTo', filters.dateTo);
   if (filters.pickupDateFrom) params.set('pickupDateFrom', filters.pickupDateFrom);

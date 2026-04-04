@@ -36,6 +36,10 @@ export class AdminPaymentsService {
       },
     );
     if (dto.status === 'CAPTURED') {
+      const order = await this.ordersRepo.getById(orderId);
+      if (order && order.status !== 'CANCELLED' && order.status !== 'DELIVERED') {
+        await this.ordersRepo.updateStatus(orderId, 'DELIVERED');
+      }
       await fulfillNewSubscriptionsFromAckInvoice(orderId, {
         ordersRepo: this.ordersRepo,
         invoicesRepo: this.invoicesRepo,

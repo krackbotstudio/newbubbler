@@ -90,7 +90,13 @@ export class AdminSubscriptionsService {
       brandingSnapshotJson,
       subscriptionPurchaseSnapshotJson: (invoice as { subscriptionPurchaseSnapshotJson?: unknown }).subscriptionPurchaseSnapshotJson ?? null,
       mainBranch: mainBranch
-        ? { name: mainBranch.name, address: mainBranch.address, phone: mainBranch.phone, email: mainBranch.email }
+        ? {
+            name: mainBranch.name,
+            address: mainBranch.address,
+            phone: mainBranch.phone,
+            email: mainBranch.email,
+            footerNote: mainBranch.footerNote ?? null,
+          }
         : null,
       customerName: customer?.name ?? null,
       customerPhone: customer?.phone ?? null,

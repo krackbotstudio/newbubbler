@@ -4,6 +4,7 @@ import { diskStorage } from 'multer';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Role } from '@shared/enums';
+import { AGENT_ROLE } from '../../common/agent-role';
 import type { Request } from 'express';
 import { JwtAuthGuard } from '../../common/jwt-auth.guard';
 import { Roles } from '../../common/roles.decorator';
@@ -75,7 +76,7 @@ function catalogIconMulterOptions() {
 
 @Controller('admin/catalog')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.ADMIN, Role.OPS)
+@Roles(Role.ADMIN, Role.OPS, AGENT_ROLE)
 export class AdminCatalogMatrixController {
   constructor(private readonly adminCatalogService: AdminCatalogService) {}
 
@@ -137,6 +138,7 @@ export class AdminCatalogMatrixController {
   }
 
   @Put('items/:id')
+  @Roles(Role.ADMIN, Role.OPS)
   async updateItemWithMatrix(@Param('id') id: string, @Body() dto: UpdateItemWithMatrixDto) {
     const result = await this.adminCatalogService.updateItemWithMatrix(id, {
       name: dto.name,
@@ -173,6 +175,7 @@ export class AdminCatalogMatrixController {
   }
 
   @Post('segments')
+  @Roles(Role.ADMIN, Role.OPS)
   async createSegmentCategory(@Body() dto: CreateSegmentCategoryDto) {
     const segment = await this.adminCatalogService.createSegmentCategory(
       dto.code,
@@ -189,6 +192,7 @@ export class AdminCatalogMatrixController {
   }
 
   @Post('service-categories')
+  @Roles(Role.ADMIN, Role.OPS)
   async createServiceCategory(@Body() dto: CreateServiceCategoryDto) {
     const category = await this.adminCatalogService.createServiceCategory(
       dto.code,
@@ -205,6 +209,7 @@ export class AdminCatalogMatrixController {
   }
 
   @Patch('service-categories/:id')
+  @Roles(Role.ADMIN, Role.OPS)
   async updateServiceCategory(@Param('id') id: string, @Body() dto: PatchServiceCategoryDto) {
     const category = await this.adminCatalogService.updateServiceCategory(id, {
       label: dto.label,
@@ -220,12 +225,14 @@ export class AdminCatalogMatrixController {
   }
 
   @Delete('service-categories/:id')
+  @Roles(Role.ADMIN, Role.OPS)
   async deleteServiceCategory(@Param('id') id: string) {
     await this.adminCatalogService.deleteServiceCategory(id);
     return { success: true };
   }
 
   @Patch('segments/:id')
+  @Roles(Role.ADMIN, Role.OPS)
   async updateSegmentCategory(@Param('id') id: string, @Body() dto: PatchSegmentCategoryDto) {
     const segment = await this.adminCatalogService.updateSegmentCategory(id, {
       label: dto.label,
@@ -241,12 +248,14 @@ export class AdminCatalogMatrixController {
   }
 
   @Delete('segments/:id')
+  @Roles(Role.ADMIN, Role.OPS)
   async deleteSegmentCategory(@Param('id') id: string) {
     await this.adminCatalogService.deleteSegmentCategory(id);
     return { success: true };
   }
 
   @Post('icon/upload')
+  @Roles(Role.ADMIN, Role.OPS)
   @UseInterceptors(FileInterceptor('file', catalogIconMulterOptions()))
   async uploadCatalogIcon(@UploadedFile() file: MulterUploadFile, @Req() req: Request) {
     if (!file?.filename) {
@@ -257,6 +266,7 @@ export class AdminCatalogMatrixController {
   }
 
   @Post('import')
+  @Roles(Role.ADMIN, Role.OPS)
   async importCatalog(@Body() dto: ImportCatalogDto) {
     return this.adminCatalogService.importCatalog(dto.content);
   }

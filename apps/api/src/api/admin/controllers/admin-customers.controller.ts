@@ -1,15 +1,17 @@
 import { Controller, Get, Patch, Param, Body, Query, Req, UseGuards } from '@nestjs/common';
 import { Role } from '@shared/enums';
+import { AGENT_ROLE } from '../../common/agent-role';
 import { JwtAuthGuard } from '../../common/jwt-auth.guard';
 import { Roles } from '../../common/roles.decorator';
 import { RolesGuard } from '../../common/roles.guard';
 import type { AuthUser } from '../../common/roles.guard';
+import { isBranchScopedStaffRole } from '../../common/branch-scope.util';
 import { AdminCustomersService } from '../services/admin-customers.service';
 import { PatchCustomerDto } from '../dto/patch-customer.dto';
 
 @Controller('admin/customers')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.ADMIN, Role.OPS, Role.BILLING)
+@Roles(Role.ADMIN, Role.OPS, Role.BILLING, AGENT_ROLE)
 export class AdminCustomersController {
   constructor(private readonly adminCustomersService: AdminCustomersService) {}
 
@@ -18,41 +20,45 @@ export class AdminCustomersController {
     @Query('limit') limitStr?: string,
     @Query('cursor') cursor?: string,
     @Query('search') search?: string,
+    @Req() req: { user: AuthUser },
   ) {
     const limit = Math.min(Math.max(parseInt(limitStr ?? '20', 10) || 20, 1), 100);
-    return this.adminCustomersService.listWithCounts(limit, cursor ?? null, search?.trim() || null);
+    const user = req.user;
+    const branchId = user.role === AGENT_ROLE && user.branchId ? user.branchId : null;
+    return this.adminCustomersService.listWithCounts(limit, cursor ?? null, search?.trim() || null, branchId);
   }
 
   @Get('search')
-  async search(@Query('phone') phone: string) {
-    return this.adminCustomersService.searchByPhone(phone || '');
+  async search(@Query('phone') phone: string, @Req() req: { user: AuthUser }) {
+    const u = req.user;
+    const branchId = u.role === AGENT_ROLE && u.branchId ? u.branchId : null;
+    return this.adminCustomersService.searchByPhone(phone || '', branchId);
   }
 
   @Get(':userId/payments')
-  @Roles(Role.ADMIN, Role.OPS, Role.BILLING)
+  @Roles(Role.ADMIN, Role.OPS, Role.BILLING, AGENT_ROLE)
   async getPayments(
     @Param('userId') userId: string,
     @Query('branchId') branchIdQuery: string | undefined,
     @Req() req: { user: AuthUser },
   ) {
-    const branchId =
-      req.user.role === Role.OPS
-        ? req.user.branchId ?? undefined
-        : (branchIdQuery?.trim() || undefined);
+    const branchId = isBranchScopedStaffRole(req.user.role)
+      ? req.user.branchId ?? undefined
+      : branchIdQuery?.trim() || undefined;
     return this.adminCustomersService.getPayments(userId, branchId);
   }
 
   @Get(':userId/subscription-orders')
-  @Roles(Role.ADMIN, Role.OPS, Role.BILLING)
+  @Roles(Role.ADMIN, Role.OPS, Role.BILLING, AGENT_ROLE)
   async getSubscriptionOrders(@Param('userId') userId: string, @Req() req: { user: AuthUser }) {
-    const branchId = req.user.role === Role.OPS ? req.user.branchId ?? undefined : undefined;
+    const branchId = isBranchScopedStaffRole(req.user.role) ? req.user.branchId ?? undefined : undefined;
     return this.adminCustomersService.getSubscriptionOrders(userId, branchId);
   }
 
   @Get(':userId')
-  @Roles(Role.ADMIN, Role.OPS, Role.BILLING)
+  @Roles(Role.ADMIN, Role.OPS, Role.BILLING, AGENT_ROLE)
   async get(@Param('userId') userId: string, @Req() req: { user: AuthUser }) {
-    const branchId = req.user.role === Role.OPS ? req.user.branchId ?? undefined : undefined;
+    const branchId = isBranchScopedStaffRole(req.user.role) ? req.user.branchId ?? undefined : undefined;
     return this.adminCustomersService.get(userId, branchId);
   }
 

@@ -4,12 +4,18 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { getToken, getStoredUser, type AuthUser } from '@/lib/auth';
-import { isOpsDeniedRoute, OPS_DEFAULT_REDIRECT } from '@/lib/permissions';
+import {
+  isOpsDeniedRoute,
+  OPS_DEFAULT_REDIRECT,
+  AGENT_DEFAULT_REDIRECT,
+  canAccessRoute,
+} from '@/lib/permissions';
 import { Sidebar } from './Sidebar';
 import { Button } from '@/components/ui/button';
 import { Menu } from 'lucide-react';
 import { useBranding } from '@/hooks/useBranding';
 import { getApiOrigin } from '@/lib/api';
+import { cn } from '@/lib/utils';
 
 export function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -38,10 +44,17 @@ export function ProtectedLayout({ children }: { children: React.ReactNode }) {
   }, [router]);
 
   useEffect(() => {
-    if (!user || user.role !== 'OPS') return;
-    if (isOpsDeniedRoute(pathname ?? '')) {
+    if (!user) return;
+    if (user.role === 'OPS') {
+      if (isOpsDeniedRoute(pathname ?? '')) {
+        toast.error('No access');
+        router.replace(OPS_DEFAULT_REDIRECT);
+      }
+      return;
+    }
+    if (user.role === 'AGENT' && !canAccessRoute('AGENT', pathname ?? '')) {
       toast.error('No access');
-      router.replace(OPS_DEFAULT_REDIRECT);
+      router.replace(AGENT_DEFAULT_REDIRECT);
     }
   }, [user, pathname, router]);
 
@@ -71,7 +84,12 @@ export function ProtectedLayout({ children }: { children: React.ReactNode }) {
           mobileOpen={mobileMenuOpen}
           onCloseMobile={() => setMobileMenuOpen(false)}
         />
-        <div className="flex flex-1 flex-col min-w-0">
+        <div
+          className={cn(
+            'flex flex-1 flex-col min-w-0 transition-[padding] duration-200 ease-in-out',
+            sidebarCollapsed ? 'md:pl-14' : 'md:pl-56',
+          )}
+        >
           <div className="sticky top-0 z-30 flex md:hidden items-center gap-2 border-b bg-background px-4 py-2">
             <Button
               variant="ghost"

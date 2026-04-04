@@ -9,7 +9,12 @@ import { useCatalogItemsWithPrices, useCatalogItemsWithMatrix } from '@/hooks/us
 import { useBranding } from '@/hooks/useBranding';
 import { useSubscriptionPlans } from '@/hooks/useSubscriptionPlans';
 import { useUpdatePayment } from '@/hooks/usePayments';
-import { OrderStatusBadge, PaymentStatusBadge, InvoiceStatusBadge } from '@/components/shared/StatusBadge';
+import {
+  OrderStatusBadge,
+  PaymentStatusBadge,
+  InvoiceStatusBadge,
+  getOrderStatusLabel,
+} from '@/components/shared/StatusBadge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -23,15 +28,18 @@ import {
 } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { InvoiceBuilder, type InvoiceLineRow } from '@/components/forms/InvoiceBuilder';
-import { formatMoney, formatDate, getGoogleMapsUrl, getTodayLocalDateKey } from '@/lib/format';
+import { formatMoney, formatDate, formatPickupDayDisplay, formatTimeWindow24h, getGoogleMapsUrl, getTodayLocalDateKey } from '@/lib/format';
 import { getApiOrigin, getFriendlyErrorMessage } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { computeSubscriptionPreview, parseAckItems, parseAckKg } from '@/lib/subscription-preview';
 import { ErrorDisplay } from '@/components/shared/ErrorDisplay';
 import type { OrderStatus, InvoiceOrderMode, PaymentProvider } from '@/types';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { toast } from 'sonner';
 import { ExternalLink } from 'lucide-react';
+import { AcknowledgementInvoiceDialog } from '@/components/admin/orders/AcknowledgementInvoiceDialog';
+import { FinalInvoiceDialog } from '@/components/admin/orders/FinalInvoiceDialog';
+import { CUSTOMER_PWA_URL } from '@/lib/customer-app-url';
 
 const STATUS_FLOW: OrderStatus[] = [
   'BOOKING_CONFIRMED',
@@ -39,8 +47,6 @@ const STATUS_FLOW: OrderStatus[] = [
   'OUT_FOR_DELIVERY',
   'DELIVERED',
 ];
-
-type OrderTab = 'ack' | 'final' | 'payment';
 
 export default function OrderDetailPage() {
   const params = useParams();
@@ -89,7 +95,6 @@ export default function OrderDetailPage() {
   const hasHydratedFinal = useRef(false);
   const ackPrintAreaRef = useRef<HTMLDivElement>(null);
   const finalPrintAreaRef = useRef<HTMLDivElement>(null);
-  const [editingFinal, setEditingFinal] = useState(false);
   const [finalItems, setFinalItems] = useState<InvoiceLineRow[]>([]);
   const [finalWeightKg, setFinalWeightKg] = useState<number | ''>('');
   const [finalItemsCount, setFinalItemsCount] = useState<number | ''>('');
@@ -102,7 +107,48 @@ export default function OrderDetailPage() {
   const [paymentProvider, setPaymentProvider] = useState<PaymentProvider>('UPI');
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
-  const [orderTab, setOrderTab] = useState<OrderTab>('ack');
+  const [ackViewerOpen, setAckViewerOpen] = useState(false);
+  const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
+  const [finalViewerOpen, setFinalViewerOpen] = useState(false);
+  /** Set true in onAckIssueSuccess; cleared when summary shows ISSUED ACK — opens viewer after refetch. */
+  const openAckViewerAfterIssueRef = useRef(false);
+
+  const buildFinalWhatsAppMessage = useCallback(() => {
+    if (!summary?.order) return '';
+    const o = summary.order;
+    const cust = summary.customer;
+    const fin = summary.invoices?.find((i) => i.type === 'FINAL');
+    if (!fin) return '';
+    const code = 'code' in fin && typeof fin.code === 'string' ? fin.code.trim() : '';
+    const invoiceLabel = code || `IN${o.id}`;
+    const customerName = cust?.name?.trim() || 'there';
+    const statusLabel = getOrderStatusLabel(o.status);
+    const parts: string[] = [
+      `Hello ${customerName},`,
+      '',
+      'Thanks for opting our service.',
+      '',
+      `Order number: ${o.id}`,
+      `Status: *${statusLabel}*`,
+      '',
+      `Final invoice: ${invoiceLabel}`,
+      `Amount payable (final): *${formatMoney(fin.total)}*`,
+      '',
+      `Open our app: ${CUSTOMER_PWA_URL}`,
+    ];
+    return parts.join('\n');
+  }, [summary]);
+
+  useEffect(() => {
+    if (!summary) return;
+    const inv = Array.isArray(summary.invoices) ? summary.invoices : [];
+    const ack = inv.find((i) => i.type === 'ACKNOWLEDGEMENT');
+    if (ack?.status === 'ISSUED' && openAckViewerAfterIssueRef.current) {
+      openAckViewerAfterIssueRef.current = false;
+      setAckViewerOpen(true);
+    }
+  }, [summary]);
+
   // Hydrate ACK form from saved invoice when summary loads; or default order mode from order type
   useEffect(() => {
     if (!summary) return;
@@ -127,7 +173,9 @@ export default function OrderDetailPage() {
           );
         }
         if (ack.subtotal != null && ack.tax != null) {
-          setAckTaxPercent(ack.subtotal > 0 ? Math.round((ack.tax / ack.subtotal) * 1000) / 10 : 0);
+          const discPaise = ack.discountPaise ?? 0;
+          const taxable = Math.max(0, ack.subtotal - discPaise);
+          setAckTaxPercent(taxable > 0 ? Math.round((ack.tax / taxable) * 1000) / 10 : 0);
         }
         setAckDiscountType('amount');
         setAckDiscountValue(ack.discountPaise ?? 0);
@@ -178,8 +226,10 @@ export default function OrderDetailPage() {
       const items = (finalInv as { subscriptionUsageItems?: number | null }).subscriptionUsageItems;
       setFinalWeightKg(kg != null ? kg : (finalInv.items[0]?.quantity ?? ''));
       setFinalItemsCount(items != null ? items : '');
-      if (finalInv.subtotal != null && finalInv.tax != null && finalInv.subtotal > 0) {
-        setFinalTaxPercent(Math.round((finalInv.tax / finalInv.subtotal) * 1000) / 10);
+      if (finalInv.subtotal != null && finalInv.tax != null) {
+        const discPaise = finalInv.discountPaise ?? 0;
+        const taxable = Math.max(0, finalInv.subtotal - discPaise);
+        setFinalTaxPercent(taxable > 0 ? Math.round((finalInv.tax / taxable) * 1000) / 10 : 0);
       }
       setFinalDiscountType('amount');
       setFinalDiscountValue(finalInv.discountPaise ?? 0);
@@ -205,8 +255,10 @@ export default function OrderDetailPage() {
       const ackItemsCount = (ack as { subscriptionUsageItems?: number | null }).subscriptionUsageItems;
       setFinalWeightKg(ackKg != null ? ackKg : (ackItems?.[0]?.quantity ?? ''));
       setFinalItemsCount(ackItemsCount != null ? ackItemsCount : '');
-      if (ack.subtotal != null && ack.tax != null && ack.subtotal > 0) {
-        setFinalTaxPercent(Math.round((ack.tax / ack.subtotal) * 1000) / 10);
+      if (ack.subtotal != null && ack.tax != null) {
+        const discPaise = ack.discountPaise ?? 0;
+        const taxable = Math.max(0, ack.subtotal - discPaise);
+        setFinalTaxPercent(taxable > 0 ? Math.round((ack.tax / taxable) * 1000) / 10 : 0);
       }
       setFinalDiscountType(ackDiscountType);
       setFinalDiscountValue(
@@ -248,8 +300,10 @@ export default function OrderDetailPage() {
 
     setFinalWeightKg(ackKg != null ? ackKg : (ack.items?.[0]?.quantity ?? ''));
     setFinalItemsCount(ackItemsCount != null ? ackItemsCount : '');
-    if (ack.subtotal != null && ack.tax != null && ack.subtotal > 0) {
-      setFinalTaxPercent(Math.round((ack.tax / ack.subtotal) * 1000) / 10);
+    if (ack.subtotal != null && ack.tax != null) {
+      const discPaise = ack.discountPaise ?? 0;
+      const taxable = Math.max(0, ack.subtotal - discPaise);
+      setFinalTaxPercent(taxable > 0 ? Math.round((ack.tax / taxable) * 1000) / 10 : 0);
     }
     setFinalDiscountType(ackDiscountType);
     setFinalDiscountValue(
@@ -260,13 +314,14 @@ export default function OrderDetailPage() {
     setFinalComments(ack.comments ?? '');
   }, [summary, ackDiscountType]);
 
-  // Prefill payment amount from final invoice total when order is delivered
+  // Prefill payment amount from issued final invoice total (for record-payment dialog)
   useEffect(() => {
-    if (!summary || summary.order?.status !== 'DELIVERED') return;
+    if (!summary) return;
     const invList = Array.isArray(summary.invoices) ? summary.invoices : [];
-    const total = invList.find((i) => i.type === 'FINAL')?.total;
-    if (total != null && total > 0 && paymentAmountRupees === '') {
-      setPaymentAmountRupees(total / 100);
+    const fin = invList.find((i) => i.type === 'FINAL');
+    if (fin?.status !== 'ISSUED' || fin.total == null || fin.total <= 0) return;
+    if (paymentAmountRupees === '') {
+      setPaymentAmountRupees(fin.total / 100);
     }
   }, [summary, paymentAmountRupees]);
 
@@ -313,29 +368,20 @@ export default function OrderDetailPage() {
   const customer = summary.customer ?? { id: '', name: null, phone: null, email: null };
   const address = summary.address ?? { id: '', label: '', addressLine: '', pincode: '', googleMapUrl: null };
   const mapsUrl = getGoogleMapsUrl(address.googleMapUrl);
-  const isDelivered = order.status === 'DELIVERED';
+  /** Same rules as API assertCanIssueFinalInvoice (issue + save final draft). */
   const canIssueFinalInvoice =
     order.status === 'OUT_FOR_DELIVERY' ||
-    order.status === 'DELIVERED';
+    order.status === 'DELIVERED' ||
+    (order.orderSource === 'WALK_IN' && order.status === 'READY');
+  const canEditFinalInvoiceFields =
+    order.status !== 'CANCELLED' && canIssueFinalInvoice;
   const ackSubmitted = ackInvoice?.status === 'ISSUED';
   const finalSubmitted = finalInvoice?.status === 'ISSUED';
   const paymentRecorded = summary.payment?.status === 'CAPTURED';
   const showTabs = ackSubmitted;
-  const isAckEditable = ackSubmitted && !finalSubmitted;
   const isLocked = ackInvoice?.status === 'ISSUED';
   const isFinalLocked = paymentRecorded;
   const hasSubscription = !!(summary.subscription || summary.subscriptionUsage);
-
-  // When ACK is submitted, switch to Final tab; when Final is submitted, switch to Payment tab
-  const prevAckSubmitted = useRef(false);
-  const prevFinalSubmitted = useRef(false);
-  useEffect(() => {
-    if (!summary) return;
-    if (ackSubmitted && !prevAckSubmitted.current) setOrderTab('final');
-    if (finalSubmitted && !prevFinalSubmitted.current) setOrderTab('payment');
-    prevAckSubmitted.current = ackSubmitted;
-    prevFinalSubmitted.current = finalSubmitted;
-  }, [summary, ackSubmitted, finalSubmitted]);
 
   /** ACK weight/items for this order (from issued ACK invoice). Acknowledgement invoice is immutable once submitted. */
   const ackKgForOrder = ackInvoice && (ackInvoice as { subscriptionUsageKg?: number | null }).subscriptionUsageKg != null ? Number((ackInvoice as { subscriptionUsageKg?: number | null }).subscriptionUsageKg) : null;
@@ -372,13 +418,17 @@ export default function OrderDetailPage() {
     const itemsSubtotal = mode === 'SUBSCRIPTION_ONLY' ? 0 : ackSubtotal(items);
     const combinedSubtotal = itemsSubtotal + (subscriptionAmountPaise ?? 0);
     const subtotal = hasNewSubscriptionSelected ? combinedSubtotal : itemsSubtotal;
-    const taxPaise = mode === 'SUBSCRIPTION_ONLY' && !(subscriptionAmountPaise && subscriptionAmountPaise > 0) ? 0 : Math.round(subtotal * taxPercent / 100);
     const discountPaise =
       mode === 'SUBSCRIPTION_ONLY' && !(subscriptionAmountPaise && subscriptionAmountPaise > 0)
         ? 0
         : discountType === 'percent'
           ? Math.round(subtotal * discountValue / 100)
           : discountValue;
+    const taxableAfterDiscount = Math.max(0, subtotal - discountPaise);
+    const taxPaise =
+      mode === 'SUBSCRIPTION_ONLY' && !(subscriptionAmountPaise && subscriptionAmountPaise > 0)
+        ? 0
+        : Math.round(taxableAfterDiscount * taxPercent / 100);
     const commentsWithBillNote = (comments?.trim() || 'Thank you') || undefined;
     const base = {
       orderMode: mode,
@@ -447,8 +497,9 @@ export default function OrderDetailPage() {
   ) => {
     const filteredItems = items.filter((i) => i.name !== 'Subscription usage');
     const subtotal = finalSubtotal(filteredItems);
-    const taxPaise = Math.round(subtotal * taxPercent / 100);
     const discountPaise = discountType === 'percent' ? Math.round(subtotal * discountValue / 100) : discountValue;
+    const taxableAfterDiscount = Math.max(0, subtotal - discountPaise);
+    const taxPaise = Math.round(taxableAfterDiscount * taxPercent / 100);
     const sub = summary?.subscription;
     const subscriptionUsageKg = hasSubscription && sub?.kgLimit != null && weightKg !== '' && weightKg !== undefined ? Number(weightKg) : undefined;
     const subscriptionUsageItems = hasSubscription && sub?.itemsLimit != null && itemsCount !== '' && itemsCount !== undefined ? Number(itemsCount) : undefined;
@@ -518,18 +569,32 @@ export default function OrderDetailPage() {
   };
 
   const recordPayment = () => {
-    const amountPaise = paymentAmountRupees === '' ? 0 : Math.round(Number(paymentAmountRupees) * 100);
+    const amountPaise =
+      finalInvoice?.total != null && finalInvoice.total > 0
+        ? finalInvoice.total
+        : paymentAmountRupees === ''
+          ? 0
+          : Math.round(Number(paymentAmountRupees) * 100);
     if (amountPaise <= 0) {
-      toast.error('Amount comes from Final invoice and cannot be zero.');
+      toast.error('Final invoice amount is missing or zero.');
       return;
     }
+    const provider: PaymentProvider = paymentProvider === 'CASH' ? 'CASH' : 'UPI';
     updatePayment.mutate(
-      { provider: paymentProvider, status: 'CAPTURED', amountPaise, note: paymentNote || undefined },
-      { onSuccess: () => toast.success('Payment recorded'), onError: (e) => toast.error(e.message) }
+      { provider, status: 'CAPTURED', amountPaise, note: paymentNote.trim() || undefined },
+      {
+        onSuccess: () => {
+          toast.success('Payment recorded. Order marked as delivered.');
+          setPaymentDialogOpen(false);
+          setPaymentNote('');
+        },
+        onError: (e) => toast.error(getFriendlyErrorMessage(e)),
+      },
     );
   };
 
   const onAckIssueSuccess = () => {
+    openAckViewerAfterIssueRef.current = true;
     if (order.status === 'BOOKING_CONFIRMED' || order.status === 'PICKUP_SCHEDULED') {
       updateStatus.mutate('PICKED_UP', {
         onSuccess: () => toast.success('ACK submitted; status set to Picked up'),
@@ -591,29 +656,42 @@ export default function OrderDetailPage() {
       onError: (e) => toast.error(e.message),
     });
   };
-  const quickIssueFinal = () => {
-    // Use current form state (prefilled from ACK) so tax and discount match ACK invoice exactly
+  /** Submit: persist draft then issue (one click). Issued finals are read-only (no UI edit). */
+  const submitFinalInvoice = () => {
     const body =
       finalItems.length > 0
         ? toFinalDraftBody(finalItems, finalTaxPercent, finalDiscountType, finalDiscountValue, finalComments, finalWeightKg, finalItemsCount)
         : toFinalDraftBody([], finalTaxPercent, finalDiscountType, finalDiscountValue, finalComments, finalWeightKg, finalItemsCount);
+
     createFinalDraft.mutate(body, {
       onSuccess: () => {
         issueFinal.mutate(undefined, {
-          onSuccess: () => toast.success('FINAL invoice submitted'),
-          onError: (e) => toast.error(e.message),
+          onSuccess: () => toast.success('Final invoice submitted'),
+          onError: (e) => toast.error(getFriendlyErrorMessage(e)),
         });
       },
-      onError: (e) => toast.error(e.message),
+      onError: (e) => toast.error(getFriendlyErrorMessage(e)),
     });
   };
 
-  const timelineStages: { key: OrderStatus; label: string; ts: string | null }[] = [
-    { key: 'BOOKING_CONFIRMED', label: 'Order initiated', ts: order.createdAt ?? null },
-    { key: 'PICKED_UP', label: 'Picked up', ts: order.pickedUpAt ?? null },
-    { key: 'OUT_FOR_DELIVERY', label: 'Out for delivery', ts: order.outForDeliveryAt ?? null },
-    { key: 'DELIVERED', label: 'Delivered', ts: order.deliveredAt ?? null },
-  ];
+  type TimelineStage = { key: string; label: string; ts: string | null };
+  const timelineStages: TimelineStage[] =
+    order.status === 'CANCELLED'
+      ? [
+          { key: 'BOOKING_CONFIRMED', label: 'Order initiated', ts: order.createdAt ?? null },
+          { key: 'PICKED_UP', label: 'Picked up', ts: order.pickedUpAt ?? null },
+          {
+            key: 'CANCELLED',
+            label: 'Cancelled',
+            ts: order.cancelledAt ?? order.updatedAt ?? null,
+          },
+        ]
+      : [
+          { key: 'BOOKING_CONFIRMED', label: 'Order initiated', ts: order.createdAt ?? null },
+          { key: 'PICKED_UP', label: 'Picked up', ts: order.pickedUpAt ?? null },
+          { key: 'OUT_FOR_DELIVERY', label: 'Out for delivery', ts: order.outForDeliveryAt ?? null },
+          { key: 'DELIVERED', label: 'Delivered', ts: order.deliveredAt ?? null },
+        ];
   const currentStatusForFlow: OrderStatus =
     order.status === 'PICKUP_SCHEDULED'
       ? 'BOOKING_CONFIRMED'
@@ -661,16 +739,24 @@ export default function OrderDetailPage() {
 
   const formatTs = (s: string | null) => (s ? formatDate(s) + (s.includes('T') ? ' ' + new Date(s).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '') : '—');
 
+  const orderServiceTypesLabel =
+    order.orderType === 'SUBSCRIPTION' || order.orderSource === 'WALK_IN'
+      ? null
+      : (order.serviceTypes && order.serviceTypes.length > 0 ? order.serviceTypes : [order.serviceType])
+          .filter(Boolean)
+          .map((s) => String(s).replace(/_/g, ' '))
+          .join(', ') || null;
+
   return (
     <>
       <style
         dangerouslySetInnerHTML={{
-          __html: `@media print{body *{visibility:hidden}body:not(.print-final-invoice) .ack-invoice-print-area,body:not(.print-final-invoice) .ack-invoice-print-area *{visibility:visible}body.print-final-invoice .final-invoice-print-area,body.print-final-invoice .final-invoice-print-area *{visibility:visible}body.print-final-invoice .ack-invoice-print-area{visibility:hidden!important;display:none!important}.ack-invoice-print-area,.final-invoice-print-area{position:absolute;left:0;top:0;width:100%;padding:0!important;margin:0!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}.ack-invoice-print-area{background:#f3f4f6!important}.final-invoice-print-area{background:#fdf2f8!important}.ack-invoice-print-area input,.ack-invoice-print-area select,.ack-invoice-print-area textarea,.final-invoice-print-area input,.final-invoice-print-area select,.final-invoice-print-area textarea{border:none!important;background:transparent!important;box-shadow:none!important;appearance:none}.ack-invoice-print-area button,.ack-invoice-print-area .ack-print-hide,.ack-invoice-print-area .ack-print-hide-header,.final-invoice-print-area button,.final-invoice-print-area .ack-print-hide,.final-invoice-print-area .ack-print-hide-header{display:none!important}.ack-invoice-print-area > div,.final-invoice-print-area > div{padding-top:0.5rem!important;margin-top:0!important}.ack-invoice-print-area .ack-print-hide-header + div,.final-invoice-print-area .ack-print-hide-header + div{padding-top:0.5rem!important}header,footer,aside,nav,.fixed{visibility:hidden!important;display:none!important}}`,
+          __html: `@media print{body *{visibility:hidden!important}.ack-invoice-print-area,.ack-invoice-print-area *,.final-invoice-print-area,.final-invoice-print-area *{visibility:visible!important}.ack-invoice-print-area,.final-invoice-print-area{position:absolute;left:0;top:0;width:100%;padding:0!important;margin:0!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}.ack-invoice-print-area{background:#f3f4f6!important}.final-invoice-print-area{background:#fdf2f8!important}.ack-invoice-print-area input,.ack-invoice-print-area select,.ack-invoice-print-area textarea,.final-invoice-print-area input,.final-invoice-print-area select,.final-invoice-print-area textarea{border:none!important;background:transparent!important;box-shadow:none!important;appearance:none}.ack-invoice-print-area button,.ack-invoice-print-area .ack-print-hide,.ack-invoice-print-area .ack-print-hide-header,.final-invoice-print-area button,.final-invoice-print-area .ack-print-hide,.final-invoice-print-area .ack-print-hide-header{display:none!important}.ack-invoice-print-area > div,.final-invoice-print-area > div{padding-top:0.5rem!important;margin-top:0!important}.ack-invoice-print-area .ack-print-hide-header + div,.final-invoice-print-area .ack-print-hide-header + div{padding-top:0.5rem!important}main{overflow:visible!important}header,footer,aside,nav,.fixed{visibility:hidden!important;display:none!important}}`,
         }}
       />
       <style
         dangerouslySetInnerHTML={{
-          __html: `.ack-invoice-print-area.pdf-capture button,.ack-invoice-print-area.pdf-capture .ack-print-hide,.ack-invoice-print-area.pdf-capture .ack-print-hide-header,.final-invoice-print-area.pdf-capture button,.final-invoice-print-area.pdf-capture .ack-print-hide,.final-invoice-print-area.pdf-capture .ack-print-hide-header{display:none!important}`,
+          __html: `.ack-invoice-print-area.pdf-capture button,.ack-invoice-print-area.pdf-capture .ack-print-hide,.ack-invoice-print-area.pdf-capture .ack-print-hide-header,.final-invoice-print-area.pdf-capture button,.final-invoice-print-area.pdf-capture .ack-print-hide,.final-invoice-print-area.pdf-capture .ack-print-hide-header,.invoice-print-view.pdf-capture button,.invoice-print-view.pdf-capture .ack-print-hide,.invoice-print-view.pdf-capture .ack-print-hide-header{display:none!important}`,
         }}
       />
       <div className="space-y-6 pb-24">
@@ -696,8 +782,39 @@ export default function OrderDetailPage() {
           >
             {order.orderType === 'SUBSCRIPTION' ? 'Subscription' : 'Individual booking'}
           </span>
+          {orderServiceTypesLabel ? (
+            <span
+              className="rounded-md border border-border bg-background px-2 py-0.5 text-xs font-medium text-muted-foreground"
+              title="Service types"
+            >
+              {orderServiceTypesLabel}
+            </span>
+          ) : null}
         </div>
         <OrderStatusBadge status={order.status} />
+      </div>
+      <div
+        className={cn(
+          'flex flex-wrap items-center gap-2 rounded-xl border border-primary/25 bg-primary/[0.07] px-4 py-3 shadow-sm',
+          'dark:border-primary/35 dark:bg-primary/15',
+        )}
+        role="status"
+        aria-label="Scheduled pickup"
+      >
+        <span className="text-xs font-bold uppercase tracking-wider text-primary">Pickup</span>
+        {order.orderSource === 'WALK_IN' ? (
+          <span className="text-base font-semibold text-foreground">Walk order</span>
+        ) : (
+          <span className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-base font-semibold text-foreground">
+            <span className="tabular-nums">{formatPickupDayDisplay(order.pickupDate)}</span>
+            <span className="font-normal text-muted-foreground" aria-hidden>
+              ·
+            </span>
+            <span className="font-mono tabular-nums tracking-tight">
+              {formatTimeWindow24h(order.timeWindow) || order.timeWindow.trim() || '—'}
+            </span>
+          </span>
+        )}
       </div>
       <Card>
         <CardHeader>
@@ -706,30 +823,84 @@ export default function OrderDetailPage() {
               <CardTitle>Status</CardTitle>
               <CardDescription>Horizontal timeline with timestamps</CardDescription>
             </div>
-            {order.status !== 'CANCELLED' && order.status !== 'DELIVERED' && ackInvoice?.status !== 'ISSUED' && (
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={() => setCancelDialogOpen(true)}
-              >
-                Cancel order
-              </Button>
-            )}
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {ackInvoice?.status === 'ISSUED' && (
+                <Button variant="outline" size="sm" onClick={() => setAckViewerOpen(true)}>
+                  Acknowledgement invoice
+                </Button>
+              )}
+              {finalInvoice?.status === 'ISSUED' && (
+                <Button variant="outline" size="sm" onClick={() => setFinalViewerOpen(true)}>
+                  Final invoice
+                </Button>
+              )}
+              {finalSubmitted && !paymentRecorded && (finalInvoice?.total ?? 0) > 0 && (
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={() => {
+                    setPaymentProvider('UPI');
+                    setPaymentDialogOpen(true);
+                  }}
+                >
+                  Record payment
+                </Button>
+              )}
+              {order.status !== 'CANCELLED' && order.status !== 'DELIVERED' && ackInvoice?.status !== 'ISSUED' && (
+                <Button variant="destructive" size="sm" onClick={() => setCancelDialogOpen(true)}>
+                  Cancel order
+                </Button>
+              )}
+            </div>
           </div>
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto pb-2">
             <div className="flex min-w-max items-start">
               {timelineStages.map((stage, idx) => {
-                const isReached = currentIdx >= idx;
-                const isCurrent = order.status === stage.key;
+                const isCancelledOrder = order.status === 'CANCELLED';
+                const isCancelledStage = stage.key === 'CANCELLED';
+                let isReached: boolean;
+                let isCurrent: boolean;
+                /** Line segment after this stage (same semantics as before for active orders). */
+                let connectorStrong: boolean;
+                if (isCancelledOrder) {
+                  if (isCancelledStage) {
+                    isCurrent = true;
+                    isReached = true;
+                    connectorStrong = true;
+                  } else if (stage.key === 'BOOKING_CONFIRMED') {
+                    isCurrent = false;
+                    isReached = true;
+                    connectorStrong = true;
+                  } else if (stage.key === 'PICKED_UP') {
+                    isCurrent = false;
+                    isReached = !!stage.ts;
+                    connectorStrong = true;
+                  } else {
+                    isCurrent = false;
+                    isReached = false;
+                    connectorStrong = false;
+                  }
+                } else {
+                  const flowIdx = STATUS_FLOW.indexOf(stage.key as OrderStatus);
+                  isReached = currentIdx >= flowIdx;
+                  isCurrent = order.status === stage.key;
+                  connectorStrong = isReached;
+                }
                 return (
                   <div key={stage.key} className="flex items-center flex-shrink-0">
                     <div className="flex flex-col items-center" style={{ minWidth: '90px' }}>
                       <div
                         className={cn(
                           'rounded px-2 py-1 text-center text-xs font-medium',
-                          isCurrent ? 'bg-primary text-primary-foreground' : isReached ? 'bg-muted' : 'bg-muted/50 text-muted-foreground'
+                          isCancelledStage && isCurrent
+                            ? 'bg-destructive text-white'
+                            : isCurrent
+                              ? 'bg-primary text-primary-foreground'
+                              : isReached
+                                ? 'bg-muted'
+                                : 'bg-muted/50 text-muted-foreground',
                         )}
                       >
                         {stage.label}
@@ -737,15 +908,101 @@ export default function OrderDetailPage() {
                       <p className="text-xs text-muted-foreground mt-1">{formatTs(stage.ts)}</p>
                     </div>
                     {idx < timelineStages.length - 1 && (
-                      <div className={cn('w-6 h-0.5 flex-shrink-0', isReached ? 'bg-muted' : 'bg-muted/50')} aria-hidden />
+                      <div
+                        className={cn('w-6 h-0.5 flex-shrink-0', connectorStrong ? 'bg-muted' : 'bg-muted/50')}
+                        aria-hidden
+                      />
                     )}
                   </div>
                 );
               })}
             </div>
           </div>
+          {finalSubmitted && (
+            <div className="mt-4 border-t pt-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Payment</p>
+              {paymentRecorded && summary.payment ? (
+                <div className="flex flex-col gap-1.5 text-sm">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <PaymentStatusBadge status={summary.payment.status} />
+                    <span className="font-medium tabular-nums">{formatMoney(summary.payment.amount)}</span>
+                    <span className="text-muted-foreground">{summary.payment.provider.replace(/_/g, ' ')}</span>
+                  </div>
+                  {summary.payment.note ? (
+                    <p className="text-xs text-muted-foreground">
+                      <span className="font-medium text-foreground">Comments: </span>
+                      {summary.payment.note}
+                    </p>
+                  ) : null}
+                </div>
+              ) : (finalInvoice?.total ?? 0) <= 0 ? (
+                <p className="text-sm text-muted-foreground">No payment due (₹0 final invoice).</p>
+              ) : (
+                <p className="text-sm text-muted-foreground">Awaiting payment — use Record payment when the customer has paid.</p>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
+
+      <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
+        <DialogContent showClose={true} className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Record payment</DialogTitle>
+            <DialogDescription>
+              Confirm the amount from the final invoice and how the customer paid. Add transaction details in comments if needed.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Amount (final invoice)</label>
+              <div className="h-10 w-full rounded-md border bg-muted/50 px-3 flex items-center text-sm font-medium tabular-nums">
+                {formatMoney(finalInvoice?.total ?? 0)}
+              </div>
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium" htmlFor="pay-method">
+                Type of payment
+              </label>
+              <select
+                id="pay-method"
+                value={paymentProvider === 'CASH' ? 'CASH' : 'UPI'}
+                onChange={(e) => setPaymentProvider(e.target.value as PaymentProvider)}
+                className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+              >
+                <option value="UPI">UPI</option>
+                <option value="CASH">Cash</option>
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium" htmlFor="pay-comments">
+                Comments (transaction details)
+              </label>
+              <textarea
+                id="pay-comments"
+                className="min-h-[88px] w-full rounded-md border px-3 py-2 text-sm"
+                placeholder="UPI ref, transaction ID, receipt notes, etc."
+                value={paymentNote}
+                onChange={(e) => setPaymentNote(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button type="button" variant="outline" onClick={() => setPaymentDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={recordPayment}
+              disabled={
+                updatePayment.isPending || !finalInvoice?.total || finalInvoice.total <= 0
+              }
+            >
+              {updatePayment.isPending ? 'Confirming…' : 'Confirm payment'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>
         <DialogContent showClose={true}>
@@ -792,38 +1049,32 @@ export default function OrderDetailPage() {
         </DialogContent>
       </Dialog>
 
-      {showTabs && (
-        <div className="flex flex-wrap gap-1 border-b border-muted pb-2 mb-2">
-          <Button
-            variant={orderTab === 'ack' ? 'default' : 'ghost'}
-            size="sm"
-            onClick={() => setOrderTab('ack')}
-            className="rounded-b-none"
-          >
-            Acknowledgment Invoice
-          </Button>
-          <Button
-            variant={orderTab === 'final' ? 'default' : 'ghost'}
-            size="sm"
-            onClick={() => setOrderTab('final')}
-            className="rounded-b-none"
-          >
-            Final Invoice
-          </Button>
-          {finalSubmitted && (
-            <Button
-              variant={orderTab === 'payment' ? 'default' : 'ghost'}
-              size="sm"
-              onClick={() => setOrderTab('payment')}
-              className="rounded-b-none"
-            >
-              Record Payment
-            </Button>
-          )}
-        </div>
+      {summary && ackInvoice?.status === 'ISSUED' && (
+        <AcknowledgementInvoiceDialog
+          open={ackViewerOpen}
+          onOpenChange={setAckViewerOpen}
+          summary={summary}
+          ackInvoice={ackInvoice}
+          branding={branding ?? null}
+          catalogMatrix={catalogMatrix}
+          orderId={order.id}
+        />
       )}
 
-      {(!showTabs || orderTab === 'ack') && (
+      {summary && finalInvoice?.status === 'ISSUED' && (
+        <FinalInvoiceDialog
+          open={finalViewerOpen}
+          onOpenChange={setFinalViewerOpen}
+          summary={summary}
+          finalInvoice={finalInvoice}
+          ackInvoice={ackInvoice}
+          branding={branding ?? null}
+          catalogMatrix={catalogMatrix}
+          orderId={order.id}
+        />
+      )}
+
+      {!ackSubmitted && (
       <div ref={ackPrintAreaRef} className="ack-invoice-print-area rounded-lg p-4 bg-gray-100">
       {finalSubmitted && (
         <p className="text-sm text-muted-foreground mb-3 ack-print-hide">Acknowledgement invoice cannot be edited after Final invoice is submitted.</p>
@@ -848,18 +1099,14 @@ export default function OrderDetailPage() {
           {/* Same line: Order details (left) | ACK number, PAN, GST, Branch & address (right) */}
           <div className="flex flex-wrap gap-4 items-start rounded-md bg-muted/40 p-3 text-sm">
             <div className="flex-1 min-w-[200px]">
-              <p className="font-medium mb-1">Order details</p>
+              <p className="font-bold mb-1">Order details</p>
               <p>{customer.name ?? '—'}</p>
               <p className="text-muted-foreground">Phone: {customer.phone ?? '—'}</p>
               {order.orderType === 'SUBSCRIPTION' ? (
                 <p className="text-muted-foreground">
                   Subscription booking{summary.subscription?.planName ? ` (${summary.subscription.planName})` : ''}
                 </p>
-              ) : order.orderSource !== 'WALK_IN' && (
-                <p className="text-muted-foreground">
-                  Service: {(order.serviceTypes && order.serviceTypes.length > 0 ? order.serviceTypes : [order.serviceType]).map((s) => s.replace(/_/g, ' ')).join(', ')}
-                </p>
-              )}
+              ) : null}
               {order.orderSource !== 'WALK_IN' && (
                 <p>
                   {address.addressLine}, {address.pincode}
@@ -878,14 +1125,14 @@ export default function OrderDetailPage() {
                   )}
                 </p>
               )}
-              <p className="text-muted-foreground">
-                Pickup: {formatDate(order.pickupDate)} {order.timeWindow}
-              </p>
               {ackInvoice && (
                 <p className="text-xs text-muted-foreground mt-1">Acknowledgement Invoice ACK - {order.id}</p>
               )}
             </div>
             <div className="text-right text-muted-foreground space-y-0.5">
+              {branding?.businessName?.trim() ? (
+                <p className="font-bold text-foreground mb-1">{branding.businessName.trim()}</p>
+              ) : null}
               {summary.branch?.panNumber && <p>PAN: {summary.branch.panNumber}</p>}
               {summary.branch?.gstNumber && <p>GST: {summary.branch.gstNumber}</p>}
               {summary.branch && (
@@ -1026,7 +1273,10 @@ export default function OrderDetailPage() {
                 const subBased = ackOrderMode === 'SUBSCRIPTION_ONLY' || hasNewSubscriptionSelected || (ackOrderMode === 'BOTH' && hasExistingSubscriptionSelected);
                 if (!subBased) return false;
                 const s = (ackOrderMode === 'SUBSCRIPTION_ONLY' ? 0 : ackSubtotal(ackItems)) + (hasNewSubscriptionSelected ? ackSubscriptionAmountPaise : 0);
-                return s + Math.round(s * ackTaxPercent / 100) - (ackDiscountType === 'percent' ? Math.round(s * ackDiscountValue / 100) : ackDiscountValue) <= 0;
+                const d = ackDiscountType === 'percent' ? Math.round(s * ackDiscountValue / 100) : ackDiscountValue;
+                const taxable = Math.max(0, s - d);
+                const t = Math.round(taxable * ackTaxPercent / 100);
+                return s - d + t <= 0;
               })()
             }
             comments={ackComments}
@@ -1065,6 +1315,7 @@ export default function OrderDetailPage() {
             issueLoading={issueAck.isPending || createAckDraft.isPending}
             draftExists={!!ackInvoice}
             issued={isLocked || finalSubmitted}
+            disableEditing={order.status === 'CANCELLED'}
             issueDisabled={finalSubmitted || (() => {
               if (ackSubscriptionPreview == null) return false;
               const kgOrItemsExceeded = ackSubscriptionPreview.kgExceeded || ackSubscriptionPreview.itemsExceeded;
@@ -1086,6 +1337,8 @@ export default function OrderDetailPage() {
             printAreaRef={ackPrintAreaRef}
             catalog={catalog ?? undefined}
             catalogMatrix={catalogMatrix}
+            tagPrintOrderLabel={order.id}
+            tagBrandName={branding?.businessName?.trim() || 'We You'}
             orderMode={ackOrderMode}
             subscriptionOnlyCanSave={
               ackOrderMode === 'SUBSCRIPTION_ONLY' &&
@@ -1105,16 +1358,17 @@ export default function OrderDetailPage() {
           {(() => {
             const itemsSt = ackSubtotal(ackItems);
             const st = (ackOrderMode === 'SUBSCRIPTION_ONLY' ? 0 : itemsSt) + (hasNewSubscriptionSelected ? ackSubscriptionAmountPaise : 0);
-            const tax = Math.round(st * ackTaxPercent / 100);
             const disc = ackDiscountType === 'percent' ? Math.round(st * ackDiscountValue / 100) : ackDiscountValue;
-            const ackTotal = st + tax - disc;
+            const taxableAfterDisc = Math.max(0, st - disc);
+            const tax = Math.round(taxableAfterDisc * ackTaxPercent / 100);
+            const ackTotal = st - disc + tax;
             const isSubscriptionBased = ackOrderMode === 'SUBSCRIPTION_ONLY' || hasNewSubscriptionSelected || (ackOrderMode === 'BOTH' && hasExistingSubscriptionSelected);
             const isPrepaid = ackTotal <= 0 && isSubscriptionBased;
             return (
               <>
                 <div className="mt-4 pt-4 border-t space-y-1 text-right">
                   <p className="text-base">
-                    Subtotal: {formatMoney(st)} · Tax ({ackTaxPercent}%): {formatMoney(tax)} · Discount {ackDiscountType === 'percent' ? `(${ackDiscountValue}%)` : `(₹)`}: -{formatMoney(disc)}
+                    Subtotal: {formatMoney(st)} · Discount {ackDiscountType === 'percent' ? `(${ackDiscountValue}%)` : `(₹)`}: -{formatMoney(disc)} · Tax ({ackTaxPercent}%): {formatMoney(tax)}
                   </p>
                   <p className="text-2xl font-bold">
                     {isPrepaid ? 'Prepaid' : `Total: ${formatMoney(ackTotal)}`}
@@ -1127,7 +1381,19 @@ export default function OrderDetailPage() {
                   </div>
                 )}
                 <div className="mt-6 pt-4 text-center text-sm text-muted-foreground space-y-1">
-                  {summary.branch?.footerNote?.trim() ? <p>{summary.branch.footerNote.trim()}</p> : null}
+                  {summary.branch?.footerNote?.trim() ? (
+                    <p className="whitespace-pre-line">{summary.branch.footerNote.trim()}</p>
+                  ) : (
+                    <p>
+                      {[
+                        summary.branch?.address ?? '',
+                        branding?.email ?? '',
+                        summary.branch?.phone ?? branding?.phone ?? '',
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </p>
+                  )}
                 </div>
               </>
             );
@@ -1137,22 +1403,19 @@ export default function OrderDetailPage() {
       </div>
       )}
 
-      {showTabs && orderTab === 'final' && (
-      <div ref={finalPrintAreaRef} className="final-invoice-print-area rounded-lg p-4 bg-pink-50">
+      {showTabs && (
+      <div className="final-invoice-print-area rounded-lg p-4 bg-pink-50">
       <Card className="bg-transparent border-0 shadow-none">
-        <CardHeader className="ack-print-hide-header">
-          <div className="flex items-center justify-end gap-2">
-            {finalInvoice?.status === 'ISSUED' && !editingFinal && !isFinalLocked && (
-              <Button size="sm" variant="outline" className="ack-print-hide" onClick={() => setEditingFinal(true)}>
-                Edit
-              </Button>
-            )}
-            {isFinalLocked && (
-              <p className="text-sm text-muted-foreground ack-print-hide">Final invoice cannot be edited after payment is collected.</p>
-            )}
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
+        {isFinalLocked && (
+          <CardHeader className="ack-print-hide-header">
+            <p className="text-sm text-muted-foreground ack-print-hide">Final invoice cannot be edited after payment is collected.</p>
+          </CardHeader>
+        )}
+        <div
+          ref={finalPrintAreaRef}
+          className="mx-auto w-full max-w-2xl rounded-lg bg-white p-6 shadow-sm invoice-print-view space-y-4 [color-scheme:light]"
+        >
+        <CardContent className="space-y-4 p-0">
           {/* Header: centered logo only */}
           <div className="flex border-b pb-4 items-center justify-center">
             <div className="flex-shrink-0 flex justify-center">
@@ -1200,18 +1463,14 @@ export default function OrderDetailPage() {
           {/* Order details (left) | PAN, GST, Branch (right) */}
           <div className="flex flex-wrap gap-4 items-start rounded-md bg-muted/40 p-3 text-sm">
             <div className="flex-1 min-w-[200px]">
-              <p className="font-medium mb-1">Order details</p>
+              <p className="font-bold mb-1">Order details</p>
               <p>{customer.name ?? '—'}</p>
               <p className="text-muted-foreground">Phone: {customer.phone ?? '—'}</p>
               {order.orderType === 'SUBSCRIPTION' ? (
                 <p className="text-muted-foreground">
                   Subscription booking{summary.subscription?.planName ? ` (${summary.subscription.planName})` : ''}
                 </p>
-              ) : order.orderSource !== 'WALK_IN' && (
-                <p className="text-muted-foreground">
-                  Service: {(order.serviceTypes && order.serviceTypes.length > 0 ? order.serviceTypes : [order.serviceType]).map((s) => s.replace(/_/g, ' ')).join(', ')}
-                </p>
-              )}
+              ) : null}
               {order.orderSource !== 'WALK_IN' && (
                 <p>
                   {address.addressLine}, {address.pincode}
@@ -1230,11 +1489,11 @@ export default function OrderDetailPage() {
                   )}
                 </p>
               )}
-              <p className="text-muted-foreground">
-                Pickup: {formatDate(order.pickupDate)} {order.timeWindow}
-              </p>
             </div>
             <div className="text-right text-muted-foreground space-y-0.5">
+              {branding?.businessName?.trim() ? (
+                <p className="font-bold text-foreground mb-1">{branding.businessName.trim()}</p>
+              ) : null}
               {summary.branch?.panNumber && <p>PAN: {summary.branch.panNumber}</p>}
               {summary.branch?.gstNumber && <p>GST: {summary.branch.gstNumber}</p>}
               {summary.branch && (
@@ -1269,10 +1528,11 @@ export default function OrderDetailPage() {
                       type="number"
                       min={0}
                       step={0.1}
-                      className="h-8 w-20 rounded border border-green-300 bg-white dark:bg-gray-900 px-2 text-sm"
+                      className="h-8 w-20 rounded border border-green-300 bg-white dark:bg-gray-900 px-2 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
                       value={finalWeightKg === '' ? '' : finalWeightKg}
                       onChange={(e) => setFinalWeightKg(e.target.value === '' ? '' : parseFloat(e.target.value) || 0)}
                       placeholder="0"
+                      disabled={!canEditFinalInvoiceFields}
                     />
                     <span className="text-xs text-green-700 dark:text-green-300">Deducted from subscription</span>
                   </span>
@@ -1285,10 +1545,11 @@ export default function OrderDetailPage() {
                       type="number"
                       min={0}
                       step={1}
-                      className="h-8 w-20 rounded border border-green-300 bg-white dark:bg-gray-900 px-2 text-sm"
+                      className="h-8 w-20 rounded border border-green-300 bg-white dark:bg-gray-900 px-2 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
                       value={finalItemsCount === '' ? '' : finalItemsCount}
                       onChange={(e) => setFinalItemsCount(e.target.value === '' ? '' : parseInt(e.target.value, 10) || 0)}
                       placeholder="0"
+                      disabled={!canEditFinalInvoiceFields}
                     />
                     <span className="text-xs text-green-700 dark:text-green-300">Deducted from subscription</span>
                   </span>
@@ -1314,41 +1575,51 @@ export default function OrderDetailPage() {
             onDiscountValueChange={setFinalDiscountValue}
             comments={finalComments}
             onCommentsChange={setFinalComments}
-            onSaveDraft={() =>
-              createFinalDraft.mutate(toFinalDraftBody(finalItems, finalTaxPercent, finalDiscountType, finalDiscountValue, finalComments, finalWeightKg, finalItemsCount))
-            }
-            onIssue={() => issueFinal.mutate()}
-            saveDraftLoading={createFinalDraft.isPending}
-            issueLoading={issueFinal.isPending}
+            onSaveDraft={() => {}}
+            onIssue={submitFinalInvoice}
+            issueLoading={createFinalDraft.isPending || issueFinal.isPending}
             draftExists={!!finalInvoice}
-            issued={isFinalLocked || (finalInvoice?.status === 'ISSUED' && !editingFinal)}
-            onPrint={() => {
-              document.body.classList.add('print-final-invoice');
-              window.print();
-              document.body.classList.remove('print-final-invoice');
-            }}
+            issued={isFinalLocked || finalSubmitted}
+            disableEditing={!canEditFinalInvoiceFields || finalSubmitted}
+            issueDisabled={!canIssueFinalInvoice}
+            allowSubmitWithoutDraft
+            hideSaveDraftButton
             showPrintOnly={true}
             pdfUrl={finalInvoice?.pdfUrl}
-            whatsappShareMessage={finalInvoice?.pdfUrl ? `Final Invoice IN${order.id}: ${finalInvoice.pdfUrl.startsWith('http') ? finalInvoice.pdfUrl : `${getApiOrigin()}${finalInvoice.pdfUrl}`}` : undefined}
             printAreaRef={finalPrintAreaRef}
+            issuedShareAdvanced={
+              finalInvoice?.status === 'ISSUED'
+                ? {
+                    orderId: order.id,
+                    invoiceLabelForFile: finalInvoice.code?.trim() || `IN${order.id}`,
+                    shareFileLabelPrefix: 'Final',
+                    buildWhatsAppMessage: buildFinalWhatsAppMessage,
+                    customerPhone: customer.phone,
+                    printStyleId: 'order-final-inline-print-style',
+                    printRootId: 'order-final-inline-print-root',
+                    printCloneClass: 'order-final-inline-print-clone',
+                  }
+                : undefined
+            }
             catalog={catalog ?? undefined}
             catalogMatrix={catalogMatrix}
+            tagPrintOrderLabel={order.id}
+            tagBrandName={branding?.businessName?.trim() || 'We You'}
             orderMode="INDIVIDUAL"
-            saveDraftLabel="Save Final Invoice"
-            canSaveDraft={true}
             subscriptionUnit={hasSubscription && summary?.subscription ? (summary.subscription.kgLimit != null ? 'KG' : summary.subscription.itemsLimit != null ? 'Nos' : undefined) : undefined}
             subscriptionUsageRowIndex={undefined}
           />
           {(() => {
             const st = finalSubtotal(finalItems);
-            const tax = Math.round(st * finalTaxPercent / 100);
             const disc = finalDiscountType === 'percent' ? Math.round(st * finalDiscountValue / 100) : finalDiscountValue;
-            const finalTotal = st + tax - disc;
+            const taxableAfterDisc = Math.max(0, st - disc);
+            const tax = Math.round(taxableAfterDisc * finalTaxPercent / 100);
+            const finalTotal = st - disc + tax;
             return (
               <>
                 <div className="mt-4 pt-4 border-t space-y-1 text-right">
                   <p className="text-base">
-                    Subtotal: {formatMoney(st)} · Tax ({finalTaxPercent}%): {formatMoney(tax)} · Discount {finalDiscountType === 'percent' ? `(${finalDiscountValue}%)` : `(₹)`}: -{formatMoney(disc)}
+                    Subtotal: {formatMoney(st)} · Discount {finalDiscountType === 'percent' ? `(${finalDiscountValue}%)` : `(₹)`}: -{formatMoney(disc)} · Tax ({finalTaxPercent}%): {formatMoney(tax)}
                   </p>
                   <p className="text-2xl font-bold">Total: {formatMoney(finalTotal)}</p>
                 </div>
@@ -1359,16 +1630,23 @@ export default function OrderDetailPage() {
                   </div>
                 )}
                 <div className="mt-6 pt-4 text-center text-sm text-muted-foreground space-y-1">
-                  {summary.branch?.footerNote?.trim() ? <p>{summary.branch.footerNote.trim()}</p> : null}
+                  {summary.branch?.footerNote?.trim() ? (
+                    <p className="whitespace-pre-line">{summary.branch.footerNote.trim()}</p>
+                  ) : (
+                    <p>
+                      {[
+                        summary.branch?.address ?? '',
+                        branding?.email ?? '',
+                        summary.branch?.phone ?? branding?.phone ?? '',
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </p>
+                  )}
                 </div>
               </>
             );
           })()}
-          {finalInvoice?.status === 'ISSUED' && editingFinal && (
-            <Button size="sm" variant="outline" className="mt-2 ack-print-hide" onClick={() => setEditingFinal(false)}>
-              Done editing
-            </Button>
-          )}
           {!canIssueFinalInvoice && (
             <p className="mt-2 text-xs text-muted-foreground">
               {order.orderSource === 'WALK_IN'
@@ -1377,90 +1655,9 @@ export default function OrderDetailPage() {
             </p>
           )}
         </CardContent>
+        </div>
       </Card>
       </div>
-      )}
-
-      {showTabs && orderTab === 'payment' && finalSubmitted && (
-      <Card>
-        <CardHeader>
-          <CardTitle>Record Payment</CardTitle>
-          {order.status === 'DELIVERED' && summary.payment?.status !== 'CAPTURED' && (
-            <p className="text-sm text-muted-foreground">Record payment after delivery.</p>
-          )}
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {summary.payment ? (
-            <div className="space-y-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <PaymentStatusBadge status={summary.payment.status} />
-                <span className="font-medium">{formatMoney(summary.payment.amount)}</span>
-                <span className="text-muted-foreground">{summary.payment.provider.replace(/_/g, ' ')}</span>
-              </div>
-              {summary.payment.note && (
-                <p className="text-xs text-muted-foreground">
-                  Note: {summary.payment.note}
-                </p>
-              )}
-            </div>
-          ) : (
-            <p className="text-muted-foreground">No payment recorded.</p>
-          )}
-
-          {order.status === 'DELIVERED' && summary.payment?.status !== 'CAPTURED' && (
-            <div className="rounded-lg border bg-muted/30 p-4 space-y-3">
-              <p className="text-sm font-medium">Record payment</p>
-              <div className="flex flex-wrap items-end gap-3">
-                <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground block">Amount (₹)</label>
-                  <input
-                    type="number"
-                    min={0}
-                    step={0.01}
-                    value={paymentAmountRupees}
-                    readOnly
-                    className="h-9 w-28 rounded-md border px-2 text-sm bg-muted/40 text-muted-foreground cursor-not-allowed"
-                    placeholder="0"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground block">Method</label>
-                  <select
-                    value={paymentProvider}
-                    onChange={(e) => setPaymentProvider(e.target.value as typeof paymentProvider)}
-                    className="h-9 min-w-[120px] rounded-md border px-2 text-sm"
-                  >
-                    <option value="UPI">UPI</option>
-                    <option value="CASH">CASH</option>
-                    <option value="CARD">CARD</option>
-                    <option value="RAZORPAY">Razorpay</option>
-                  </select>
-                </div>
-                <div className="flex-1 min-w-[160px] space-y-1">
-                  <label className="text-xs text-muted-foreground block">Transaction details / note</label>
-                  <input
-                    type="text"
-                    value={paymentNote}
-                    onChange={(e) => setPaymentNote(e.target.value)}
-                    className="h-9 w-full rounded-md border px-2 text-sm"
-                    placeholder="UPI ref, last 4 digits, etc."
-                  />
-                </div>
-                <Button
-                  size="sm"
-                  onClick={recordPayment}
-                  disabled={updatePayment.isPending || paymentAmountRupees === '' || Number(paymentAmountRupees) <= 0}
-                >
-                  {updatePayment.isPending ? 'Recording…' : 'Record payment'}
-                </Button>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Final invoice total: {formatMoney(finalInvoice?.total ?? 0)}
-              </p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
       )}
 
       </div>

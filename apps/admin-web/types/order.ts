@@ -101,6 +101,8 @@ export interface AdminOrdersFilters {
   branchId?: string;
   /** e.g. WALK_IN to list only walk-in orders. */
   orderSource?: string;
+  /** Partial match on order id, customer name, or phone. */
+  search?: string;
   dateFrom?: string;
   dateTo?: string;
   /** When set with pickupDateTo, filter by pickup date only (dashboard scheduled pickups). */

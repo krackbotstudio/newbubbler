@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "expo start --web --clear",
     "start": "expo start --web",
-    "build": "expo export --platform web && node scripts/postexport-pwa.js"
+    "sync-icons": "node ../customer-mobile/scripts/update-icon-from-branding.js",
+    "build": "node ../customer-mobile/scripts/update-icon-from-branding.js && expo export --platform web && node scripts/postexport-pwa.js"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "^2.2.0",

@@ -102,7 +102,7 @@ export class AuthService {
     const user = await prisma.user.findFirst({
       where: {
         email: { equals: email, mode: 'insensitive' },
-        role: { in: [Role.ADMIN, Role.BILLING, Role.OPS] },
+        role: { not: Role.CUSTOMER },
       },
     });
     if (!user) {

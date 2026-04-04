@@ -13,7 +13,7 @@ export interface AuthUser {
   role: Role;
   phone?: string | null;
   email?: string | null;
-  /** Set for Branch Head (OPS); used to scope orders, invoices, service areas, schedule. */
+  /** Set for Branch Head (OPS) and Agent (AGENT); used to scope orders, customers, feedback, etc. */
   branchId?: string | null;
 }
 
@@ -22,11 +22,15 @@ export class RolesGuard implements CanActivate {
   constructor(private readonly reflector: Reflector) {}
 
   canActivate(context: ExecutionContext): boolean {
-    const requiredRoles = this.reflector.getAllAndOverride<Role[] | undefined>(
+    let requiredRoles = this.reflector.getAllAndOverride<Role[] | undefined>(
       ROLES_KEY,
       [context.getHandler(), context.getClass()],
     );
     if (!requiredRoles || requiredRoles.length === 0) {
+      return true;
+    }
+    requiredRoles = requiredRoles.filter((r): r is Role => r != null);
+    if (requiredRoles.length === 0) {
       return true;
     }
     const request = context.switchToHttp().getRequest();

@@ -74,13 +74,13 @@ export class AdminCustomersService {
     private readonly addressesRepo: AddressesRepo,
   ) {}
 
-  async searchByPhone(phone: string) {
-    return searchCustomersByPhone(phone, { customersRepo: this.customersRepo });
+  async searchByPhone(phone: string, branchId?: string | null) {
+    return searchCustomersByPhone(phone, { customersRepo: this.customersRepo }, branchId);
   }
 
   /** List customers with order and subscription counts for admin list view. */
-  async listWithCounts(limit: number, cursor?: string | null, search?: string | null) {
-    const { data, nextCursor } = await this.customersRepo.list(limit, cursor ?? null, search ?? null);
+  async listWithCounts(limit: number, cursor?: string | null, search?: string | null, branchId?: string | null) {
+    const { data, nextCursor } = await this.customersRepo.list(limit, cursor ?? null, search ?? null, branchId ?? null);
     const userIds = data.map((c) => c.id);
     const [orderCounts, subCounts] = await Promise.all([
       this.ordersRepo.getOrderCountsByUserIds(userIds),

@@ -3,7 +3,7 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { getStoredUser } from '@/lib/auth';
+import { getStoredUser, isBranchFilterLocked } from '@/lib/auth';
 import { useBranches } from '@/hooks/useBranches';
 import { useCustomer } from '@/hooks/useCustomers';
 import {
@@ -16,13 +16,14 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { getFriendlyErrorMessage } from '@/lib/api';
 import { toast } from 'sonner';
+import { LockedBranchSelect } from '@/components/shared/LockedBranchSelect';
 
 export default function NewWalkInOrderPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const userIdFromProfile = searchParams.get('userId') ?? null;
   const user = useMemo(() => getStoredUser(), []);
-  const isBranchHead = user?.role === 'OPS' && user?.branchId;
+  const branchLocked = !!(user && isBranchFilterLocked(user.role, user.branchId));
   const { data: branches = [] } = useBranches();
   const [countryCode, setCountryCode] = useState('+91');
   const [mobile, setMobile] = useState('');
@@ -39,8 +40,8 @@ export default function NewWalkInOrderPage() {
   const { data: preselectedCustomer, isLoading: preselectedLoading } = useCustomer(userIdFromProfile);
 
   useEffect(() => {
-    if (isBranchHead && user?.branchId) setBranchId(user.branchId);
-  }, [isBranchHead, user?.branchId]);
+    if (branchLocked && user?.branchId) setBranchId(user.branchId);
+  }, [branchLocked, user?.branchId]);
 
   const { data: existingCustomer, isLoading: lookupLoading } = useWalkInLookupCustomer(submittedPhone);
   const createCustomer = useWalkInCreateCustomer();
@@ -252,18 +253,8 @@ export default function NewWalkInOrderPage() {
             <label htmlFor="branch" className="text-sm font-medium">
               Branch
             </label>
-            {isBranchHead ? (
-              <select
-                id="branch"
-                className="h-10 w-full rounded-md border border-input bg-muted px-3 text-sm"
-                value={branchId}
-                disabled
-                title="Your assigned branch (cannot change)"
-              >
-                <option value={user?.branchId ?? ''}>
-                  {branches.find((b) => b.id === user?.branchId)?.name ?? user?.branchId ?? '—'}
-                </option>
-              </select>
+            {branchLocked ? (
+              <LockedBranchSelect branchId={user?.branchId} className="w-full" selectClassName="w-full" />
             ) : (
               <select
                 id="branch"

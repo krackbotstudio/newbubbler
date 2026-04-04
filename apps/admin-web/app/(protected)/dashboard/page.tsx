@@ -1,17 +1,27 @@
 'use client';
 
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { getStoredUser } from '@/lib/auth';
+import { ExternalLink } from 'lucide-react';
+import { getStoredUser, isBranchFilterLocked, isBranchScopedStaff } from '@/lib/auth';
 import { useAnalyticsRevenue, useDashboardKpis } from '@/hooks/useAnalytics';
 import { useOrders } from '@/hooks/useOrders';
+import { useOrderSummary } from '@/hooks/useOrderSummary';
 import { useBranches } from '@/hooks/useBranches';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ErrorDisplay } from '@/components/shared/ErrorDisplay';
-import { OrderStatusBadge } from '@/components/shared/StatusBadge';
+import { LockedBranchSelect } from '@/components/shared/LockedBranchSelect';
 import { formatMoney, isoToLocalDateKey } from '@/lib/format';
-import type { AdminOrderListRow, OrderStatus } from '@/types';
+import type { AdminOrderListRow, OrderRecord, OrderStatus, ServiceType } from '@/types';
 
 const DASHBOARD_STATUS_CHIPS: { status: OrderStatus | 'CONFIRMED'; label: string }[] = [
   { status: 'CONFIRMED', label: 'Confirmed Orders' },
@@ -21,6 +31,42 @@ const DASHBOARD_STATUS_CHIPS: { status: OrderStatus | 'CONFIRMED'; label: string
 ];
 
 const STATUSES_FOR_CHIPS: OrderStatus[] = ['BOOKING_CONFIRMED', 'PICKUP_SCHEDULED', 'PICKED_UP', 'OUT_FOR_DELIVERY', 'DELIVERED'];
+
+const SERVICE_TYPE_LABELS: Record<ServiceType, string> = {
+  WASH_FOLD: 'Wash & Fold',
+  WASH_IRON: 'Wash & Iron',
+  STEAM_IRON: 'Steam Ironing',
+  DRY_CLEAN: 'Dry Cleaning',
+  HOME_LINEN: 'Home Linen',
+  SHOES: 'Shoes',
+  ADD_ONS: 'Add ons',
+};
+
+function safeExternalHref(url: string | null | undefined): string | null {
+  const t = (url ?? '').trim();
+  if (!t) return null;
+  try {
+    const u = new URL(t);
+    if (u.protocol === 'http:' || u.protocol === 'https:') return u.href;
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function pickupDateDisplay(pickupDate: string): string {
+  const key = typeof pickupDate === 'string' && pickupDate.length >= 10 ? pickupDate.slice(0, 10) : pickupDate;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) return pickupDate;
+  const d = new Date(key + 'T12:00:00Z');
+  return d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function serviceLinesFromOrder(order: Pick<OrderRecord, 'serviceType' | 'serviceTypes'>): string[] {
+  const types =
+    order.serviceTypes?.length > 0 ? order.serviceTypes : [order.serviceType];
+  const uniq = [...new Set(types)];
+  return uniq.map((t) => SERVICE_TYPE_LABELS[t] ?? t.replace(/_/g, ' '));
+}
 
 /** Current date in IST (YYYY-MM-DD). */
 function getTodayIST(): string {
@@ -67,18 +113,53 @@ function isSubscriptionOrder(row: AdminOrderListRow): boolean {
   return !!(row.subscriptionId ?? (row.orderType === 'SUBSCRIPTION'));
 }
 
+const DASHBOARD_REFRESH_MS = 5000;
+
+/** Short two-tone chime when a new order id appears after refresh. May be blocked until user interacts (browser autoplay). */
+function playNewOrderChime(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const AC =
+      window.AudioContext ||
+      (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AC) return;
+    const ctx = new AC();
+    const beep = (startAt: number, freq: number) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0, startAt);
+      gain.gain.linearRampToValueAtTime(0.1, startAt + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, startAt + 0.16);
+      osc.start(startAt);
+      osc.stop(startAt + 0.18);
+    };
+    const t = ctx.currentTime;
+    beep(t, 784);
+    beep(t + 0.12, 988);
+    void ctx.resume?.();
+  } catch {
+    /* autoplay or Web Audio unavailable */
+  }
+}
+
 export default function DashboardPage() {
   const user = useMemo(() => getStoredUser(), []);
   const role = user?.role ?? 'CUSTOMER';
-  const isBranchHead = role === 'OPS' && !!user?.branchId;
+  const branchScoped = isBranchScopedStaff(role);
+  const branchLocked = isBranchFilterLocked(role, user?.branchId);
   const [branchId, setBranchId] = useState<string>(() =>
-    isBranchHead && user?.branchId ? user.branchId : ''
+    branchLocked && user?.branchId ? user.branchId : ''
   );
   const [statusFilter, setStatusFilter] = useState<OrderStatus | 'CONFIRMED' | ''>('CONFIRMED');
+  const [previewOrderId, setPreviewOrderId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (isBranchHead && user?.branchId) setBranchId(user.branchId);
-  }, [isBranchHead, user?.branchId]);
+    if (branchLocked && user?.branchId) setBranchId(user.branchId);
+  }, [branchLocked, user?.branchId]);
 
   const todayKey = useMemo(() => getTodayIST(), []);
   const pickupDateFrom = useMemo(() => {
@@ -92,10 +173,16 @@ export default function DashboardPage() {
     return toDateKey(d);
   }, [todayKey]);
 
-  const { data, isLoading, error } = useAnalyticsRevenue({ preset: 'TODAY' });
-  const { data: kpis, isLoading: kpisLoading, error: kpisError } = useDashboardKpis();
+  const { data, isLoading, error } = useAnalyticsRevenue({
+    preset: 'TODAY',
+    refetchInterval: DASHBOARD_REFRESH_MS,
+  });
+  const { data: kpis, isLoading: kpisLoading, error: kpisError } = useDashboardKpis({
+    refetchInterval: DASHBOARD_REFRESH_MS,
+    enabled: !branchScoped,
+  });
   const { data: branches = [] } = useBranches();
-  const effectiveBranchId = isBranchHead
+  const effectiveBranchId = branchLocked
     ? (user?.branchId ?? undefined)
     : (branchId || undefined);
 
@@ -106,8 +193,45 @@ export default function DashboardPage() {
       limit: 200,
       branchId: effectiveBranchId ?? undefined,
     },
-    { refetchInterval: 30000 }
+    { refetchInterval: DASHBOARD_REFRESH_MS }
   );
+
+  const ordersTrackingKey = `${effectiveBranchId ?? ''}|${pickupDateFrom}|${pickupDateTo}`;
+  const prevOrderIdsRef = useRef<Set<string> | null>(null);
+  const ordersSnapshotInitializedRef = useRef(false);
+
+  useEffect(() => {
+    ordersSnapshotInitializedRef.current = false;
+    prevOrderIdsRef.current = null;
+  }, [ordersTrackingKey]);
+
+  useEffect(() => {
+    const rows = ordersData?.data;
+    if (!rows) return;
+    const ids = new Set(rows.map((r) => r.id));
+    if (!ordersSnapshotInitializedRef.current) {
+      ordersSnapshotInitializedRef.current = true;
+      prevOrderIdsRef.current = ids;
+      return;
+    }
+    const prev = prevOrderIdsRef.current;
+    if (!prev) {
+      prevOrderIdsRef.current = ids;
+      return;
+    }
+    let hasNew = false;
+    for (const id of ids) {
+      if (!prev.has(id)) {
+        hasNew = true;
+        break;
+      }
+    }
+    if (hasNew && prev.size > 0) playNewOrderChime();
+    prevOrderIdsRef.current = ids;
+  }, [ordersData?.data]);
+
+  const { data: previewSummary, isLoading: previewLoading, error: previewError } =
+    useOrderSummary(previewOrderId);
 
   const statusCounts = useMemo(() => {
     const rows = ordersData?.data ?? [];
@@ -156,7 +280,7 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      {error && (
+      {error && !branchScoped && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/40">
           <p className="text-sm font-medium text-amber-800 dark:text-amber-200">Failed to load analytics.</p>
           <ErrorDisplay error={error} className="mt-2" />
@@ -164,17 +288,8 @@ export default function DashboardPage() {
       )}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="text-2xl font-semibold">Dashboard</h1>
-        {isBranchHead ? (
-          <select
-            className="h-10 min-h-[2.5rem] min-w-[140px] disabled:opacity-70"
-            value={effectiveBranchId ?? ''}
-            disabled
-            title="Your assigned branch (cannot change)"
-          >
-            <option value={user?.branchId ?? ''}>
-              {branches.find((b) => b.id === user?.branchId)?.name ?? user?.branchId ?? '—'}
-            </option>
-          </select>
+        {branchLocked ? (
+          <LockedBranchSelect branchId={user?.branchId} selectClassName="min-w-[140px]" />
         ) : (
           <select
             className="h-10 min-h-[2.5rem] min-w-[140px]"
@@ -192,8 +307,10 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* KPIs in one row */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+      {/* KPIs: Branch Head / Agent — branch today metrics only (no org-wide KPIs). */}
+      <div
+        className={`grid grid-cols-2 gap-4 sm:grid-cols-3 ${branchScoped ? 'lg:grid-cols-3' : 'lg:grid-cols-5'}`}
+      >
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Collected (today)</CardTitle>
@@ -230,34 +347,38 @@ export default function DashboardPage() {
             )}
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Active subscriptions</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {kpisError ? (
-              <p className="text-sm text-destructive">Failed to load</p>
-            ) : kpisLoading ? (
-              <Skeleton className="h-8 w-12" />
-            ) : (
-              <span className="text-2xl font-bold">{kpis?.activeSubscriptionsCount ?? 0}</span>
-            )}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total customers</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {kpisError ? (
-              <p className="text-sm text-destructive">Failed to load</p>
-            ) : kpisLoading ? (
-              <Skeleton className="h-8 w-12" />
-            ) : (
-              <span className="text-2xl font-bold">{kpis?.totalCustomersCount ?? 0}</span>
-            )}
-          </CardContent>
-        </Card>
+        {!branchScoped ? (
+          <>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Active subscriptions</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {kpisError ? (
+                  <p className="text-sm text-destructive">Failed to load</p>
+                ) : kpisLoading ? (
+                  <Skeleton className="h-8 w-12" />
+                ) : (
+                  <span className="text-2xl font-bold">{kpis?.activeSubscriptionsCount ?? 0}</span>
+                )}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Total customers</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {kpisError ? (
+                  <p className="text-sm text-destructive">Failed to load</p>
+                ) : kpisLoading ? (
+                  <Skeleton className="h-8 w-12" />
+                ) : (
+                  <span className="text-2xl font-bold">{kpis?.totalCustomersCount ?? 0}</span>
+                )}
+              </CardContent>
+            </Card>
+          </>
+        ) : null}
       </div>
 
       {/* Status filter chips */}
@@ -286,17 +407,17 @@ export default function DashboardPage() {
         <CardContent className="pt-4">
           {statusFilter === 'CONFIRMED' && (
             <p className="text-sm text-muted-foreground mb-4">
-              Grouped by pickup date (chosen by customer). Missed past dates at top.
+              Grouped by pickup date (chosen by customer). Missed past dates at top. Refreshes every 5s.
             </p>
           )}
           {statusFilter && statusFilter !== 'CONFIRMED' && (
             <p className="text-sm text-muted-foreground mb-4">
-              Grouped by date when order reached this status.
+              Grouped by date when order reached this status. Refreshes every 5s.
             </p>
           )}
           {!statusFilter && (
             <p className="text-sm text-muted-foreground mb-4">
-              Confirmed: by pickup date. Others: by date of that status. Refreshes every 30s.
+              Confirmed: by pickup date. Others: by date of that status. Refreshes every 5s.
             </p>
           )}
           {ordersLoading ? (
@@ -312,26 +433,40 @@ export default function DashboardPage() {
                     key={dateKey}
                     className={`rounded-lg border p-3 min-h-[120px] ${isMissed ? 'border-destructive/50 bg-destructive/5' : ''}`}
                   >
-                    <div className="text-sm font-semibold mb-2">
-                      {dayLabel}
-                      {isMissed && statusFilter === 'CONFIRMED' && <span className="text-destructive text-xs block">Missed</span>}
+                    <div className="text-sm font-semibold mb-2 flex items-start justify-between gap-2">
+                      <span>
+                        {dayLabel}
+                        {isMissed && statusFilter === 'CONFIRMED' && (
+                          <span className="text-destructive text-xs block">Missed</span>
+                        )}
+                      </span>
+                      <span className="shrink-0 text-xs font-normal text-muted-foreground tabular-nums">
+                        {rows.length} {rows.length === 1 ? 'order' : 'orders'}
+                      </span>
                     </div>
-                    <ul className="space-y-1">
+                    <ul className="space-y-1.5">
                       {rows.map((row) => {
                         const isSub = isSubscriptionOrder(row);
                         const rowBg = isSub
                           ? 'bg-sky-50 dark:bg-sky-950/30'
                           : 'bg-fuchsia-50 dark:bg-fuchsia-950/30';
                         const status = row.status as OrderStatus;
+                        const slot =
+                          statusFilter === 'CONFIRMED' ? row.timeWindow : row.timeWindow || '—';
+                        const displayName = row.customerName?.trim() || row.id.slice(0, 8);
                         return (
                         <li key={row.id}>
-                          <Link
-                            href={`/orders/${row.id}`}
-                            className={`block text-xs cursor-pointer hover:underline truncate rounded px-1.5 py-0.5 ${rowBg}`}
-                            title={`${row.customerName ?? row.id} · ${row.timeWindow}${isSub ? ' · Subscription' : ''} · ${status}`}
+                          <button
+                            type="button"
+                            onClick={() => setPreviewOrderId(row.id)}
+                            className={`w-full text-left text-xs cursor-pointer rounded-md px-2 py-1.5 ${rowBg} hover:ring-1 hover:ring-primary/30`}
+                            title={`${displayName} · ${slot}${isSub ? ' · Subscription' : ''} · ${status}`}
                           >
-                            {row.customerName ?? row.id.slice(0, 8)} · {statusFilter === 'CONFIRMED' ? row.timeWindow : (row.timeWindow || '—')}
-                          </Link>
+                            <span className="block font-medium text-foreground truncate">{displayName}</span>
+                            <span className="mt-1 inline-block rounded-md bg-primary/15 px-1.5 py-0.5 text-[11px] font-bold tabular-nums text-primary">
+                              {slot}
+                            </span>
+                          </button>
                         </li>
                         );
                       })}
@@ -348,6 +483,104 @@ export default function DashboardPage() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog
+        open={previewOrderId != null}
+        onOpenChange={(open) => {
+          if (!open) setPreviewOrderId(null);
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Order details</DialogTitle>
+          </DialogHeader>
+          {previewLoading && (
+            <div className="space-y-3 py-2">
+              <Skeleton className="h-5 w-3/4" />
+              <Skeleton className="h-16 w-full" />
+              <Skeleton className="h-5 w-1/2" />
+              <Skeleton className="h-20 w-full" />
+            </div>
+          )}
+          {!previewLoading && previewError && (
+            <ErrorDisplay error={previewError} className="text-sm" />
+          )}
+          {!previewLoading && previewSummary && (
+            <div className="space-y-4 text-sm">
+              <div>
+                <p className="text-xs font-medium text-muted-foreground">Customer</p>
+                <p className="font-semibold text-base">
+                  {previewSummary.customer.name?.trim() || '—'}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-muted-foreground">Address</p>
+                <p className="mt-0.5 whitespace-pre-wrap">
+                  {previewSummary.address.label ? (
+                    <span className="font-medium">{previewSummary.address.label}: </span>
+                  ) : null}
+                  {previewSummary.address.addressLine}
+                  {previewSummary.address.pincode ? `, ${previewSummary.address.pincode}` : ''}
+                </p>
+                {(() => {
+                  const mapHref = safeExternalHref(previewSummary.address.googleMapUrl);
+                  return mapHref ? (
+                    <a
+                      href={mapHref}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-2 inline-flex items-center gap-1 text-primary font-medium hover:underline"
+                    >
+                      Open in Maps
+                      <ExternalLink className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                    </a>
+                  ) : null;
+                })()}
+              </div>
+              <div>
+                <p className="text-xs font-medium text-muted-foreground">Pickup</p>
+                <p className="mt-0.5">
+                  <span className="inline-block rounded-md bg-primary/15 px-2 py-0.5 text-xs font-bold tabular-nums text-primary">
+                    {previewSummary.order.timeWindow || '—'}
+                  </span>
+                  <span className="ml-2 text-muted-foreground">
+                    {pickupDateDisplay(previewSummary.order.pickupDate)}
+                  </span>
+                </p>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-muted-foreground">Services</p>
+                <ul className="mt-1 list-disc pl-5 space-y-1">
+                  {(previewSummary.orderItems?.length ?? 0) > 0
+                    ? previewSummary.orderItems!.map((item) => (
+                        <li key={item.id}>
+                          {(item.name ?? item.serviceType).replace(/_/g, ' ')}
+                          {item.quantity != null && item.quantity !== 0 ? (
+                            <span className="text-muted-foreground"> × {item.quantity}</span>
+                          ) : null}
+                        </li>
+                      ))
+                    : serviceLinesFromOrder(previewSummary.order).map((line, i) => (
+                        <li key={`${line}-${i}`}>{line}</li>
+                      ))}
+                </ul>
+              </div>
+            </div>
+          )}
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button type="button" variant="outline" onClick={() => setPreviewOrderId(null)}>
+              Close
+            </Button>
+            {previewOrderId && (
+              <Button type="button" asChild>
+                <Link href={`/orders/${previewOrderId}`} onClick={() => setPreviewOrderId(null)}>
+                  Go to order page
+                </Link>
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -13,6 +13,7 @@ import { CatalogItemIcon } from '@/components/catalog/CatalogItemIcon';
 import type { CatalogMatrixResponse } from '@/types/catalog';
 import type { InvoiceLineRow } from './InvoiceBuilder';
 import { formatMoney } from '@/lib/format';
+import { Search } from 'lucide-react';
 
 function getSegmentsForItem(catalogMatrix: CatalogMatrixResponse, itemId: string): { id: string; label: string }[] {
   const item = catalogMatrix.items.find((i) => i.id === itemId);
@@ -73,6 +74,23 @@ interface AddItemsToInvoiceDialogProps {
 
 const CHEVRON_SVG = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23be185d' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")";
 
+const MIN_INVOICE_ITEM_QTY = 0.1;
+
+/** Parse draft string; returns null if empty/invalid or below minimum (button stays disabled). */
+function parseValidInvoiceQty(draft: string): number | null {
+  const t = draft.trim().replace(',', '.');
+  if (t === '' || t === '.') return null;
+  const n = Number(t);
+  if (!Number.isFinite(n) || n < MIN_INVOICE_ITEM_QTY) return null;
+  return n;
+}
+
+function qtyToDraftString(q: number): string {
+  if (!Number.isFinite(q) || q < MIN_INVOICE_ITEM_QTY) return '1';
+  const rounded = Math.round(q * 1e6) / 1e6;
+  return String(rounded);
+}
+
 export function AddItemsToInvoiceDialog({
   open,
   onOpenChange,
@@ -83,8 +101,44 @@ export function AddItemsToInvoiceDialog({
   const [segmentByItem, setSegmentByItem] = useState<Record<string, string>>({});
   const [serviceByItem, setServiceByItem] = useState<Record<string, string>>({});
   const [qtyByItem, setQtyByItem] = useState<Record<string, number>>({});
+  const [itemSearch, setItemSearch] = useState('');
+  const [configQtyDraft, setConfigQtyDraft] = useState('1');
 
-  const activeItems = catalogMatrix.items.filter((i) => i.active);
+  useEffect(() => {
+    if (!open) setItemSearch('');
+  }, [open]);
+
+  useEffect(() => {
+    if (!configItemId) return;
+    const stored = qtyByItem[configItemId];
+    setConfigQtyDraft(stored != null ? qtyToDraftString(stored) : '1');
+  }, [configItemId]);
+
+  const activeItems = useMemo(
+    () => catalogMatrix.items.filter((i) => i.active),
+    [catalogMatrix.items],
+  );
+
+  const searchNorm = itemSearch.trim().toLowerCase();
+  const gridItems = useMemo(() => {
+    if (!searchNorm) return activeItems;
+    const segLabels = new Map(
+      catalogMatrix.segmentCategories.map((s) => [s.id, (s.label || s.code || '').toLowerCase()]),
+    );
+    const svcLabels = new Map(
+      catalogMatrix.serviceCategories.map((s) => [s.id, (s.label || s.code || '').toLowerCase()]),
+    );
+    return activeItems.filter((item) => {
+      if (item.name.toLowerCase().includes(searchNorm)) return true;
+      if (item.id.toLowerCase().includes(searchNorm)) return true;
+      for (const line of item.segmentPrices) {
+        const seg = segLabels.get(line.segmentCategoryId) ?? '';
+        const svc = svcLabels.get(line.serviceCategoryId) ?? '';
+        if (seg.includes(searchNorm) || svc.includes(searchNorm)) return true;
+      }
+      return false;
+    });
+  }, [activeItems, searchNorm, catalogMatrix.segmentCategories, catalogMatrix.serviceCategories]);
   const configItem = configItemId ? catalogMatrix.items.find((i) => i.id === configItemId) : null;
   const configSegments = configItemId ? getSegmentsForItem(catalogMatrix, configItemId) : [];
   const configSegmentId = configItemId ? (segmentByItem[configItemId] ?? '') : '';
@@ -95,11 +149,14 @@ export function AddItemsToInvoiceDialog({
   const configPricePaise = configItemId && configSegmentId && configServiceId
     ? getPricePaise(catalogMatrix, configItemId, configSegmentId, configServiceId)
     : null;
-  const configQty = configItemId ? Math.max(1, qtyByItem[configItemId] ?? 1) : 1;
-  const configTotalPaise = configPricePaise != null ? configPricePaise * configQty : null;
+  const parsedConfigQty = useMemo(() => parseValidInvoiceQty(configQtyDraft), [configQtyDraft]);
+  const configTotalPaise =
+    configPricePaise != null && parsedConfigQty != null
+      ? Math.round(configPricePaise * parsedConfigQty)
+      : null;
 
   const handleAdd = useCallback(
-    (itemId: string) => {
+    (itemId: string, qty: number) => {
       const item = catalogMatrix.items.find((i) => i.id === itemId);
       if (!item) return;
       const segmentId = segmentByItem[itemId];
@@ -107,8 +164,8 @@ export function AddItemsToInvoiceDialog({
       if (!segmentId || !serviceId) return;
       const unitPaise = getPricePaise(catalogMatrix, itemId, segmentId, serviceId);
       if (unitPaise == null) return;
-      const qty = Math.max(1, qtyByItem[itemId] ?? 1);
-      const amount = qty * unitPaise;
+      const amount = Math.round(qty * unitPaise);
+      setQtyByItem((prev) => ({ ...prev, [itemId]: qty }));
       onAddLine({
         type: 'DRYCLEAN_ITEM',
         name: item.name,
@@ -122,7 +179,7 @@ export function AddItemsToInvoiceDialog({
       setConfigItemId(null);
       onOpenChange(false);
     },
-    [catalogMatrix, segmentByItem, serviceByItem, qtyByItem, onAddLine, onOpenChange]
+    [catalogMatrix, segmentByItem, serviceByItem, onAddLine, onOpenChange],
   );
 
   const openConfig = (itemId: string) => {
@@ -143,8 +200,22 @@ export function AddItemsToInvoiceDialog({
           <p className="text-sm text-muted-foreground">
             Click an item, then choose Segment and Service in the next step.
           </p>
+          <div className="relative shrink-0">
+            <Search
+              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden
+            />
+            <Input
+              type="search"
+              value={itemSearch}
+              onChange={(e) => setItemSearch(e.target.value)}
+              placeholder="Search items by name, segment, or service…"
+              className="pl-9"
+              aria-label="Search catalog items"
+            />
+          </div>
           <div className="grid grid-cols-3 gap-4 overflow-y-auto min-h-0 flex-1 py-2">
-            {activeItems.map((item) => (
+            {gridItems.map((item) => (
               <button
                 key={item.id}
                 type="button"
@@ -157,6 +228,12 @@ export function AddItemsToInvoiceDialog({
                 <span className="font-medium text-sm text-center line-clamp-2">{item.name}</span>
               </button>
             ))}
+            {activeItems.length === 0 && (
+              <p className="col-span-full text-center text-sm text-muted-foreground py-8">No active catalog items.</p>
+            )}
+            {activeItems.length > 0 && gridItems.length === 0 && (
+              <p className="col-span-full text-center text-sm text-muted-foreground py-8">No items match your search.</p>
+            )}
           </div>
         </DialogContent>
       </Dialog>
@@ -205,17 +282,30 @@ export function AddItemsToInvoiceDialog({
               <div>
                 <label className="text-xs font-medium text-muted-foreground block mb-1.5">Qty</label>
                 <Input
-                  type="number"
-                  min={1}
-                  value={qtyByItem[configItemId!] ?? 1}
-                  onChange={(e) =>
-                    setQtyByItem((prev) => ({
-                      ...prev,
-                      [configItemId!]: Math.max(1, Number(e.target.value) || 1),
-                    }))
-                  }
+                  type="text"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  value={configQtyDraft}
+                  onChange={(e) => {
+                    let v = e.target.value.replace(',', '.');
+                    if (v === '' || /^\d*\.?\d*$/.test(v)) {
+                      setConfigQtyDraft(v);
+                    }
+                  }}
+                  onBlur={() => {
+                    setConfigQtyDraft((prev) => {
+                      const t = prev.trim().replace(',', '.');
+                      if (t === '') return '1';
+                      return prev;
+                    });
+                  }}
+                  placeholder="1"
                   className="h-10"
+                  aria-label="Quantity"
                 />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Minimum {MIN_INVOICE_ITEM_QTY}. Decimals allowed (e.g. 0.5 kg).
+                </p>
               </div>
               {configTotalPaise != null && (
                 <p className="text-sm font-medium">Total: {formatMoney(configTotalPaise)}</p>
@@ -227,8 +317,12 @@ export function AddItemsToInvoiceDialog({
                 type="button"
                 variant="default"
                 className="w-full"
-                onClick={() => handleAdd(configItemId!)}
-                disabled={!configSegmentId || !configServiceId}
+                onClick={() => {
+                  const q = parseValidInvoiceQty(configQtyDraft);
+                  if (q == null || !configItemId) return;
+                  handleAdd(configItemId, q);
+                }}
+                disabled={!configSegmentId || !configServiceId || parsedConfigQty == null}
               >
                 Add to invoice
               </Button>

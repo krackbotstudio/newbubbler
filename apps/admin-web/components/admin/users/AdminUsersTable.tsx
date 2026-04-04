@@ -121,6 +121,7 @@ export function AdminUsersTable() {
               <SelectItem value="ALL">All roles</SelectItem>
               <SelectItem value="ADMIN">Admin</SelectItem>
               <SelectItem value="OPS">Branch Head</SelectItem>
+              <SelectItem value="AGENT">Agent</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -224,7 +225,7 @@ export function AdminUsersTable() {
                 </td>
                 <td className="px-3 py-2 align-middle">
                   <span className="rounded bg-muted px-2 py-0.5 text-xs font-medium uppercase">
-                    {user.role === 'OPS' ? 'Branch Head' : user.role}
+                    {user.role === 'OPS' ? 'Branch Head' : user.role === 'AGENT' ? 'Agent' : user.role}
                   </span>
                 </td>
                 <td className="px-3 py-2 align-middle">

@@ -1,8 +1,9 @@
 'use client';
 
 import { forwardRef } from 'react';
-import { formatMoney, formatDate } from '@/lib/format';
+import { formatMoney, formatDate, formatPickupDayDisplay, formatTimeWindow24h } from '@/lib/format';
 import { getApiOrigin } from '@/lib/api';
+import { CatalogItemIcon } from '@/components/catalog/CatalogItemIcon';
 import type { OrderAdminSummary } from '@/types';
 import type { CatalogMatrixResponse } from '@/types/catalog';
 
@@ -28,17 +29,32 @@ export interface InvoicePrintViewProps {
   /** Subscription usage row shows Qty as "X KG" or "X Nos" when set; row index when subscription applied. */
   subscriptionUnit?: 'KG' | 'Nos';
   subscriptionUsageRowIndex?: number;
+  /** Appended as ?v= on logo URL (e.g. admin branding `updatedAt`) so the image is not stuck cached. */
+  logoUrlCacheBuster?: string | null;
 }
 
 export const InvoicePrintView = forwardRef<HTMLDivElement, InvoicePrintViewProps>(
   function InvoicePrintView(
-    { summary, invoice, type, branding, ackInvoice, catalogMatrix, subscriptionUnit, subscriptionUsageRowIndex },
+    {
+      summary,
+      invoice,
+      type,
+      branding,
+      ackInvoice,
+      catalogMatrix,
+      subscriptionUnit,
+      subscriptionUsageRowIndex,
+      logoUrlCacheBuster,
+    },
     ref
   ) {
     const { order, customer, address, branch } = summary;
     const items = invoice.items ?? [];
     const useMatrix = Boolean(catalogMatrix?.items?.length);
-    const taxPercent = invoice.subtotal > 0 ? Math.round((invoice.tax / invoice.subtotal) * 1000) / 10 : 0;
+    const discPaise = invoice.discountPaise ?? 0;
+    const taxableAfterDisc = Math.max(0, invoice.subtotal - discPaise);
+    const taxPercent =
+      taxableAfterDisc > 0 ? Math.round((invoice.tax / taxableAfterDisc) * 1000) / 10 : 0;
 
     function segmentLabel(id: string | null | undefined): string {
       if (!id || !catalogMatrix) return '—';
@@ -49,26 +65,39 @@ export const InvoicePrintView = forwardRef<HTMLDivElement, InvoicePrintViewProps
       return catalogMatrix.serviceCategories.find((s) => s.id === id)?.label ?? '—';
     }
 
+    function catalogItemForRow(catalogItemId: string | null | undefined) {
+      if (!catalogItemId || !catalogMatrix) return undefined;
+      return catalogMatrix.items.find((x) => x.id === catalogItemId);
+    }
+
+    function logoSrc(): string | null {
+      const raw = branding?.logoUrl;
+      if (!raw?.trim()) return null;
+      const base = raw.startsWith('http') ? raw : `${getApiOrigin()}${raw}`;
+      if (logoUrlCacheBuster) {
+        return `${base}${base.includes('?') ? '&' : '?'}v=${encodeURIComponent(logoUrlCacheBuster)}`;
+      }
+      return base;
+    }
+
+    const resolvedLogo = logoSrc();
+
     return (
       <div ref={ref} className="bg-white text-black p-6 max-w-2xl mx-auto space-y-4 invoice-print-view">
-        {/* Logo + business name + branch */}
-        <div className="flex gap-4 border-b pb-4 items-start justify-start">
-          <div className="flex-shrink-0 flex justify-start">
-            {branding?.logoUrl ? (
+        {/* Centered logo only (branch / business name appear in the details block below) */}
+        <div className="flex border-b pb-4 items-center justify-center invoice-print-header-logo">
+          <div className="flex-shrink-0 flex justify-center">
+            {resolvedLogo ? (
               <img
-                src={branding.logoUrl.startsWith('http') ? branding.logoUrl : `${getApiOrigin()}${branding.logoUrl}`}
+                src={resolvedLogo}
                 alt="Logo"
-                className="h-14 w-auto object-contain object-left"
+                className="h-14 w-auto max-w-[200px] object-contain"
               />
             ) : (
               <div className="h-14 w-24 rounded bg-gray-200 flex items-center justify-center text-xs text-gray-500">
                 Logo
               </div>
             )}
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="font-semibold text-lg">{branding?.businessName ?? 'Company'}</p>
-            {branch && <p className="text-sm font-medium text-gray-600 mt-0.5">{branch.name}</p>}
           </div>
         </div>
 
@@ -125,19 +154,25 @@ export const InvoicePrintView = forwardRef<HTMLDivElement, InvoicePrintViewProps
         {/* Order details (left) | PAN, GST, Branch (right) */}
         <div className="flex flex-wrap gap-4 items-start rounded-md bg-gray-50 p-3 text-sm">
           <div className="flex-1 min-w-[200px]">
-            <p className="font-medium mb-1">Order details</p>
+            <p className="font-bold mb-1">Order details</p>
             <p>{customer.name ?? '—'}</p>
-            <p className="text-gray-600">
-              {order.orderType === 'SUBSCRIPTION'
-                ? `Subscription booking${summary.subscription?.planName ? ` (${summary.subscription.planName})` : ''}`
-                : `Service: ${(order.serviceTypes?.length ? order.serviceTypes : [order.serviceType]).map((s) => s.replace(/_/g, ' ')).join(', ')}`}
-            </p>
+            {order.orderType === 'SUBSCRIPTION' && (
+              <p className="text-gray-600">
+                Subscription booking{summary.subscription?.planName ? ` (${summary.subscription.planName})` : ''}
+              </p>
+            )}
             <p>{address.addressLine}, {address.pincode}</p>
             <p className="text-gray-600">
-              Pickup: {formatDate(order.pickupDate)} {order.timeWindow}
+              Pickup:{' '}
+              {order.orderSource === 'WALK_IN'
+                ? 'Walk order'
+                : `${formatPickupDayDisplay(order.pickupDate)} · ${formatTimeWindow24h(order.timeWindow) || order.timeWindow}`}
             </p>
           </div>
           <div className="text-right text-gray-600 space-y-0.5">
+            {branding?.businessName?.trim() ? (
+              <p className="font-bold text-gray-900 mb-1">{branding.businessName.trim()}</p>
+            ) : null}
             {branding?.panNumber && <p>PAN: {branding.panNumber}</p>}
             {branding?.gstNumber && <p>GST: {branding.gstNumber}</p>}
             {branch && (
@@ -168,8 +203,8 @@ export const InvoicePrintView = forwardRef<HTMLDivElement, InvoicePrintViewProps
         )}
 
         {/* Line items table */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+        <div className="overflow-x-auto overflow-y-visible">
+          <table className="w-full border-collapse text-sm">
             <thead>
               <tr className="border-b">
                 {useMatrix ? (
@@ -214,30 +249,63 @@ export const InvoicePrintView = forwardRef<HTMLDivElement, InvoicePrintViewProps
                   const qtyDisplay = isSubUsageRow
                     ? `${row.quantity} ${subscriptionUnit}`
                     : String(row.quantity);
+                  const catItem = catalogItemForRow(row.catalogItemId ?? undefined);
                   return (
                     <tr key={i} className="border-b border-gray-200">
                       {useMatrix ? (
                         <>
-                          <td className="py-1.5">{row.name}</td>
-                          <td className="py-1.5">{segmentLabel(row.segmentCategoryId)}</td>
-                          <td className="py-1.5">{serviceLabel(row.serviceCategoryId)}</td>
+                          <td className="align-middle py-2.5">
+                            <div className="flex min-h-[24px] w-full items-center gap-2.5">
+                              {catItem ? (
+                                <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center text-gray-700 [&_svg]:block">
+                                  <CatalogItemIcon
+                                    icon={catItem.icon}
+                                    size={18}
+                                    className="shrink-0"
+                                    cacheBuster={catItem.updatedAt}
+                                  />
+                                </span>
+                              ) : null}
+                              <span className="min-w-0 flex-1 whitespace-normal break-words text-left text-sm leading-6 text-gray-900">
+                                {row.name}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="align-middle py-2.5">{segmentLabel(row.segmentCategoryId)}</td>
+                          <td className="align-middle py-2.5">{serviceLabel(row.serviceCategoryId)}</td>
                         </>
                       ) : (
                         <>
-                          <td className="py-1.5">{row.type}</td>
-                          <td className="py-1.5">{row.name}</td>
+                          <td className="align-middle py-2.5">{row.type}</td>
+                          <td className="align-middle py-2.5">
+                            <div className="flex min-h-[24px] w-full items-center gap-2.5">
+                              {catItem ? (
+                                <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center text-gray-700 [&_svg]:block">
+                                  <CatalogItemIcon
+                                    icon={catItem.icon}
+                                    size={18}
+                                    className="shrink-0"
+                                    cacheBuster={catItem.updatedAt}
+                                  />
+                                </span>
+                              ) : null}
+                              <span className="min-w-0 flex-1 whitespace-normal break-words text-left text-sm leading-6 text-gray-900">
+                                {row.name}
+                              </span>
+                            </div>
+                          </td>
                         </>
                       )}
-                      <td className="text-right py-1.5">{qtyDisplay}</td>
+                      <td className="align-middle py-2.5 text-right">{qtyDisplay}</td>
                       {useMatrix ? (
                         <>
-                          <td className="text-right py-1.5">{formatMoney(row.unitPrice)}</td>
-                          <td className="text-right py-1.5">{formatMoney(row.amount)}</td>
+                          <td className="align-middle py-2.5 text-right">{formatMoney(row.unitPrice)}</td>
+                          <td className="align-middle py-2.5 text-right">{formatMoney(row.amount)}</td>
                         </>
                       ) : (
                         <>
-                          <td className="text-right py-1.5">{formatMoney(row.unitPrice)}</td>
-                          <td className="text-right py-1.5">{formatMoney(row.amount)}</td>
+                          <td className="align-middle py-2.5 text-right">{formatMoney(row.unitPrice)}</td>
+                          <td className="align-middle py-2.5 text-right">{formatMoney(row.amount)}</td>
                         </>
                       )}
                     </tr>
@@ -252,11 +320,11 @@ export const InvoicePrintView = forwardRef<HTMLDivElement, InvoicePrintViewProps
         <div className="mt-4 pt-4 border-t space-y-1 text-right">
           <p className="text-base">
             Subtotal: {formatMoney(invoice.subtotal)}
-            {taxPercent > 0 && (
-              <> · Tax ({taxPercent}%): {formatMoney(invoice.tax)}</>
-            )}
             {invoice.discountPaise != null && invoice.discountPaise > 0 && (
               <> · Discount (₹): -{formatMoney(invoice.discountPaise)}</>
+            )}
+            {taxPercent > 0 && (
+              <> · Tax ({taxPercent}%): {formatMoney(invoice.tax)}</>
             )}
           </p>
           <p className="text-2xl font-bold">
@@ -286,13 +354,21 @@ export const InvoicePrintView = forwardRef<HTMLDivElement, InvoicePrintViewProps
           </div>
         )}
 
-        {/* Footer */}
+        {/* Footer: branch footer note (admin → branch branding); else contact line */}
         <div className="mt-6 pt-4 text-center text-sm text-gray-600 space-y-1">
-          <p>
-            {[branch?.address ?? branding?.address ?? '', branding?.email ?? '', branding?.phone ?? '']
-              .filter(Boolean)
-              .join(' · ')}
-          </p>
+          {branch?.footerNote?.trim() ? (
+            <p className="whitespace-pre-line">{branch.footerNote.trim()}</p>
+          ) : (
+            <p>
+              {[
+                branch?.address ?? branding?.address ?? '',
+                branding?.email ?? '',
+                branch?.phone ?? branding?.phone ?? '',
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </p>
+          )}
         </div>
       </div>
     );

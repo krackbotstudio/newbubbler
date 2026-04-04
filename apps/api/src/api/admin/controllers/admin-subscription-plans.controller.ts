@@ -1,5 +1,6 @@
 import { BadRequestException, Controller, Get, Post, Patch, Param, Body, UseGuards } from '@nestjs/common';
 import { Role } from '@shared/enums';
+import { AGENT_ROLE } from '../../common/agent-role';
 import { JwtAuthGuard } from '../../common/jwt-auth.guard';
 import { Roles } from '../../common/roles.decorator';
 import { RolesGuard } from '../../common/roles.guard';
@@ -27,16 +28,18 @@ function normalizeLimits(kgLimit: number | null | undefined, itemsLimit: number 
 
 @Controller('admin/subscription-plans')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.ADMIN, Role.OPS)
+@Roles(Role.ADMIN, Role.OPS, AGENT_ROLE)
 export class AdminSubscriptionPlansController {
   constructor(private readonly adminSubscriptionPlansService: AdminSubscriptionPlansService) {}
 
   @Get()
+  @Roles(Role.ADMIN, Role.OPS, AGENT_ROLE)
   async list() {
     return this.adminSubscriptionPlansService.list();
   }
 
   @Post()
+  @Roles(Role.ADMIN, Role.OPS)
   async create(@Body() dto: CreateSubscriptionPlanDto) {
     const { kgLimit, itemsLimit } = normalizeLimits(dto.kgLimit, dto.itemsLimit);
     const plan = await this.adminSubscriptionPlansService.create({
@@ -57,6 +60,7 @@ export class AdminSubscriptionPlansController {
   }
 
   @Patch(':id')
+  @Roles(Role.ADMIN, Role.OPS)
   async update(@Param('id') id: string, @Body() dto: PatchSubscriptionPlanDto) {
     const limitsInBody = dto.kgLimit !== undefined || dto.itemsLimit !== undefined;
     let kgLimit: number | null | undefined = dto.kgLimit;

@@ -16,6 +16,7 @@ import { diskStorage } from 'multer';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Role } from '@shared/enums';
+import { AGENT_ROLE } from '../../common/agent-role';
 import { JwtAuthGuard } from '../../common/jwt-auth.guard';
 import { Roles } from '../../common/roles.decorator';
 import { RolesGuard } from '../../common/roles.guard';
@@ -78,18 +79,18 @@ function branchBrandingMulterOptions(kind: 'logo' | 'upi-qr') {
 
 @Controller('admin/branches')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.ADMIN, Role.BILLING, Role.OPS)
+@Roles(Role.ADMIN, Role.BILLING, Role.OPS, AGENT_ROLE)
 export class AdminBranchesController {
   constructor(private readonly adminBranchesService: AdminBranchesService) {}
 
   @Get()
-  @Roles(Role.ADMIN, Role.BILLING, Role.OPS)
+  @Roles(Role.ADMIN, Role.BILLING, Role.OPS, AGENT_ROLE)
   async list() {
     return this.adminBranchesService.list();
   }
 
   @Get(':id')
-  @Roles(Role.ADMIN, Role.BILLING, Role.OPS)
+  @Roles(Role.ADMIN, Role.BILLING, Role.OPS, AGENT_ROLE)
   async getById(@Param('id') id: string) {
     return this.adminBranchesService.getById(id);
   }

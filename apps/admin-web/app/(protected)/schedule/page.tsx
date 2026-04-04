@@ -17,7 +17,7 @@ import { ErrorDisplay } from '@/components/shared/ErrorDisplay';
 import { getFriendlyErrorMessage } from '@/lib/api';
 import { isoToLocalDateKey, getTodayLocalDateKey } from '@/lib/format';
 import { useBranches } from '@/hooks/useBranches';
-import { getStoredUser } from '@/lib/auth';
+import { getStoredUser, isBranchScopedStaff } from '@/lib/auth';
 
 interface OperatingHours {
   id: string;
@@ -36,7 +36,7 @@ interface Holiday {
 export default function SchedulePage() {
   const user = typeof window !== 'undefined' ? getStoredUser() : null;
   const isAdmin = user?.role === 'ADMIN';
-  const isBranchHead = user?.role === 'OPS' && !!user?.branchId;
+  const isBranchHead = user && isBranchScopedStaff(user.role) && !!user.branchId;
 
   const { data: branches = [] } = useBranches();
   const [selectedBranchId, setSelectedBranchId] = useState<string>(() =>

@@ -1,15 +1,15 @@
 'use client';
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { getStoredUser } from '@/lib/auth';
+import { getStoredUser, isBranchFilterLocked } from '@/lib/auth';
 import { useOrders } from '@/hooks/useOrders';
 import { useBranches } from '@/hooks/useBranches';
+import { useDebounce } from '@/hooks/useDebounce';
 import { OrderStatusBadge, PaymentStatusBadge } from '@/components/shared/StatusBadge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import {
   Table,
   TableBody,
@@ -21,51 +21,31 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatMoney, formatDate } from '@/lib/format';
 import { ErrorDisplay } from '@/components/shared/ErrorDisplay';
-import type { AdminOrderListRow, OrderStatus, ServiceType } from '@/types';
-
-const STATUS_OPTIONS: OrderStatus[] = [
-  'BOOKING_CONFIRMED',
-  'PICKED_UP',
-  'IN_PROCESSING',
-  'READY',
-  'OUT_FOR_DELIVERY',
-  'DELIVERED',
-];
-
-const SERVICE_OPTIONS: ServiceType[] = [
-  'WASH_FOLD',
-  'WASH_IRON',
-  'STEAM_IRON',
-  'DRY_CLEAN',
-  'HOME_LINEN',
-  'SHOES',
-  'ADD_ONS',
-];
+import { LockedBranchSelect } from '@/components/shared/LockedBranchSelect';
+import { AdminOrderListOrderIdCell } from '@/components/shared/AdminOrderListOrderIdCell';
+import type { AdminOrderListRow } from '@/types';
 
 export default function OrdersPage() {
   const router = useRouter();
   const user = useMemo(() => getStoredUser(), []);
-  const isBranchHead = user?.role === 'OPS' && user?.branchId;
+  const branchLocked = !!(user && isBranchFilterLocked(user.role, user.branchId));
   const { data: branches = [] } = useBranches();
-  const [status, setStatus] = useState<OrderStatus | ''>('');
-  const [pincode, setPincode] = useState('');
-  const [serviceType, setServiceType] = useState<ServiceType | ''>('');
+  const [searchInput, setSearchInput] = useState('');
+  const debouncedSearch = useDebounce(searchInput.trim(), 400);
   const [branchId, setBranchId] = useState<string>('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [cursor, setCursor] = useState<string | undefined>(undefined);
   const limit = 20;
 
-  const effectiveBranchId = isBranchHead ? (user?.branchId ?? branchId) : branchId;
+  const effectiveBranchId = branchLocked ? (user?.branchId ?? branchId) : branchId;
 
   useEffect(() => {
-    if (isBranchHead && user?.branchId) setBranchId(user.branchId);
-  }, [isBranchHead, user?.branchId]);
+    if (branchLocked && user?.branchId) setBranchId(user.branchId);
+  }, [branchLocked, user?.branchId]);
 
   const filters = {
-    status: status || undefined,
-    pincode: pincode || undefined,
-    serviceType: serviceType || undefined,
+    search: debouncedSearch || undefined,
     branchId: effectiveBranchId || undefined,
     dateFrom: dateFrom || undefined,
     dateTo: dateTo || undefined,
@@ -104,62 +84,22 @@ export default function OrdersPage() {
       <h1 className="text-2xl font-semibold">Orders</h1>
 
       <Card>
-        <CardHeader>
-          <CardTitle>Filters</CardTitle>
-        </CardHeader>
-        <CardContent>
+        <CardContent className="pt-4">
           <p className="text-xs text-muted-foreground mb-3">
             Date filter: leave empty for all dates. With a range, orders are shown if initiated, picked up, or delivered on any day in that range.
           </p>
-          <div className="flex flex-wrap items-end gap-4">
-            <div className="space-y-1.5 min-w-0">
-              <label className="text-xs text-muted-foreground block">Status</label>
-              <select
-                className="h-10 min-h-[2.5rem] w-full min-w-[100px]"
-                value={status}
-                onChange={(e) => {
-                  setStatus(e.target.value as OrderStatus | '');
-                  setCursor(undefined);
-                }}
-              >
-                <option value="">All</option>
-                {STATUS_OPTIONS.map((s) => (
-                  <option key={s} value={s}>
-                    {s.replace(/_/g, ' ')}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-1.5 min-w-0">
-              <label className="text-xs text-muted-foreground block">Pincode</label>
+          <div className="flex flex-wrap items-end gap-4 mb-4">
+            <div className="space-y-1.5 min-w-0 flex-1 basis-[min(100%,280px)]">
+              <label className="text-xs text-muted-foreground block">Search</label>
               <Input
-                placeholder="6 digits"
-                value={pincode}
+                placeholder="Order ID, customer name, or mobile"
+                value={searchInput}
                 onChange={(e) => {
-                  setPincode(e.target.value);
+                  setSearchInput(e.target.value);
                   setCursor(undefined);
                 }}
-                maxLength={6}
-                className="w-28"
+                className="min-w-0 w-full max-w-md"
               />
-            </div>
-            <div className="space-y-1.5 min-w-0">
-              <label className="text-xs text-muted-foreground block">Service</label>
-              <select
-                className="h-10 min-h-[2.5rem] w-full min-w-[100px]"
-                value={serviceType}
-                onChange={(e) => {
-                  setServiceType(e.target.value as ServiceType | '');
-                  setCursor(undefined);
-                }}
-              >
-                <option value="">All</option>
-                {SERVICE_OPTIONS.map((s) => (
-                  <option key={s} value={s}>
-                    {s.replace(/_/g, ' ')}
-                  </option>
-                ))}
-              </select>
             </div>
             <div className="space-y-1.5 min-w-0">
               <label className="text-xs text-muted-foreground block">Date from</label>
@@ -184,18 +124,9 @@ export default function OrdersPage() {
               />
             </div>
             <div className="space-y-1.5 ml-auto min-w-0">
-              <label className="text-xs text-muted-foreground block">Branch name</label>
-              {isBranchHead ? (
-                <select
-                  className="h-10 min-h-[2.5rem] min-w-[140px] disabled:opacity-70"
-                  value={effectiveBranchId}
-                  disabled
-                  title="Your assigned branch (cannot change)"
-                >
-                  <option value={user?.branchId ?? ''}>
-                    {branches.find((b) => b.id === user?.branchId)?.name ?? user?.branchId ?? '—'}
-                  </option>
-                </select>
+              <label className="text-xs text-muted-foreground block">Branch</label>
+              {branchLocked ? (
+                <LockedBranchSelect branchId={user?.branchId} selectClassName="min-w-[140px]" />
               ) : (
                 <select
                   className="h-10 min-h-[2.5rem] min-w-[140px]"
@@ -216,13 +147,9 @@ export default function OrdersPage() {
               )}
             </div>
           </div>
-        </CardContent>
-      </Card>
 
-      <Card>
-        <CardContent className="p-0">
           {isLoading ? (
-            <div className="space-y-2 p-4">
+            <div className="space-y-2">
               {Array.from({ length: 5 }).map((_, i) => (
                 <Skeleton key={i} className="h-12 w-full" />
               ))}
@@ -235,7 +162,7 @@ export default function OrdersPage() {
                     <TableHead>Order ID</TableHead>
                     <TableHead>Customer</TableHead>
                     <TableHead>Address</TableHead>
-                    <TableHead>Branch name</TableHead>
+                    <TableHead>Branch</TableHead>
                     <TableHead>Service</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Initiated</TableHead>
@@ -253,10 +180,8 @@ export default function OrdersPage() {
                       className="cursor-pointer"
                       onClick={() => handleRowClick(row.id)}
                     >
-                      <TableCell className="font-mono text-xs break-all" title={row.id}>
-                        <Link href={`/orders/${row.id}`} className="text-primary hover:underline">
-                          {row.id}
-                        </Link>
+                      <TableCell className="align-top py-3">
+                        <AdminOrderListOrderIdCell id={row.id} />
                       </TableCell>
                       <TableCell className="max-w-[120px] truncate" title={row.customerName ?? row.userId}>
                         {row.customerName ?? row.userId.slice(0, 8) + '…'}
@@ -267,7 +192,9 @@ export default function OrdersPage() {
                       <TableCell className="whitespace-nowrap" title={row.branchName ?? undefined}>
                         {row.branchName ?? '—'}
                       </TableCell>
-                      <TableCell>{row.serviceType.replace(/_/g, ' ')}</TableCell>
+                      <TableCell className="text-xs uppercase tracking-wide">
+                        {row.serviceType.replace(/_/g, ' ')}
+                      </TableCell>
                       <TableCell>
                         <OrderStatusBadge status={row.status} />
                       </TableCell>
@@ -275,10 +202,18 @@ export default function OrdersPage() {
                       <TableCell>{formatDate(row.pickupDate)}</TableCell>
                       <TableCell>{row.deliveredDate ? formatDate(row.deliveredDate) : '—'}</TableCell>
                       <TableCell>
-                        <PaymentStatusBadge status={row.paymentStatus} />
-                        <span className="ml-1 text-xs text-muted-foreground">
-                          {row.paymentStatus === 'CAPTURED' ? '(Success)' : row.paymentStatus === 'DUE' || row.paymentStatus === 'PENDING' ? '(Pending)' : '(Failed)'}
-                        </span>
+                        <div className="flex flex-col gap-1 items-start">
+                          <PaymentStatusBadge status={row.paymentStatus} />
+                          <span className="text-xs text-muted-foreground">
+                            {row.paymentStatus === 'CAPTURED' || row.paymentStatus === 'PAID'
+                              ? '(Success)'
+                              : row.paymentStatus === 'DUE' || row.paymentStatus === 'PENDING'
+                                ? '(Pending)'
+                                : row.paymentStatus === 'FAILED'
+                                  ? '(Failed)'
+                                  : ''}
+                          </span>
+                        </div>
                       </TableCell>
                       <TableCell className="text-muted-foreground text-sm">
                         {row.billTypeLabel ?? '—'}
@@ -293,7 +228,7 @@ export default function OrdersPage() {
               {data?.data?.length === 0 && (
                 <div className="p-8 text-center text-muted-foreground">No orders found.</div>
               )}
-              <div className="flex items-center justify-between border-t px-4 py-2">
+              <div className="flex items-center justify-between border-t px-4 py-2 mt-2">
                 <span className="text-sm text-muted-foreground">
                   {data?.data?.length ?? 0} rows
                 </span>

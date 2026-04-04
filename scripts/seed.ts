@@ -3,6 +3,7 @@
  * Run after migrations: npm run prisma:seed
  */
 import 'dotenv/config';
+// Prisma client is generated to apps/api (see schema.prisma `output`); scripts/ have no @prisma/client path alias.
 import {
   PrismaClient,
   Role,
@@ -17,7 +18,7 @@ import {
   OrderStatus,
   FeedbackType as FbType,
   FeedbackStatus as FbStatus,
-} from '@prisma/client';
+} from '../apps/api/src/infra/generated/prisma-client';
 import {
   getIndiaDates,
   getIndiaNowPlusDays,

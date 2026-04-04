@@ -1,5 +1,6 @@
 import { Controller, Post, Param, Body, UseGuards } from '@nestjs/common';
 import { Role } from '@shared/enums';
+import { AGENT_ROLE } from '../../common/agent-role';
 import { JwtAuthGuard } from '../../common/jwt-auth.guard';
 import { Roles } from '../../common/roles.decorator';
 import { RolesGuard } from '../../common/roles.guard';
@@ -8,7 +9,7 @@ import { InvoiceDraftDto } from '../dto/invoice-draft.dto';
 
 @Controller('admin/orders')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.ADMIN, Role.OPS, Role.BILLING)
+@Roles(Role.ADMIN, Role.OPS, Role.BILLING, AGENT_ROLE)
 export class AdminInvoicesController {
   constructor(private readonly adminInvoicesService: AdminInvoicesService) {}
 

@@ -1,5 +1,5 @@
 import type { PrismaClient } from '@prisma/client';
-import { Role } from '@prisma/client';
+import { Prisma, Role } from '@prisma/client';
 import type { CustomersRepo, CustomerRecord, UpdateCustomerPatch, ListCustomersResult, CreateCustomerInput } from '../../../application/ports';
 
 type PrismaLike = Pick<PrismaClient, 'user'>;
@@ -31,11 +31,28 @@ function toRecord(row: {
 export class PrismaCustomersRepo implements CustomersRepo {
   constructor(private readonly prisma: PrismaLike) {}
 
-  async findByPhone(phoneLike: string): Promise<CustomerRecord[]> {
+  async findByPhone(phoneLike: string, branchId?: string | null): Promise<CustomerRecord[]> {
+    const db = this.prisma as unknown as PrismaClient;
+    let ordersInBranch: Prisma.OrderListRelationFilter | undefined;
+    if (branchId != null && branchId !== '') {
+      const areas = await db.serviceArea.findMany({
+        where: { branchId, active: true },
+        select: { pincode: true },
+      });
+      const pincodes = [...new Set(areas.map((a) => a.pincode))];
+      const orderMatch: Prisma.OrderWhereInput =
+        pincodes.length > 0
+          ? {
+              OR: [{ branchId }, { branchId: null, pincode: { in: pincodes } }],
+            }
+          : { branchId };
+      ordersInBranch = { some: orderMatch };
+    }
     const rows = await this.prisma.user.findMany({
       where: {
         role: 'CUSTOMER',
         phone: { contains: phoneLike, mode: 'insensitive' as const },
+        ...(ordersInBranch ? { orders: ordersInBranch } : {}),
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -74,9 +91,47 @@ export class PrismaCustomersRepo implements CustomersRepo {
     return this.prisma.user.count({ where: { role: 'CUSTOMER' } });
   }
 
-  async list(limit: number, cursor?: string | null, search?: string | null): Promise<ListCustomersResult> {
-    const where = {
+  async countWithOrdersInBranch(branchId: string): Promise<number> {
+    const db = this.prisma as unknown as PrismaClient;
+    const areas = await db.serviceArea.findMany({
+      where: { branchId, active: true },
+      select: { pincode: true },
+    });
+    const pincodes = [...new Set(areas.map((a) => a.pincode))];
+    const orderMatch: Prisma.OrderWhereInput =
+      pincodes.length > 0
+        ? {
+            OR: [{ branchId }, { branchId: null, pincode: { in: pincodes } }],
+          }
+        : { branchId };
+    return db.user.count({
+      where: {
+        role: Role.CUSTOMER,
+        orders: { some: orderMatch },
+      },
+    });
+  }
+
+  async list(limit: number, cursor?: string | null, search?: string | null, branchId?: string | null): Promise<ListCustomersResult> {
+    const db = this.prisma as unknown as PrismaClient;
+    let ordersInBranch: Prisma.OrderListRelationFilter | undefined;
+    if (branchId != null && branchId !== '') {
+      const areas = await db.serviceArea.findMany({
+        where: { branchId, active: true },
+        select: { pincode: true },
+      });
+      const pincodes = [...new Set(areas.map((a) => a.pincode))];
+      const orderMatch: Prisma.OrderWhereInput =
+        pincodes.length > 0
+          ? {
+              OR: [{ branchId }, { branchId: null, pincode: { in: pincodes } }],
+            }
+          : { branchId };
+      ordersInBranch = { some: orderMatch };
+    }
+    const where: Prisma.UserWhereInput = {
       role: Role.CUSTOMER,
+      ...(ordersInBranch ? { orders: ordersInBranch } : {}),
       ...(search && search.trim()
         ? {
             OR: [

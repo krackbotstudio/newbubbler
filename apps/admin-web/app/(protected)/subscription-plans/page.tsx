@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { getStoredUser } from '@/lib/auth';
+import { getStoredUser, isBranchScopedStaff } from '@/lib/auth';
 import { RoleGate } from '@/components/shared/RoleGate';
 import { BranchFilter } from '@/components/shared/BranchFilter';
 import { ErrorDisplay } from '@/components/shared/ErrorDisplay';
@@ -37,7 +37,7 @@ const COLUMNS_READONLY = 9;
 export default function SubscriptionPlansPage() {
   const user = getStoredUser();
   const role = user?.role ?? 'CUSTOMER';
-  const isBranchHead = role === 'OPS' && !!user?.branchId;
+  const isBranchHead = isBranchScopedStaff(role) && !!user?.branchId;
   const canEdit = role === 'ADMIN';
   const columnCount = canEdit ? COLUMNS_WITH_ACTIONS : COLUMNS_READONLY;
 

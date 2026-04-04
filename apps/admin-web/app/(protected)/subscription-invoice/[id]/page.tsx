@@ -41,6 +41,7 @@ interface BrandingSnapshot {
   panNumber?: string | null;
   gstNumber?: string | null;
   termsAndConditions?: string | null;
+  footerNote?: string | null;
 }
 
 interface MainBranch {
@@ -48,6 +49,7 @@ interface MainBranch {
   address: string;
   phone: string | null;
   email: string | null;
+  footerNote?: string | null;
 }
 
 interface SubscriptionInvoiceResponse {
@@ -446,26 +448,29 @@ export default function SubscriptionInvoicePage() {
               <p className="text-sm text-gray-600">Payment: {data.paymentStatus}</p>
             </div>
 
-            {/* Footer: main branch address and contact */}
-            <div className="mt-6 pt-4 text-center text-sm text-gray-600 space-y-1">
-              <p>
-                {[
-                  mainBranch?.address ?? branding?.address ?? '',
-                  mainBranch?.email ?? branding?.email ?? '',
-                  mainBranch?.phone ?? branding?.phone ?? '',
-                ]
-                  .filter(Boolean)
-                  .join(' · ')}
-              </p>
-            </div>
-
-            {/* Terms and Conditions at bottom - always show section when we have terms */}
+            {/* Terms and Conditions — then branch footer note (same order as Ack/Final invoices) */}
             <div className="mt-4 pt-4 border-t">
               <p className="font-semibold text-gray-700 text-sm mb-1">Terms and Conditions</p>
               {branding?.termsAndConditions?.trim() ? (
                 <div className="text-xs text-gray-600 whitespace-pre-line">{branding.termsAndConditions.trim()}</div>
               ) : (
                 <p className="text-xs text-gray-500 italic">No terms and conditions specified.</p>
+              )}
+            </div>
+
+            <div className="mt-6 pt-4 text-center text-sm text-gray-600 space-y-1">
+              {(mainBranch?.footerNote ?? branding?.footerNote)?.trim() ? (
+                <p className="whitespace-pre-line">{(mainBranch?.footerNote ?? branding?.footerNote)!.trim()}</p>
+              ) : (
+                <p>
+                  {[
+                    mainBranch?.address ?? branding?.address ?? '',
+                    mainBranch?.email ?? branding?.email ?? '',
+                    mainBranch?.phone ?? branding?.phone ?? '',
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </p>
               )}
             </div>
           </div>

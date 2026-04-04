@@ -356,7 +356,7 @@ export class PrismaOrdersRepo implements OrdersRepo {
       andConditions.push({
         pickupDate: { gte: filters.pickupDateFrom, lte: filters.pickupDateTo },
       });
-    } else if (filters.dateFrom != null || filters.dateTo != null) {
+    } else     if (filters.dateFrom != null || filters.dateTo != null) {
       const from = filters.dateFrom ?? new Date(0);
       const to = filters.dateTo ?? new Date(8640000000000000);
       const toEnd = new Date(to);
@@ -368,6 +368,19 @@ export class PrismaOrdersRepo implements OrdersRepo {
           { status: PrismaOrderStatus.DELIVERED, updatedAt: { gte: from, lte: toEnd } },
         ],
       });
+    }
+    const q = filters.search?.trim();
+    if (q) {
+      const digitsOnly = q.replace(/\D/g, '');
+      const searchOr: Array<Record<string, unknown>> = [
+        { id: { contains: q, mode: 'insensitive' as const } },
+        { user: { name: { contains: q, mode: 'insensitive' as const } } },
+        { user: { phone: { contains: q, mode: 'insensitive' as const } } },
+      ];
+      if (digitsOnly.length >= 3 && digitsOnly !== q) {
+        searchOr.push({ user: { phone: { contains: digitsOnly, mode: 'insensitive' as const } } });
+      }
+      andConditions.push({ OR: searchOr });
     }
     const where = andConditions.length > 0 ? { AND: andConditions } : {};
     const take = filters.limit + 1;

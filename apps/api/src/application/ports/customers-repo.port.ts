@@ -29,7 +29,8 @@ export interface CreateCustomerInput {
 }
 
 export interface CustomersRepo {
-  findByPhone(phoneLike: string): Promise<CustomerRecord[]>;
+  /** When branchId is set, only customers with an order in that branch. */
+  findByPhone(phoneLike: string, branchId?: string | null): Promise<CustomerRecord[]>;
   /** Exact match by phone (for walk-in lookup). Returns null if not found or not CUSTOMER. */
   getByPhone(phone: string): Promise<CustomerRecord | null>;
   getById(userId: string): Promise<CustomerRecord | null>;
@@ -38,6 +39,8 @@ export interface CustomersRepo {
   update(userId: string, patch: UpdateCustomerPatch): Promise<CustomerRecord>;
   /** Total number of users with role CUSTOMER. */
   count(): Promise<number>;
-  /** List customers with optional cursor and search (phone/name). */
-  list(limit: number, cursor?: string | null, search?: string | null): Promise<ListCustomersResult>;
+  /** Distinct customers who have at least one order attributed to this branch (same rules as admin order list). */
+  countWithOrdersInBranch(branchId: string): Promise<number>;
+  /** List customers with optional cursor and search (phone/name). When branchId is set, only customers with an order in that branch (same attribution as admin orders). */
+  list(limit: number, cursor?: string | null, search?: string | null, branchId?: string | null): Promise<ListCustomersResult>;
 }

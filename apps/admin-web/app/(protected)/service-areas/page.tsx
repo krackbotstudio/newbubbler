@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { getStoredUser } from '@/lib/auth';
+import { getStoredUser, isBranchScopedStaff } from '@/lib/auth';
 import { RoleGate } from '@/components/shared/RoleGate';
 import { ErrorDisplay } from '@/components/shared/ErrorDisplay';
 import { Button } from '@/components/ui/button';
@@ -29,7 +29,7 @@ import { Pencil, Trash2 } from 'lucide-react';
 export default function ServiceAreasPage() {
   const user = getStoredUser();
   const role = user?.role ?? 'CUSTOMER';
-  const isBranchHead = role === 'OPS' && !!user?.branchId;
+  const isBranchHead = isBranchScopedStaff(role) && !!user?.branchId;
 
   const [addOpen, setAddOpen] = useState(false);
   const [editArea, setEditArea] = useState<ServiceArea | null>(null);

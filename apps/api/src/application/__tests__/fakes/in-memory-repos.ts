@@ -159,6 +159,11 @@ export function createFakeOrdersRepo(initial: OrderRecord[] = []): OrdersRepo & 
       if (filters.serviceType != null) list = list.filter((r) => r.serviceType === filters.serviceType);
       if (filters.customerId != null) list = list.filter((r) => r.userId === filters.customerId);
       if (filters.orderSource != null) list = list.filter((r) => r.orderSource === filters.orderSource);
+      const sq = filters.search?.trim();
+      if (sq) {
+        const sl = sq.toLowerCase();
+        list = list.filter((r) => r.id.toLowerCase().includes(sl));
+      }
       if (filters.branchId != null) list = list.filter((r) => r.branchId === filters.branchId);
       if (filters.dateFrom != null) list = list.filter((r) => r.pickupDate >= filters.dateFrom!);
       if (filters.dateTo != null) list = list.filter((r) => r.pickupDate <= filters.dateTo!);

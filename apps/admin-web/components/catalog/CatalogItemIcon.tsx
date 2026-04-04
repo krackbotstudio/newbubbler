@@ -46,7 +46,7 @@ interface CatalogItemIconProps {
 export function CatalogItemIcon({ icon, size = 22, className, cacheBuster }: CatalogItemIconProps) {
   if (!icon) {
     const IconComponent = DEFAULT_ICON;
-    return <IconComponent size={size} className={className} />;
+    return <IconComponent size={size} className={cn('block', className)} aria-hidden />;
   }
   if (icon.startsWith('/') || icon.startsWith('http')) {
     const baseSrc = icon.startsWith('http') ? icon : `${getApiOrigin()}${icon}`;
@@ -65,5 +65,7 @@ export function CatalogItemIcon({ icon, size = 22, className, cacheBuster }: Cat
     );
   }
   const IconComponent = ICON_MAP[icon] ?? DEFAULT_ICON;
-  return <IconComponent size={size} className={cn('shrink-0 inline-block align-middle', className)} />;
+  return (
+    <IconComponent size={size} className={cn('shrink-0 block align-middle', className)} aria-hidden />
+  );
 }

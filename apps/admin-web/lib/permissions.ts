@@ -4,6 +4,7 @@ import type { Role } from '@/lib/auth';
  * Central permission map for admin-web.
  * - ADMIN / BILLING: full access (allow all routes).
  * - OPS: restricted; denyRoutes are hidden from nav and redirect if accessed directly.
+ * - AGENT: only listed routes (branch-scoped in API).
  */
 export const ROLE_PERMISSIONS: Record<
   Role,
@@ -12,6 +13,9 @@ export const ROLE_PERMISSIONS: Record<
   ADMIN: { allow: ['*'] },
   BILLING: { allow: ['*'] },
   OPS: { denyRoutes: ['/analytics', '/branding', '/admin-users'] },
+  AGENT: {
+    allow: ['/dashboard', '/orders', '/walk-in-orders', '/customers', '/feedback'],
+  },
   CUSTOMER: { denyRoutes: ['*'] },
 };
 
@@ -25,6 +29,9 @@ export function canAccessRoute(role: Role, pathname: string): boolean {
   const perm = ROLE_PERMISSIONS[role];
   if (!perm) return false;
   if (perm.allow?.includes('*')) return true;
+  if (perm.allow && perm.allow.length > 0) {
+    return perm.allow.some((r) => pathname === r || pathname.startsWith(`${r}/`));
+  }
   const deny = perm.denyRoutes ?? [];
   if (deny.includes('*')) return false;
   const denied = deny.some(
@@ -37,6 +44,9 @@ export function canAccessRoute(role: Role, pathname: string): boolean {
  * Default redirect for OPS when they hit a denied route.
  */
 export const OPS_DEFAULT_REDIRECT = '/orders';
+
+/** Default redirect for Agent when they hit a disallowed route. */
+export const AGENT_DEFAULT_REDIRECT = '/dashboard';
 
 /**
  * Routes OPS must not access (for guard redirect).

@@ -24,6 +24,12 @@ const ORDER_STATUS_LABEL: Record<OrderStatus, string> = {
   CANCELLED: 'Cancelled',
 };
 
+/** Human-readable order status for messages and exports (not badge UI). */
+export function getOrderStatusLabel(status: string): string {
+  const s = status as OrderStatus;
+  return ORDER_STATUS_LABEL[s] ?? status.replace(/_/g, ' ');
+}
+
 interface OrderStatusBadgeProps {
   status: OrderStatus | string;
   className?: string;

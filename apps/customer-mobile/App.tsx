@@ -25,7 +25,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
-import * as Print from 'expo-print';
 import krackbotLogo from './assets/krackbot-logo.png';
 import { checkApiConnection } from './src/config/api';
 import {
@@ -77,14 +76,8 @@ type HomeScreen = 'home' | 'subscriptions' | 'subscriptionDetail' | 'addresses' 
 type OrderFilter = 'all' | 'walk_in' | 'individual' | 'subscription';
 type BookingStep = 'services' | 'address' | 'date' | 'time' | 'confirm';
 
-function escapeHtml(input: string): string {
-  return input
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
+/** Darkest login gradient stop — fills safe areas, edge-to-edge gaps, and PWA/browser overscan. */
+const AUTH_SCREEN_BACKGROUND = '#3d0f3d';
 
 function orderStatusLabel(status: string): string {
   const s = (status || '').toUpperCase().replace(/-/g, '_');
@@ -179,7 +172,6 @@ export default function App() {
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [orderDetail, setOrderDetail] = useState<OrderDetail | null>(null);
   const [orderInvoices, setOrderInvoices] = useState<OrderInvoice[]>([]);
-  const [invoiceLoadingId, setInvoiceLoadingId] = useState<string | null>(null);
   const [invoiceError, setInvoiceError] = useState<string | null>(null);
 
   const [requestId, setRequestId] = useState<string | null>(null);
@@ -370,7 +362,6 @@ export default function App() {
   const [userPhone, setUserPhone] = useState<string>('');
   const [carouselImageUrls, setCarouselImageUrls] = useState<string[]>([]);
   const [homeRefreshing, setHomeRefreshing] = useState(false);
-  const [carouselPage, setCarouselPage] = useState(0);
   const carouselScrollRef = useRef<ScrollView>(null);
   const carouselPageRef = useRef(0);
   const googleMapsWebViewRef = useRef<WebView>(null);
@@ -396,6 +387,36 @@ export default function App() {
     });
     return () => sub.remove();
   }, [step]);
+
+  /** PWA / web: tab favicon from Admin Branding app icon (else logo). Fixes dev + stale bundled favicon.ico. */
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const win = (globalThis as { window?: Window & { document?: Document } }).window;
+    const doc = win?.document;
+    if (!doc?.head) return;
+    const raw = welcomeBranding?.appIconUrl || welcomeBranding?.logoUrl;
+    const href = brandingLogoFullUrl(raw ?? null);
+    if (!href) return;
+    doc.querySelectorAll('link[rel="icon"], link[rel="shortcut icon"]').forEach((node) => {
+      const el = node as HTMLLinkElement;
+      el.href = href;
+      el.type = 'image/png';
+    });
+    if (!doc.querySelector('link[rel="icon"]')) {
+      const el = doc.createElement('link');
+      el.rel = 'icon';
+      el.type = 'image/png';
+      el.href = href;
+      doc.head.appendChild(el);
+    }
+    let apple = doc.querySelector('link[rel="apple-touch-icon"]') as HTMLLinkElement | null;
+    if (!apple) {
+      apple = doc.createElement('link');
+      apple.rel = 'apple-touch-icon';
+      doc.head.appendChild(apple);
+    }
+    apple.href = href;
+  }, [welcomeBranding?.appIconUrl, welcomeBranding?.logoUrl]);
 
   // Register for push notifications (lock screen) when user is logged in
   useEffect(() => {
@@ -444,7 +465,6 @@ export default function App() {
   }, [step, homeScreen, fetchCarousel]);
 
   useEffect(() => {
-    setCarouselPage(0);
     carouselPageRef.current = 0;
   }, [carouselImageUrls.length]);
 
@@ -473,7 +493,6 @@ export default function App() {
     const id = setInterval(() => {
       const next = (carouselPageRef.current + 1) % total;
       carouselPageRef.current = next;
-      setCarouselPage(next);
       carouselScrollRef.current?.scrollTo({
         x: next * winW,
         animated: true,
@@ -498,30 +517,6 @@ export default function App() {
       setAddressesLoading(false);
     }
   }, [token]);
-
-  const imageDataUriCacheRef = useRef<Map<string, string>>(new Map());
-  const imageToDataUri = useCallback(async (url: string): Promise<string | null> => {
-    const u = url?.trim();
-    if (!u) return null;
-    const cache = imageDataUriCacheRef.current;
-    const cached = cache.get(u);
-    if (cached) return cached;
-    try {
-      const res = await fetch(u);
-      if (!res.ok) return null;
-      const contentType = res.headers.get('content-type') || 'image/png';
-      const buf = await res.arrayBuffer();
-      const base64Module = await import('base64-arraybuffer').catch(() => null);
-      const encodeBase64 = base64Module?.encode;
-      if (typeof encodeBase64 !== 'function') return null;
-      const base64 = encodeBase64(buf);
-      const dataUri = `data:${contentType};base64,${base64}`;
-      cache.set(u, dataUri);
-      return dataUri;
-    } catch {
-      return null;
-    }
-  }, []);
 
   const applyGoogleMapsUrlToAddress = useCallback(async (url: string) => {
     const finalUrl = (url || '').trim();
@@ -596,274 +591,6 @@ export default function App() {
     };
   }, []);
 
-  const buildFinalInvoiceHtml = useCallback(
-    async (inv: OrderInvoice, ackInvoice?: OrderInvoice | null): Promise<string> => {
-      const b = welcomeBranding;
-      const logoUrl = b?.logoUrl ? (brandingLogoFullUrl(b.logoUrl) ?? null) : null;
-      const logoDataUri = logoUrl ? await imageToDataUri(logoUrl) : null;
-
-      const order = orderDetail;
-      const items = inv.items ?? [];
-
-      const iconDataUris: Record<string, string | null> = {};
-      await Promise.all(
-        items.map(async (it) => {
-          const raw = it.icon && (it.icon.startsWith('http') || it.icon.startsWith('/')) ? brandingLogoFullUrl(it.icon) : null;
-          if (!raw) return;
-          iconDataUris[it.id] = await imageToDataUri(raw);
-        })
-      );
-
-      const money = (paise: number) => `₹${(paise / 100).toFixed(2)}`;
-      const subtotal = inv.subtotal ?? inv.total;
-      const tax = inv.tax ?? 0;
-      const discountPaise = inv.discountPaise ?? 0;
-      const taxPercent = subtotal > 0 ? Math.round((tax / subtotal) * 1000) / 10 : 0;
-
-      const formatDate = (value: string | null | undefined): string | null => {
-        if (!value) return null;
-        const d = new Date(value);
-        if (Number.isNaN(d.getTime())) return value;
-        return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-      };
-      const formatDateTime = (value: string | null | undefined): string | null => {
-        if (!value) return null;
-        const d = new Date(value);
-        if (Number.isNaN(d.getTime())) return value;
-        const date = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-        const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        return `${date} ${time}`;
-      };
-
-      const customerName = name?.trim() ? escapeHtml(name.trim()) : '—';
-      const addressLine = order?.addressLine ? escapeHtml(order.addressLine) : '';
-      const pincodeLine = order?.pincode ? escapeHtml(order.pincode) : '';
-
-      const pickupDateLine = escapeHtml(formatDate(order?.pickupDate) ?? '');
-      const timeWindowLine = order?.timeWindow ? escapeHtml(order.timeWindow) : '';
-
-      const servicesText = order?.serviceTypes?.length
-        ? order.serviceTypes.map(serviceTypeDisplayLabel).join(', ')
-        : order?.serviceType
-          ? serviceTypeDisplayLabel(order.serviceType)
-          : '—';
-
-      const orderServiceLine = order?.orderType === 'SUBSCRIPTION' ? 'Subscription booking' : `Service: ${servicesText}`;
-      const orderServiceLineEscaped = escapeHtml(orderServiceLine);
-
-      const issuedStr = formatDateTime(inv.issuedAt) ?? '—';
-      const issuedStrEscaped = escapeHtml(issuedStr);
-
-      const branchAddressFull = inv.branchAddress?.trim() || b?.address?.trim() || '';
-      const branchPhone = inv.branchPhone?.trim() || '';
-
-      const gstValue = (inv.gstNumber ?? b?.gstNumber)?.trim();
-      const gstLineEscaped = gstValue ? escapeHtml(`GST: ${gstValue}`) : '';
-
-      const useMatrix = items.some((it) => Boolean(it.segmentLabel || it.serviceLabel));
-
-      const invoiceCodeEscaped = escapeHtml(inv.code ?? '—');
-
-      const ackCode = ackInvoice?.code ?? null;
-      const ackCodeEscaped = ackCode ? escapeHtml(ackCode) : null;
-      const ackIssuedStr = formatDateTime(ackInvoice?.issuedAt);
-      const ackIssuedStrEscaped = ackIssuedStr ? escapeHtml(ackIssuedStr) : null;
-      const ackSubtotalPaise = ackInvoice ? ackInvoice.subtotal ?? ackInvoice.total : null;
-
-      const footerNote = inv.footerNote?.trim() || '';
-      const footerLine = footerNote ? escapeHtml(footerNote) : '';
-
-      const termsText = b?.termsAndConditions?.trim() ?? '';
-
-      const itemCell = (it: OrderInvoice['items'][number]): string => {
-        const nameEscaped = escapeHtml(it.name ?? '—');
-        const icon = iconDataUris[it.id] ?? null;
-        if (!icon) return `<span>${nameEscaped}</span>`;
-        return `<span style="display:inline-flex;align-items:center;gap:6px;"><img src="${icon}" alt="" style="width:16px;height:16px;object-fit:contain;border-radius:3px;vertical-align:middle;" /><span>${nameEscaped}</span></span>`;
-      };
-
-      return `<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <style>
-      * { box-sizing: border-box; }
-      @page { size: A4; margin: 0; }
-      body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; margin: 0; background: #fdf2f8; color: #111827; }
-      .page { padding: 24px; }
-      .invoice { background: #fff; max-width: 720px; margin: 0 auto; padding: 24px; }
-      .topRow { display: flex; justify-content: center; align-items: center; padding-bottom: 16px; border-bottom: 1px solid #e5e7eb; }
-      .logo { width: 124px; height: 124px; border-radius: 12px; background: #f3f4f6; display: flex; align-items: center; justify-content: center; overflow: hidden; flex: none; }
-      .logo img { width: 100%; height: 100%; object-fit: contain; }
-      .headerBlocks { display: flex; gap: 16px; align-items: flex-start; justify-content: space-between; margin-top: 16px; }
-      .infoBox { border: 1px solid #e5e7eb; background: #f9fafb; border-radius: 6px; padding: 10px 12px; font-size: 13px; }
-      .infoBoxLabel { font-weight: 800; margin: 0 0 4px; }
-      .infoBoxValue { color: #6b7280; font-size: 12px; margin: 0; line-height: 1.4; }
-      .orderBlock { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; background: #f9fafb; border-radius: 6px; padding: 12px; margin-top: 16px; }
-      .orderLeft { flex: 1 1 260px; min-width: 220px; }
-      .orderTitle { font-weight: 800; margin: 0 0 6px; }
-      .orderText { margin: 4px 0 0; font-size: 13px; color: #111827; }
-      .orderMuted { margin: 4px 0 0; font-size: 13px; color: #6b7280; }
-      .orderRight { flex: 1 1 180px; text-align: right; font-size: 13px; color: #6b7280; }
-      table { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 13px; }
-      thead th { padding: 10px 6px 8px; color: #6b7280; font-size: 12px; font-weight: 800; text-align: left; border-bottom: 1px solid #e5e7eb; }
-      tbody td { padding: 10px 6px 8px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
-      .tdRight { text-align: right; white-space: nowrap; }
-      .tdCenter { text-align: center; }
-      .naCell { color: #6b7280; font-weight: 700; text-align: center; padding: 16px 6px !important; }
-      .totals { margin-top: 16px; padding-top: 16px; border-top: 1px solid #e5e7eb; text-align: right; }
-      .subtotalText { margin: 0; font-size: 16px; }
-      .totalBig { margin: 6px 0 0; font-size: 22px; font-weight: 900; }
-      .terms { margin-top: 16px; padding-top: 16px; border-top: 1px solid #e5e7eb; font-size: 12px; color: #4b5563; }
-      .termsTitle { margin: 0 0 6px; font-weight: 900; color: #374151; font-size: 13px; }
-      .termsBody { white-space: pre-wrap; }
-      .footer { margin-top: 24px; padding-top: 16px; text-align: center; font-size: 13px; color: #6b7280; }
-    </style>
-  </head>
-  <body>
-    <div class="page">
-      <div class="invoice">
-        <div class="topRow">
-          <div class="logo">
-            ${
-              logoDataUri
-                ? `<img src="${logoDataUri}" alt="Logo" />`
-                : `<span style="font-size:12px;color:#6b7280;">Logo</span>`
-            }
-          </div>
-        </div>
-
-        <div class="headerBlocks">
-          <div class="infoBox" style="flex: 1;">
-            <p class="infoBoxLabel">Invoice number</p>
-            <p class="infoBoxValue">${invoiceCodeEscaped}</p>
-            ${
-              inv.issuedAt
-                ? `<p class="infoBoxValue" style="margin-top:6px;">Issued: ${issuedStrEscaped}</p>`
-                : ''
-            }
-          </div>
-          ${
-            ackInvoice
-              ? `<div class="infoBox" style="text-align:right; flex-shrink:0;">
-                  <p class="infoBoxLabel">Ref Acknowledgement invoice</p>
-                  <p class="infoBoxValue" style="line-height:1.5;">
-                    ${ackCodeEscaped ? `<span>Code: ${ackCodeEscaped}</span>` : ''}
-                    ${
-                      ackCodeEscaped ? ` · ` : ''
-                    }Subtotal: ${escapeHtml(money(ackSubtotalPaise ?? 0))}
-                  </p>
-                  ${
-                    ackIssuedStrEscaped
-                      ? `<p class="infoBoxValue" style="margin-top:6px;line-height:1.5;">Issued: ${ackIssuedStrEscaped}</p>`
-                      : ''
-                  }
-                </div>`
-              : ''
-          }
-        </div>
-
-        <div class="orderBlock">
-          <div class="orderLeft">
-            <p class="orderTitle">Order details</p>
-            <p class="orderText">${customerName}</p>
-            <p class="orderMuted">${orderServiceLineEscaped}</p>
-            <p class="orderText">${addressLine}${addressLine && pincodeLine ? ', ' : ''}${pincodeLine}</p>
-            <p class="orderMuted">Pickup: ${pickupDateLine} ${timeWindowLine}</p>
-          </div>
-
-          <div class="orderRight">
-            ${gstLineEscaped ? `<p>${gstLineEscaped}</p>` : ''}
-            ${
-              branchAddressFull
-                ? `<p>${escapeHtml(branchAddressFull)}</p>`
-                : ''
-            }
-            ${branchPhone ? `<p>Phone: ${escapeHtml(branchPhone)}</p>` : ''}
-          </div>
-        </div>
-
-        <table>
-          <thead>
-            <tr>
-              ${
-                useMatrix
-                  ? `
-                    <th>Item</th>
-                    <th>Segment</th>
-                    <th>Service</th>
-                    <th class="tdRight">Qty</th>
-                    <th class="tdRight">Service cost (₹)</th>
-                    <th class="tdRight">Total cost (₹)</th>
-                  `
-                  : `
-                    <th>Type</th>
-                    <th>Name</th>
-                    <th class="tdRight">Qty</th>
-                    <th class="tdRight">Unit (₹)</th>
-                    <th class="tdRight">Amount (₹)</th>
-                  `
-              }
-            </tr>
-          </thead>
-          <tbody>
-            ${
-              items.length === 0
-                ? `<tr><td colspan="${useMatrix ? 6 : 5}" class="naCell">NA</td></tr>`
-                : items
-                    .map((it) => {
-                      if (useMatrix) {
-                        const segmentEscaped = escapeHtml(it.segmentLabel ?? '—');
-                        const serviceEscaped = escapeHtml(it.serviceLabel ?? '—');
-                        return `<tr>
-                          <td>${itemCell(it)}</td>
-                          <td>${segmentEscaped}</td>
-                          <td>${serviceEscaped}</td>
-                          <td class="tdRight">${escapeHtml(String(it.quantity))}</td>
-                          <td class="tdRight">${escapeHtml(money(it.unitPrice))}</td>
-                          <td class="tdRight">${escapeHtml(money(it.amount))}</td>
-                        </tr>`;
-                      }
-                      const nameEscaped = escapeHtml(it.name ?? '—');
-                      return `<tr>
-                        <td>—</td>
-                        <td>${itemCell(it)}</td>
-                        <td class="tdRight">${escapeHtml(String(it.quantity))}</td>
-                        <td class="tdRight">${escapeHtml(money(it.unitPrice))}</td>
-                        <td class="tdRight">${escapeHtml(money(it.amount))}</td>
-                      </tr>`;
-                    })
-                    .join('\n')
-            }
-          </tbody>
-        </table>
-
-        <div class="totals">
-          <p class="subtotalText">
-            Subtotal: ${escapeHtml(money(subtotal))}
-            ${
-              taxPercent > 0 ? ` · Tax (${taxPercent}%): ${escapeHtml(money(tax))}` : ''
-            }
-            ${
-              discountPaise > 0 ? ` · Discount (₹): -${escapeHtml(money(discountPaise))}` : ''
-            }
-          </p>
-          <p class="totalBig">Total: ${escapeHtml(money(inv.total))}</p>
-        </div>
-
-        ${termsText ? `<div class="terms"><p class="termsTitle">Terms and Conditions</p><div class="termsBody">${escapeHtml(termsText)}</div></div>` : ''}
-
-        <div class="footer">
-          <p style="white-space: pre-wrap;">${footerLine || ''}</p>
-        </div>
-      </div>
-    </div>
-  </body>
-</html>`;
-    },
-    [brandingLogoFullUrl, imageToDataUri, orderDetail, userPhone, welcomeBranding]
-  );
 
   useEffect(() => {
     if (step === 'done' && homeScreen === 'addresses' && token) {
@@ -1385,7 +1112,8 @@ export default function App() {
       setError('Please enter City.');
       return;
     }
-    if (!googleUrl) {
+    // Native app requires a Maps link; customer PWA (web) omits in-app / popup map search.
+    if (!googleUrl && Platform.OS !== 'web') {
       setError('Please add Google Maps link.');
       return;
     }
@@ -1416,7 +1144,7 @@ export default function App() {
           addressLine: builtAddressLine,
           pincode: pc,
           isDefault: addIsDefault,
-          googleMapUrl: googleUrl,
+          googleMapUrl: googleUrl || null,
           houseNo,
           streetArea,
           city,
@@ -1428,7 +1156,7 @@ export default function App() {
           addressLine: builtAddressLine,
           pincode: pc,
           isDefault: addIsDefault,
-          googleMapUrl: googleUrl,
+          googleMapUrl: googleUrl || null,
           houseNo,
           streetArea,
           city,
@@ -1640,12 +1368,48 @@ export default function App() {
     }
   };
 
+  const authFullBleedBackdrop = initializing || step === 'phone' || step === 'otp';
+
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof document === 'undefined') return;
+    if (!authFullBleedBackdrop) return;
+    const html = document.documentElement;
+    const body = document.body;
+    const root = document.getElementById('root');
+    const prev = {
+      htmlBg: html.style.backgroundColor,
+      htmlMinH: html.style.minHeight,
+      bodyBg: body.style.backgroundColor,
+      bodyMinH: body.style.minHeight,
+      rootBg: root?.style.backgroundColor ?? '',
+      rootMinH: root?.style.minHeight ?? '',
+    };
+    html.style.backgroundColor = AUTH_SCREEN_BACKGROUND;
+    html.style.minHeight = '100%';
+    body.style.backgroundColor = AUTH_SCREEN_BACKGROUND;
+    body.style.minHeight = '100dvh';
+    if (root) {
+      root.style.backgroundColor = AUTH_SCREEN_BACKGROUND;
+      root.style.minHeight = '100dvh';
+    }
+    return () => {
+      html.style.backgroundColor = prev.htmlBg;
+      html.style.minHeight = prev.htmlMinH;
+      body.style.backgroundColor = prev.bodyBg;
+      body.style.minHeight = prev.bodyMinH;
+      if (root) {
+        root.style.backgroundColor = prev.rootBg;
+        root.style.minHeight = prev.rootMinH;
+      }
+    };
+  }, [authFullBleedBackdrop]);
+
   let content: JSX.Element | null = null;
 
   if (initializing) {
     content = (
-      <View style={styles.centered}>
-        <Text style={styles.title}>Loading…</Text>
+      <View style={[styles.centered, styles.authLoadingShell]}>
+        <Text style={styles.authLoadingTitle}>Loading…</Text>
       </View>
     );
   } else if (step === 'phone') {
@@ -1944,6 +1708,8 @@ export default function App() {
       );
     } else if (homeScreen === 'addAddress') {
       const isEditing = !!editingAddressId;
+      /** PWA (web): hide in-app / popup “Open Google Maps to search” only; optional paste + “Use link” stays. */
+      const hideGoogleMapsSearchRow = Platform.OS === 'web';
       content = (
         <ScrollView style={styles.scroll} contentContainerStyle={[styles.scrollContent, styles.scrollContentNoTopPadding]}>
           <View style={styles.card}>
@@ -1956,33 +1722,37 @@ export default function App() {
               value={addAddressLabel}
               onChangeText={setAddAddressLabel}
             />
-            <Text style={[styles.subtitle, { marginTop: 12, marginBottom: 8 }]}>Search location on Google Maps</Text>
-            <TouchableOpacity
-              style={styles.googleMapsOpenRow}
-              onPress={() => {
-                setLastGoogleMapsUrl(addGoogleUrl || 'https://www.google.com/maps');
-                if (Platform.OS === 'web') {
-                  setShowGoogleMapsPicker(false);
-                  const w = (globalThis as { window?: { dispatchEvent?: (event: Event) => boolean; CustomEvent?: new (type: string, init?: Record<string, unknown>) => Event } }).window;
-                  if (w?.dispatchEvent && w?.CustomEvent) {
-                    w.dispatchEvent(new w.CustomEvent('weyou:pwa-map-popup-open'));
-                  } else {
-                    setShowGoogleMapsPicker(true);
-                  }
-                } else {
-                  setShowGoogleMapsPicker(true);
-                }
-              }}
-              activeOpacity={0.8}
-            >
-              <MaterialIcons name="map" size={24} color={colors.primary} />
-              <Text style={styles.googleMapsOpenText}>Open Google Maps to search</Text>
-              <MaterialIcons name="open-in-new" size={20} color={colors.textSecondary} />
-            </TouchableOpacity>
-            {addGoogleUrl ? (
-              <Text style={[styles.muted, { marginTop: 4 }]} numberOfLines={1}>Link: {addGoogleUrl}</Text>
+            {!hideGoogleMapsSearchRow ? (
+              <>
+                <Text style={[styles.subtitle, { marginTop: 12, marginBottom: 8 }]}>Search location on Google Maps</Text>
+                <TouchableOpacity
+                  style={styles.googleMapsOpenRow}
+                  onPress={() => {
+                    setLastGoogleMapsUrl(addGoogleUrl || 'https://www.google.com/maps');
+                    if (Platform.OS === 'web') {
+                      setShowGoogleMapsPicker(false);
+                      const w = (globalThis as { window?: { dispatchEvent?: (event: Event) => boolean; CustomEvent?: new (type: string, init?: Record<string, unknown>) => Event } }).window;
+                      if (w?.dispatchEvent && w?.CustomEvent) {
+                        w.dispatchEvent(new w.CustomEvent('weyou:pwa-map-popup-open'));
+                      } else {
+                        setShowGoogleMapsPicker(true);
+                      }
+                    } else {
+                      setShowGoogleMapsPicker(true);
+                    }
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <MaterialIcons name="map" size={24} color={colors.primary} />
+                  <Text style={styles.googleMapsOpenText}>Open Google Maps to search</Text>
+                  <MaterialIcons name="open-in-new" size={20} color={colors.textSecondary} />
+                </TouchableOpacity>
+                {addGoogleUrl ? (
+                  <Text style={[styles.muted, { marginTop: 4 }]} numberOfLines={1}>Link: {addGoogleUrl}</Text>
+                ) : null}
+              </>
             ) : null}
-            <Text style={[styles.subtitle, { marginTop: 16, marginBottom: 8 }]}>Address details</Text>
+            <Text style={[styles.subtitle, { marginTop: hideGoogleMapsSearchRow ? 12 : 16, marginBottom: 8 }]}>Address details</Text>
             <TextInput
               style={styles.input}
               placeholder="House / Flat no."
@@ -2046,28 +1816,6 @@ export default function App() {
               onChangeText={setAddGoogleUrl}
               autoCapitalize="none"
             />
-            <TouchableOpacity
-              style={[styles.buttonSecondary, addFromMapsLoading && styles.buttonDisabled]}
-              onPress={async () => {
-                const finalUrl = addGoogleUrl.trim() || lastGoogleMapsUrl.trim();
-                if (!finalUrl) {
-                  setError('Paste a Google Maps link first.');
-                  return;
-                }
-                setError(null);
-                setAddFromMapsLoading(true);
-                try {
-                  await applyGoogleMapsUrlToAddress(finalUrl);
-                } finally {
-                  setAddFromMapsLoading(false);
-                }
-              }}
-              disabled={addFromMapsLoading}
-            >
-              <Text style={styles.buttonSecondaryText}>
-                {addFromMapsLoading ? 'Getting address…' : 'Use Google Maps link'}
-              </Text>
-            </TouchableOpacity>
             <TouchableOpacity
               style={styles.checkRow}
               onPress={() => setAddIsDefault(!addIsDefault)}
@@ -3265,86 +3013,10 @@ export default function App() {
                     <Text style={styles.muted}>No invoices yet.</Text>
                   ) : (
                     invoicesToShow.map((inv) => {
-                    const isLoading = invoiceLoadingId === inv.id;
                     const items = inv.items ?? [];
                     const discountPaise = inv.discountPaise ?? 0;
                     const subtotal = inv.subtotal ?? inv.total;
                     const tax = inv.tax ?? 0;
-                    const ackInvoice = orderInvoices.find((i) => i.type === 'ACKNOWLEDGEMENT') ?? null;
-                    const openInvoice = async (action: 'download' | 'share') => {
-                      if (!token) return;
-                      setInvoiceError(null);
-                      setInvoiceLoadingId(inv.id);
-                      try {
-                        // FINAL invoice download should be a well-formatted PDF (logo, icons, tables).
-                        // Use native print-to-PDF with HTML, so the result looks like the admin invoice view.
-                        if (action === 'download' && inv.type === 'FINAL') {
-                          if (Platform.OS === 'web') {
-                            // Open popup synchronously from user gesture to avoid blank/blocked windows.
-                            const w = window.open('about:blank', '_blank', 'width=960,height=1280');
-                            if (!w) {
-                              setInvoiceError('Popup blocked. Please allow popups and try again.');
-                              return;
-                            }
-                            w.document.open();
-                            w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>Invoice</title></head><body style="font-family:Arial,sans-serif;padding:16px;">Preparing invoice...</body></html>');
-                            w.document.close();
-
-                            const html = await buildFinalInvoiceHtml(inv, ackInvoice);
-                            w.document.open();
-                            w.document.write(html);
-                            w.document.close();
-                            setTimeout(() => {
-                              w.focus();
-                              w.print();
-                            }, 250);
-                            return;
-                          }
-                          const html = await buildFinalInvoiceHtml(inv, ackInvoice);
-                          const printed = await Print.printToFileAsync({ html, base64: false });
-                          const available = await Sharing.isAvailableAsync();
-                          if (!available) {
-                            setInvoiceError('Sharing is not available on this device.');
-                            return;
-                          }
-                          await Sharing.shareAsync(printed.uri, {
-                            mimeType: 'application/pdf',
-                            dialogTitle: 'Save or view Final invoice',
-                          });
-                          return;
-                        }
-                        const base64 = await fetchInvoicePdfBase64(inv.id, token);
-                        const dir = FileSystem.documentDirectory ?? FileSystem.cacheDirectory;
-                        if (!dir) {
-                          setInvoiceError('Cannot access storage.');
-                          return;
-                        }
-                        const fileUri = `${dir}invoice-${inv.id}-${Date.now()}.pdf`;
-                        await FileSystem.writeAsStringAsync(fileUri, base64, {
-                          encoding: FileSystem.EncodingType.Base64,
-                        });
-                        const available = await Sharing.isAvailableAsync();
-                        if (!available) {
-                          setInvoiceError('Sharing is not available on this device.');
-                          return;
-                        }
-                        if (action === 'share') {
-                          await Sharing.shareAsync(fileUri, {
-                            mimeType: 'application/pdf',
-                            dialogTitle: 'Share invoice',
-                          });
-                        } else {
-                          await Sharing.shareAsync(fileUri, {
-                            mimeType: 'application/pdf',
-                            dialogTitle: 'Save or view invoice',
-                          });
-                        }
-                      } catch (e) {
-                        setInvoiceError((e as Error).message);
-                      } finally {
-                        setInvoiceLoadingId(null);
-                      }
-                    };
                     const issuedLabel = inv.issuedAt
                       ? new Date(inv.issuedAt).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
                       : null;
@@ -3427,21 +3099,6 @@ export default function App() {
                         ) : (
                           <Text style={styles.muted}>Total: ₹{(inv.total / 100).toFixed(2)}</Text>
                         )}
-                        {inv.type === 'FINAL' ? (
-                          <View style={styles.invoiceActions}>
-                            <TouchableOpacity
-                              style={[styles.invoiceCta, styles.invoiceCtaDownload, isLoading && styles.buttonDisabled]}
-                              onPress={() => openInvoice('download')}
-                              disabled={isLoading}
-                            >
-                              {isLoading ? (
-                                <ActivityIndicator size="small" color={colors.primary} />
-                              ) : (
-                                <Text style={styles.invoiceCtaText}>Download</Text>
-                              )}
-                            </TouchableOpacity>
-                          </View>
-                        ) : null}
                       </View>
                     );
                   })
@@ -3585,69 +3242,48 @@ export default function App() {
       const showApiCarousel = carouselImageUrls.length > 0;
       content = (
         <View style={styles.homeLayout}>
-          <View style={styles.homeTopSection}>
-            <ScrollView
-              style={[styles.scroll, styles.homeTopScroll]}
-              contentContainerStyle={[styles.scrollContent, styles.scrollContentNoTopPadding]}
-              showsVerticalScrollIndicator={false}
-              refreshControl={
-                <RefreshControl refreshing={homeRefreshing} onRefresh={onHomeRefresh} colors={[colors.primary]} tintColor={colors.primary} />
-              }
-            >
-              <View style={styles.carouselWrapper}>
-            <ScrollView
-              ref={carouselScrollRef}
-              horizontal
-              pagingEnabled
-              showsHorizontalScrollIndicator={false}
-              decelerationRate="fast"
-              snapToInterval={winWidth}
-              snapToAlignment="start"
-              contentContainerStyle={styles.carouselContent}
-              onMomentumScrollEnd={(e) => {
-                const idx = Math.round(e.nativeEvent.contentOffset.x / winWidth);
-                carouselPageRef.current = idx;
-                setCarouselPage(idx);
-              }}
-            >
-              {showApiCarousel
-                ? carouselImageUrls.map((url, index) => (
-                    <View key={index} style={[styles.carouselSlide, { width: winWidth, height: carouselHeight }]}>
-                      <Image source={{ uri: carouselImageFullUrl(url) }} style={styles.carouselImage} resizeMode="cover" />
-                    </View>
-                  ))
-                : bannerImages.map((src, index) => (
-                    <View key={index} style={[styles.carouselSlide, { width: winWidth, height: carouselHeight }]}>
-                      <Image source={src} style={styles.carouselImage} resizeMode="cover" />
-                    </View>
-                  ))}
-            </ScrollView>
-            {(showApiCarousel ? carouselImageUrls.length : 3) > 1 && (
-              <View style={styles.carouselPagination}>
-                {Array.from({ length: showApiCarousel ? carouselImageUrls.length : 3 }).map((_, i) => {
-                  const totalSlides = showApiCarousel ? carouselImageUrls.length : 3;
-                  const activeIndex = Math.min(carouselPage, totalSlides - 1);
-                  return (
-                    <View
-                      key={i}
-                      style={[
-                        styles.carouselDot,
-                        i === activeIndex && styles.carouselDotActive,
-                      ]}
-                    />
-                  );
-                })}
-              </View>
-            )}
-          </View>
-          <View style={styles.card}>
-                <Text style={styles.title}>Welcome{ name ? `, ${name}` : ''}</Text>
-                <Text style={styles.subtitle}>Use the menu below to book a pickup, view subscriptions, orders, or manage your profile.</Text>
-                {error && <Text style={styles.error}>{error}</Text>}
-              </View>
-            </ScrollView>
-          </View>
-          <View style={styles.homeActiveOrdersCenter}>
+          <ScrollView
+            style={[styles.scroll, styles.homeMainScroll]}
+            contentContainerStyle={[styles.scrollContentNoTopPadding, styles.homeScrollContent]}
+            showsVerticalScrollIndicator
+            nestedScrollEnabled
+            refreshControl={
+              <RefreshControl refreshing={homeRefreshing} onRefresh={onHomeRefresh} colors={[colors.primary]} tintColor={colors.primary} />
+            }
+          >
+            <View style={styles.carouselWrapper}>
+              <ScrollView
+                ref={carouselScrollRef}
+                horizontal
+                pagingEnabled
+                showsHorizontalScrollIndicator={false}
+                decelerationRate="fast"
+                snapToInterval={winWidth}
+                snapToAlignment="start"
+                contentContainerStyle={styles.carouselContent}
+                onMomentumScrollEnd={(e) => {
+                  const idx = Math.round(e.nativeEvent.contentOffset.x / winWidth);
+                  carouselPageRef.current = idx;
+                }}
+              >
+                {showApiCarousel
+                  ? carouselImageUrls.map((url, index) => (
+                      <View key={index} style={[styles.carouselSlide, { width: winWidth, height: carouselHeight }]}>
+                        <Image source={{ uri: carouselImageFullUrl(url) }} style={styles.carouselImage} resizeMode="cover" />
+                      </View>
+                    ))
+                  : bannerImages.map((src, index) => (
+                      <View key={index} style={[styles.carouselSlide, { width: winWidth, height: carouselHeight }]}>
+                        <Image source={src} style={styles.carouselImage} resizeMode="cover" />
+                      </View>
+                    ))}
+              </ScrollView>
+            </View>
+            <View style={[styles.card, styles.homeWelcomeCard]}>
+              <Text style={styles.title}>Welcome{ name ? `, ${name}` : ''}</Text>
+              <Text style={styles.subtitle}>Use the menu below to book a pickup, view subscriptions, orders, or manage your profile.</Text>
+              {error && <Text style={styles.error}>{error}</Text>}
+            </View>
             {token && (() => {
               const activeOrders = orders.filter((o) => {
                 const s = (o.status || '').toUpperCase();
@@ -3720,7 +3356,7 @@ export default function App() {
                 </View>
               );
             })()}
-          </View>
+          </ScrollView>
         </View>
       );
     }
@@ -3730,10 +3366,23 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
-        <StatusBar style="dark" />
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: authFullBleedBackdrop ? AUTH_SCREEN_BACKGROUND : colors.elevation1,
+        }}
+      >
+        <SafeAreaView
+          style={[styles.safeArea, authFullBleedBackdrop && styles.safeAreaTransparent]}
+          edges={showBottomNav ? ['top', 'left', 'right'] : ['top', 'left', 'right', 'bottom']}
+        >
+        <StatusBar style={authFullBleedBackdrop ? 'light' : 'dark'} />
         <KeyboardAvoidingView
-          style={[styles.container, showBottomNav && styles.containerWithNav]}
+          style={[
+            styles.container,
+            showBottomNav && styles.containerWithNav,
+            authFullBleedBackdrop && styles.containerAuthBleed,
+          ]}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
           {showBottomNav ? (
@@ -4201,7 +3850,8 @@ export default function App() {
             </SafeAreaView>
           </Modal>
         )}
-      </SafeAreaView>
+        </SafeAreaView>
+      </View>
     </SafeAreaProvider>
   );
 }
@@ -4234,6 +3884,20 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors.elevation1,
+  },
+  safeAreaTransparent: {
+    backgroundColor: 'transparent',
+  },
+  authLoadingShell: {
+    flex: 1,
+    width: '100%',
+    alignSelf: 'stretch',
+    backgroundColor: AUTH_SCREEN_BACKGROUND,
+  },
+  authLoadingTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#F6EAF4',
   },
   topNavBar: {
     flexDirection: 'row',
@@ -4293,6 +3957,11 @@ const styles = StyleSheet.create({
   containerWithNav: {
     justifyContent: 'flex-start',
   },
+  containerAuthBleed: {
+    flex: 1,
+    width: '100%',
+    backgroundColor: 'transparent',
+  },
   mainWithNav: {
     flex: 1,
   },
@@ -4316,17 +3985,15 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.elevation1,
   },
-  homeTopSection: {
-    flexGrow: 0,
-    flexShrink: 0,
-  },
-  homeTopScroll: {
-    flex: 0,
-  },
-  homeActiveOrdersCenter: {
+  homeMainScroll: {
     flex: 1,
-    justifyContent: 'center',
-    minHeight: 0,
+  },
+  homeScrollContent: {
+    backgroundColor: colors.elevation1,
+    paddingBottom: 20,
+  },
+  homeWelcomeCard: {
+    marginTop: 4,
   },
   bottomNavWrapper: {
     paddingHorizontal: 16,
@@ -4434,11 +4101,11 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   activeOrdersSection: {
-    marginTop: 8,
-    marginBottom: 16,
+    marginTop: 4,
+    marginBottom: 12,
   },
   noActiveOrdersWrapper: {
-    paddingVertical: 24,
+    paddingVertical: 12,
     paddingHorizontal: 16,
     alignItems: 'center',
     justifyContent: 'center',
@@ -4567,8 +4234,11 @@ const styles = StyleSheet.create({
   },
   welcomeScreenOuter: {
     flex: 1,
+    width: '100%',
+    alignSelf: 'stretch',
     justifyContent: 'center',
     paddingBottom: 48,
+    backgroundColor: AUTH_SCREEN_BACKGROUND,
   },
   welcomeCard: {
     borderRadius: 20,
@@ -5291,30 +4961,10 @@ const styles = StyleSheet.create({
   carouselWrapper: {
     width: '100%',
     alignSelf: 'stretch',
-    marginBottom: 8,
-  },
-  carouselPagination: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 8,
-    paddingVertical: 12,
-    marginBottom: 8,
-  },
-  carouselDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: colors.borderLight,
-  },
-  carouselDotActive: {
-    backgroundColor: colors.primary,
-    width: 10,
-    height: 10,
-    borderRadius: 5,
+    marginBottom: 4,
   },
   carouselContent: {
-    paddingVertical: 4,
+    paddingVertical: 0,
     paddingHorizontal: 0,
   },
   carouselSlide: {

@@ -3,7 +3,7 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { getStoredUser } from '@/lib/auth';
+import { getStoredUser, isBranchFilterLocked } from '@/lib/auth';
 import { useOrders } from '@/hooks/useOrders';
 import { useBranches } from '@/hooks/useBranches';
 import { OrderStatusBadge, PaymentStatusBadge } from '@/components/shared/StatusBadge';
@@ -21,6 +21,8 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatMoney, formatDate } from '@/lib/format';
 import { ErrorDisplay } from '@/components/shared/ErrorDisplay';
+import { LockedBranchSelect } from '@/components/shared/LockedBranchSelect';
+import { AdminOrderListOrderIdCell } from '@/components/shared/AdminOrderListOrderIdCell';
 import type { AdminOrderListRow, OrderStatus } from '@/types';
 
 const STATUS_OPTIONS: OrderStatus[] = [
@@ -35,7 +37,7 @@ const STATUS_OPTIONS: OrderStatus[] = [
 export default function WalkInOrdersPage() {
   const router = useRouter();
   const user = useMemo(() => getStoredUser(), []);
-  const isBranchHead = user?.role === 'OPS' && user?.branchId;
+  const branchLocked = !!(user && isBranchFilterLocked(user.role, user.branchId));
   const { data: branches = [] } = useBranches();
   const [status, setStatus] = useState<OrderStatus | ''>('');
   const [branchId, setBranchId] = useState<string>('');
@@ -44,11 +46,11 @@ export default function WalkInOrdersPage() {
   const [cursor, setCursor] = useState<string | undefined>(undefined);
   const limit = 20;
 
-  const effectiveBranchId = isBranchHead ? (user?.branchId ?? branchId) : branchId;
+  const effectiveBranchId = branchLocked ? (user?.branchId ?? branchId) : branchId;
 
   useEffect(() => {
-    if (isBranchHead && user?.branchId) setBranchId(user.branchId);
-  }, [isBranchHead, user?.branchId]);
+    if (branchLocked && user?.branchId) setBranchId(user.branchId);
+  }, [branchLocked, user?.branchId]);
 
   const filters = {
     orderSource: 'WALK_IN' as const,
@@ -118,17 +120,8 @@ export default function WalkInOrdersPage() {
             </div>
             <div className="space-y-1">
               <label className="text-xs text-muted-foreground">Branch</label>
-              {isBranchHead ? (
-                <select
-                  className="h-10 rounded-md border border-input bg-muted px-3 text-sm min-w-[160px]"
-                  value={effectiveBranchId}
-                  disabled
-                  title="Your assigned branch (cannot change)"
-                >
-                  <option value={user?.branchId ?? ''}>
-                    {branches.find((b) => b.id === user?.branchId)?.name ?? user?.branchId ?? '—'}
-                  </option>
-                </select>
+              {branchLocked ? (
+                <LockedBranchSelect branchId={user?.branchId} />
               ) : (
                 <select
                   className="h-10 rounded-md border border-input bg-background px-3 text-sm min-w-[160px]"
@@ -202,7 +195,9 @@ export default function WalkInOrdersPage() {
                       className="cursor-pointer"
                       onClick={() => handleRowClick(row.id)}
                     >
-                      <TableCell className="font-mono text-xs">{row.id.slice(0, 8)}…</TableCell>
+                      <TableCell className="align-top py-3">
+                        <AdminOrderListOrderIdCell id={row.id} />
+                      </TableCell>
                       <TableCell className="max-w-[120px] truncate" title={row.customerName ?? row.userId}>
                         {row.customerName ?? row.userId.slice(0, 8) + '…'}
                       </TableCell>
@@ -219,7 +214,18 @@ export default function WalkInOrdersPage() {
                       <TableCell>{formatDate(row.pickupDate)}</TableCell>
                       <TableCell>{row.deliveredDate ? formatDate(row.deliveredDate) : '—'}</TableCell>
                       <TableCell>
-                        <PaymentStatusBadge status={row.paymentStatus} />
+                        <div className="flex flex-col gap-1 items-start">
+                          <PaymentStatusBadge status={row.paymentStatus} />
+                          <span className="text-xs text-muted-foreground">
+                            {row.paymentStatus === 'CAPTURED' || row.paymentStatus === 'PAID'
+                              ? '(Success)'
+                              : row.paymentStatus === 'DUE' || row.paymentStatus === 'PENDING'
+                                ? '(Pending)'
+                                : row.paymentStatus === 'FAILED'
+                                  ? '(Failed)'
+                                  : ''}
+                          </span>
+                        </div>
                       </TableCell>
                       <TableCell className="text-right">
                         {row.billTotalPaise != null ? formatMoney(row.billTotalPaise) : 'NA'}

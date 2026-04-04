@@ -73,6 +73,8 @@ export interface SubscriptionsRepo {
   hasEverRedeemedPlan(userId: string, planId: string): Promise<boolean>;
   /** Count subscriptions where active = true. */
   countActive(): Promise<number>;
+  /** Active subscriptions tied to this branch (branchId on subscription row). */
+  countActiveForBranch(branchId: string): Promise<number>;
   create(data: CreateSubscriptionInput): Promise<SubscriptionRecord>;
   /** Extend validity and limits by quantityMonths (add plan * quantity). */
   extendSubscription(

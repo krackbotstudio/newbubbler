@@ -1,6 +1,6 @@
 /**
  * Purge transactional and sample data from the database.
- * Keeps: ADMIN/OPS/BILLING users (isActive=true), master data (categories, branding, branches, etc.).
+ * Keeps: ADMIN/OPS/BILLING/AGENT users (isActive=true), master data (categories, branding, branches, etc.).
  * Requires: PURGE_CONFIRM=YES
  *
  * Run from repo root:
@@ -11,7 +11,7 @@ import { PrismaClient, Role } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-const ADMIN_ROLES = [Role.ADMIN, Role.OPS, Role.BILLING] as const;
+const ADMIN_ROLES = [Role.ADMIN, Role.OPS, Role.BILLING, Role.AGENT] as const;
 
 interface Counts {
   Feedback: number;
@@ -80,7 +80,7 @@ function printCounts(label: string, counts: Counts): void {
   console.log('  Subscription:', counts.Subscription);
   console.log('  Address (customer):', counts.Address_customer);
   console.log('  User (customer):', counts.User_customer);
-  console.log('  User (ADMIN/OPS/BILLING, active):', counts.User_admin, '(kept)');
+  console.log('  User (ADMIN/OPS/BILLING/AGENT, active):', counts.User_admin, '(kept)');
 }
 
 async function purge(): Promise<void> {

@@ -1,5 +1,6 @@
 import { Controller, Get, Post, Patch, Put, Param, Body, Query, UseGuards } from '@nestjs/common';
 import { Role } from '@shared/enums';
+import { AGENT_ROLE } from '../../common/agent-role';
 import { JwtAuthGuard } from '../../common/jwt-auth.guard';
 import { Roles } from '../../common/roles.decorator';
 import { RolesGuard } from '../../common/roles.guard';
@@ -10,7 +11,7 @@ import { PutItemPricesDto } from '../dto/put-item-prices.dto';
 
 @Controller('admin/items')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.ADMIN, Role.OPS)
+@Roles(Role.ADMIN, Role.OPS, AGENT_ROLE)
 export class AdminCatalogController {
   constructor(private readonly adminCatalogService: AdminCatalogService) {}
 
@@ -20,6 +21,7 @@ export class AdminCatalogController {
   }
 
   @Post()
+  @Roles(Role.ADMIN, Role.OPS)
   async create(@Body() dto: CreateItemDto) {
     const item = await this.adminCatalogService.createItem(
       dto.name,
@@ -30,6 +32,7 @@ export class AdminCatalogController {
   }
 
   @Patch(':id')
+  @Roles(Role.ADMIN, Role.OPS)
   async update(@Param('id') id: string, @Body() dto: PatchItemDto) {
     const item = await this.adminCatalogService.updateItem(id, {
       name: dto.name,
@@ -40,6 +43,7 @@ export class AdminCatalogController {
   }
 
   @Put(':id/prices')
+  @Roles(Role.ADMIN, Role.OPS)
   async putPrices(@Param('id') id: string, @Body() dto: PutItemPricesDto) {
     const prices = await this.adminCatalogService.upsertItemPrices(
       id,

@@ -28,13 +28,10 @@ export class PrismaAdminUsersRepo implements AdminUsersRepo {
   async listAdmin(filters: AdminUsersFilters): Promise<AdminUsersResult> {
     const { role, active, search, limit, cursor } = filters;
 
+    // Use `not: CUSTOMER` so we do not send `AGENT` in SQL until Postgres enum includes it (avoids 22P02 before migrate).
     const where: any = {
-      role: { in: ['ADMIN', 'OPS', 'BILLING'] },
+      role: role ? role : { not: 'CUSTOMER' },
     };
-
-    if (role) {
-      where.role = role;
-    }
     if (active !== undefined) {
       where.isActive = active;
     }
@@ -118,7 +115,7 @@ export class PrismaAdminUsersRepo implements AdminUsersRepo {
     const row = await this.prisma.user.findUnique({
       where: { id },
     });
-    return row && ['ADMIN', 'OPS', 'BILLING'].includes(row.role) ? toRecord(row as any) : null;
+    return row && row.role !== 'CUSTOMER' ? toRecord(row as any) : null;
   }
 
   async setPasswordHash(id: string, passwordHash: string): Promise<void> {

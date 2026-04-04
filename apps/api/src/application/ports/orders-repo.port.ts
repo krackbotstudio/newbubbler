@@ -63,6 +63,8 @@ export interface AdminOrdersFilters {
   branchId?: string | null;
   /** e.g. WALK_IN to show only walk-in orders. */
   orderSource?: string | null;
+  /** Matches order id, customer name, or phone (partial; phone also matches digit-only substring). */
+  search?: string | null;
   dateFrom?: Date;
   dateTo?: Date;
   /** When set with pickupDateTo, filter by pickupDate only (for dashboard scheduled pickups). */

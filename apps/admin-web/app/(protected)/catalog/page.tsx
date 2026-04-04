@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
-import { getStoredUser } from '@/lib/auth';
+import { getStoredUser, isBranchScopedStaff } from '@/lib/auth';
 import { RoleGate } from '@/components/shared/RoleGate';
 import { ErrorDisplay } from '@/components/shared/ErrorDisplay';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useCatalogItemsWithMatrix } from '@/hooks/useCatalog';
 import { useBranches } from '@/hooks/useBranches';
@@ -14,13 +15,13 @@ import { ManageServicesSegmentsModal } from '@/components/catalog/ManageServices
 import { CatalogCard } from '@/components/catalog/CatalogCard';
 import { toast } from 'sonner';
 import type { CatalogItemWithMatrix } from '@/types';
-import { Download, Settings2 } from 'lucide-react';
+import { Download, Search, Settings2 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
 export default function CatalogPage() {
   const user = getStoredUser();
   const role = user?.role ?? 'CUSTOMER';
-  const isBranchHead = role === 'OPS' && !!user?.branchId;
+  const isBranchHead = isBranchScopedStaff(role) && !!user?.branchId;
 
   const [addOpen, setAddOpen] = useState(false);
   const [manageOpen, setManageOpen] = useState(false);
@@ -29,6 +30,7 @@ export default function CatalogPage() {
   const [selectedBranchIds, setSelectedBranchIds] = useState<string[]>(() =>
     isBranchHead && user?.branchId ? [user.branchId] : [],
   );
+  const [itemSearch, setItemSearch] = useState('');
 
   const { data, isLoading, error } = useCatalogItemsWithMatrix();
   const { data: branches = [] } = useBranches();
@@ -47,7 +49,7 @@ export default function CatalogPage() {
   }, [isBranchHead, user?.branchId, selectedBranchIds]);
 
   const allItems = data?.items ?? [];
-  const items = useMemo(() => {
+  const branchFilteredItems = useMemo(() => {
     if (selectedBranchIds.length === 0) return allItems;
     return allItems.filter((item) => {
       const ids = item.branchIds ?? [];
@@ -58,6 +60,23 @@ export default function CatalogPage() {
   const serviceCategories = data?.serviceCategories ?? [];
   const segmentCategories = data?.segmentCategories ?? [];
 
+  const searchNorm = itemSearch.trim().toLowerCase();
+  const displayItems = useMemo(() => {
+    if (!searchNorm) return branchFilteredItems;
+    const segLabels = new Map(segmentCategories.map((s) => [s.id, (s.label || s.code || '').toLowerCase()]));
+    const svcLabels = new Map(serviceCategories.map((s) => [s.id, (s.label || s.code || '').toLowerCase()]));
+    return branchFilteredItems.filter((item) => {
+      if (item.name.toLowerCase().includes(searchNorm)) return true;
+      if (item.id.toLowerCase().includes(searchNorm)) return true;
+      for (const line of item.segmentPrices) {
+        const seg = segLabels.get(line.segmentCategoryId) ?? '';
+        const svc = svcLabels.get(line.serviceCategoryId) ?? '';
+        if (seg.includes(searchNorm) || svc.includes(searchNorm)) return true;
+      }
+      return false;
+    });
+  }, [branchFilteredItems, searchNorm, segmentCategories, serviceCategories]);
+
   const handleEditClick = useCallback((item: CatalogItemWithMatrix) => {
     setEditItem(item);
     setEditItemOpen(true);
@@ -66,7 +85,7 @@ export default function CatalogPage() {
   const handleDownloadCatalog = useCallback(() => {
     const segmentMap = new Map(segmentCategories.map((s) => [s.id, s.label]));
     const serviceMap = new Map(serviceCategories.map((s) => [s.id, s.label]));
-    const rows = items.flatMap((item) => {
+    const rows = branchFilteredItems.flatMap((item) => {
       if (item.segmentPrices.length === 0) {
         return [{
           'Item name': item.name,
@@ -92,7 +111,7 @@ export default function CatalogPage() {
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Catalog');
     XLSX.writeFile(workbook, `catalog-${new Date().toISOString().slice(0, 10)}.xlsx`);
-  }, [items, segmentCategories, serviceCategories]);
+  }, [branchFilteredItems, segmentCategories, serviceCategories]);
 
   if (error) {
     return (
@@ -111,7 +130,9 @@ export default function CatalogPage() {
           <div className="space-y-1">
             <h1 className="text-2xl font-semibold tracking-tight">Catalog</h1>
             <p className="text-sm text-muted-foreground">
-              {items.length} item{items.length === 1 ? '' : 's'} shown
+              {searchNorm
+                ? `${displayItems.length} match${displayItems.length === 1 ? '' : 'es'} of ${branchFilteredItems.length} item${branchFilteredItems.length === 1 ? '' : 's'}`
+                : `${displayItems.length} item${displayItems.length === 1 ? '' : 's'} shown`}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -154,6 +175,17 @@ export default function CatalogPage() {
             </RoleGate>
           </div>
         </div>
+        <div className="relative mt-4 max-w-xl">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+          <Input
+            type="search"
+            value={itemSearch}
+            onChange={(e) => setItemSearch(e.target.value)}
+            placeholder="Search items by name, segment, or service…"
+            className="pl-9"
+            aria-label="Search catalog items"
+          />
+        </div>
       </div>
 
       {isLoading ? (
@@ -164,7 +196,7 @@ export default function CatalogPage() {
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {items.map((item) => (
+          {displayItems.map((item) => (
             <CatalogCard
               key={item.id}
               item={item}
@@ -174,8 +206,11 @@ export default function CatalogPage() {
               onEdit={() => handleEditClick(item)}
             />
           ))}
-          {items.length === 0 && (
+          {branchFilteredItems.length === 0 && (
             <p className="col-span-full text-center text-muted-foreground">No items yet.</p>
+          )}
+          {branchFilteredItems.length > 0 && displayItems.length === 0 && (
+            <p className="col-span-full text-center text-muted-foreground">No items match your search.</p>
           )}
         </div>
       )}

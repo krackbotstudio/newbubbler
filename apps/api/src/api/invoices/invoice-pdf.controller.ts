@@ -1,5 +1,6 @@
 import { Controller, Get, Param, UseGuards, Res } from '@nestjs/common';
 import { Role } from '@shared/enums';
+import { AGENT_ROLE } from '../common/agent-role';
 import { Response } from 'express';
 import { JwtAuthGuard } from '../common/jwt-auth.guard';
 import { Roles } from '../common/roles.decorator';
@@ -13,7 +14,7 @@ import { InvoicePdfService } from './invoice-pdf.service';
  */
 @Controller('invoices')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.ADMIN, Role.BILLING, Role.OPS, Role.CUSTOMER)
+@Roles(Role.ADMIN, Role.BILLING, Role.OPS, AGENT_ROLE, Role.CUSTOMER)
 export class InvoicePdfController {
   constructor(private readonly invoicePdfService: InvoicePdfService) {}
 

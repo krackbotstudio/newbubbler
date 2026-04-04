@@ -1,5 +1,4 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { Role } from '@shared/enums';
 import {
   createAdminUser,
   type CreateAdminUserInput,
@@ -21,6 +20,10 @@ import { generateTempPassword, hashAdminPassword } from '../../auth/password.uti
 /** This user cannot be deleted by anyone. */
 export const PROTECTED_ADMIN_EMAIL = 'weyou@admin.com';
 
+/** String literals so create/update accept AGENT even if `Role` enum at runtime is stale. */
+const CREATABLE_STAFF_ROLES: readonly string[] = ['ADMIN', 'OPS', 'AGENT'];
+const ROLES_REQUIRING_BRANCH: readonly string[] = ['OPS', 'AGENT'];
+
 function isProtectedAdminEmail(email: string | null | undefined): boolean {
   return (email ?? '').trim().toLowerCase() === PROTECTED_ADMIN_EMAIL;
 }
@@ -41,11 +44,11 @@ export class AdminUsersService {
   }
 
   async create(input: CreateAdminUserInput) {
-    if (![Role.ADMIN, Role.OPS].includes(input.role)) {
-      throw new AppError('FEEDBACK_INVALID', 'Only Admin and Branch Head roles are allowed');
+    if (!CREATABLE_STAFF_ROLES.includes(input.role)) {
+      throw new AppError('FEEDBACK_INVALID', 'Only Admin, Branch Head, and Agent roles are allowed');
     }
-    if (input.role === Role.OPS && !input.branchId) {
-      throw new AppError('BRANCH_REQUIRED', 'Branch is required for Branch Head role');
+    if (ROLES_REQUIRING_BRANCH.includes(input.role) && !input.branchId) {
+      throw new AppError('BRANCH_REQUIRED', 'Branch is required for Branch Head and Agent roles');
     }
     const tempPassword = generateTempPassword(12);
     const user = await createAdminUser(
@@ -69,18 +72,19 @@ export class AdminUsersService {
       });
     }
 
-    if (input.role && ![Role.ADMIN, Role.OPS].includes(input.role)) {
-      throw new AppError('FEEDBACK_INVALID', 'Only Admin and Branch Head roles are allowed');
+    if (input.role && !CREATABLE_STAFF_ROLES.includes(input.role)) {
+      throw new AppError('FEEDBACK_INVALID', 'Only Admin, Branch Head, and Agent roles are allowed');
     }
     const effectiveRole = input.role ?? targetUser.role;
-    if (effectiveRole === Role.OPS && input.branchId === undefined) {
+    const needsBranch = ROLES_REQUIRING_BRANCH.includes(effectiveRole);
+    if (needsBranch && input.branchId === undefined) {
       const existing = await this.adminUsersRepo.getById(input.id);
       if (!existing?.branchId) {
-        throw new AppError('BRANCH_REQUIRED', 'Branch is required for Branch Head role');
+        throw new AppError('BRANCH_REQUIRED', 'Branch is required for Branch Head and Agent roles');
       }
     }
-    if (effectiveRole === Role.OPS && input.branchId === '') {
-      throw new AppError('BRANCH_REQUIRED', 'Branch is required for Branch Head role');
+    if (needsBranch && input.branchId === '') {
+      throw new AppError('BRANCH_REQUIRED', 'Branch is required for Branch Head and Agent roles');
     }
     if (input.isActive === false && input.id === currentUser.id) {
       throw new AppError('CANNOT_DISABLE_SELF', 'You cannot disable your own admin account', {

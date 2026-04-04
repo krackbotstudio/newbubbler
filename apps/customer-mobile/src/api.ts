@@ -51,6 +51,8 @@ export async function testConnection(): Promise<void> {
 export interface PublicBrandingResponse {
   businessName: string | null;
   logoUrl: string | null;
+  /** Admin Branding "App icon" — preferred for PWA/tab favicon when set. */
+  appIconUrl: string | null;
   termsAndConditions: string | null;
   privacyPolicy: string | null;
   /** Welcome screen background image (shown at 50% opacity). */
@@ -64,21 +66,30 @@ export interface PublicBrandingResponse {
 }
 
 export async function getPublicBranding(): Promise<PublicBrandingResponse> {
+  const empty: PublicBrandingResponse = {
+    businessName: null,
+    logoUrl: null,
+    appIconUrl: null,
+    termsAndConditions: null,
+    privacyPolicy: null,
+    welcomeBackgroundUrl: null,
+  };
   const base = apiBase();
-  if (!base) return { businessName: null, logoUrl: null, termsAndConditions: null, privacyPolicy: null, welcomeBackgroundUrl: null };
+  if (!base) return empty;
   try {
     const res = await fetchWithTimeout(`${base}/branding/public`);
-    if (!res.ok) return { businessName: null, logoUrl: null, termsAndConditions: null, privacyPolicy: null, welcomeBackgroundUrl: null };
+    if (!res.ok) return empty;
     const data = (await res.json()) as PublicBrandingResponse;
     return {
       businessName: data.businessName ?? null,
       logoUrl: data.logoUrl ?? null,
+      appIconUrl: data.appIconUrl ?? null,
       termsAndConditions: data.termsAndConditions ?? null,
       privacyPolicy: data.privacyPolicy ?? null,
       welcomeBackgroundUrl: data.welcomeBackgroundUrl ?? null,
     };
   } catch {
-    return { businessName: null, logoUrl: null, termsAndConditions: null, privacyPolicy: null, welcomeBackgroundUrl: null };
+    return empty;
   }
 }
 

@@ -1,5 +1,6 @@
 import { Controller, Get, Param, Patch, Body, Post, UseGuards } from '@nestjs/common';
 import { OrderStatus, Role } from '@shared/enums';
+import { AGENT_ROLE } from '../common/agent-role';
 import { JwtAuthGuard } from '../common/jwt-auth.guard';
 import { Roles } from '../common/roles.decorator';
 import { RolesGuard } from '../common/roles.guard';
@@ -68,14 +69,14 @@ export class OrdersController {
   }
 
   @Get(':id')
-  @Roles(Role.CUSTOMER, Role.ADMIN, Role.OPS, Role.BILLING)
+  @Roles(Role.CUSTOMER, Role.ADMIN, Role.OPS, Role.BILLING, AGENT_ROLE)
   async getOrder(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     const order = await this.ordersService.getOrderForUser(user, id);
     return order;
   }
 
   @Patch(':id/status')
-  @Roles(Role.ADMIN, Role.OPS)
+  @Roles(Role.ADMIN, Role.OPS, AGENT_ROLE)
   async updateStatus(
     @Param('id') id: string,
     @Body() dto: UpdateOrderStatusDto,

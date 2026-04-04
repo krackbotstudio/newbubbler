@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { getStoredUser } from '@/lib/auth';
+import { getStoredUser, isBranchScopedStaff } from '@/lib/auth';
 import { useFinalInvoices, type AdminFinalInvoiceRow } from '@/hooks/useFinalInvoices';
 import { useBranches } from '@/hooks/useBranches';
 import { useWalkInLookupCustomer } from '@/hooks/useWalkIn';
@@ -25,7 +25,7 @@ import { Badge } from '@/components/ui/badge';
 export default function FinalInvoicesPage() {
   const router = useRouter();
   const user = useMemo(() => getStoredUser(), []);
-  const isBranchHead = user?.role === 'OPS' && user?.branchId;
+  const isBranchHead = user && isBranchScopedStaff(user.role) && user.branchId;
   const { data: branches = [] } = useBranches();
   const [countryCode, setCountryCode] = useState('+91');
   const [phoneDigits, setPhoneDigits] = useState('');

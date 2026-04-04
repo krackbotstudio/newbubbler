@@ -17,7 +17,8 @@ function getContentType(filePath: string): string {
 
 /**
  * Storage adapter that persists files in Supabase Storage.
- * Use env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_STORAGE_BUCKET.
+ * Use env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, and optionally SUPABASE_STORAGE_BUCKET (defaults to "assets").
+ * Create the bucket with: npm run supabase:ensure-assets-bucket
  * Bucket should be public so logo/carousel/icons are reachable via returned URLs.
  */
 export class SupabaseStorageAdapter implements StorageAdapter {

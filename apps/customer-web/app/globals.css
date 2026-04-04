@@ -25,7 +25,13 @@
   * {
     @apply border-border;
   }
+  html {
+    min-height: 100%;
+    min-height: 100dvh;
+  }
   body {
     @apply bg-background text-foreground;
+    min-height: 100%;
+    min-height: 100dvh;
   }
 }

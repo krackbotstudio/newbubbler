@@ -33,6 +33,7 @@ export declare enum Role {
     CUSTOMER = "CUSTOMER",
     ADMIN = "ADMIN",
     OPS = "OPS",
+    AGENT = "AGENT",
     BILLING = "BILLING"
 }
 export declare enum PaymentProvider {

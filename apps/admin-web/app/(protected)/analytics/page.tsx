@@ -17,7 +17,8 @@ import { toAnalyticsPoints, type AdminOrdersFilters } from '@/types';
 import type { AnalyticsPreset, AnalyticsTotals } from '@/types';
 import { toast } from 'sonner';
 import type { AxiosError } from 'axios';
-import { getStoredUser } from '@/lib/auth';
+import { getStoredUser, isBranchFilterLocked } from '@/lib/auth';
+import { LockedBranchSelect } from '@/components/shared/LockedBranchSelect';
 
 const DEFAULT_PRESET: AnalyticsPreset = 'THIS_MONTH';
 
@@ -49,12 +50,12 @@ export default function AnalyticsPage() {
   const [dateRangeError, setDateRangeError] = useState<string | null>(null);
 
   const user = useMemo(() => getStoredUser(), []);
-  const isBranchHead = user?.role === 'OPS' && user?.branchId;
-  const effectiveOpsBranchId = isBranchHead ? user?.branchId ?? null : null;
+  const branchLocked = !!(user && isBranchFilterLocked(user.role, user.branchId));
+  const effectiveScopedBranchId = branchLocked ? user?.branchId ?? null : null;
 
   const { data: branches = [], isLoading: branchesLoading } = useBranches();
   const [branchId, setBranchId] = useState<string>('');
-  const effectiveBranchId = effectiveOpsBranchId ?? (branchId || null);
+  const effectiveBranchId = effectiveScopedBranchId ?? (branchId || null);
   const [cursor, setCursor] = useState<string | undefined>(undefined);
 
   const isCustom = selectedPreset === 'CUSTOM';
@@ -264,26 +265,30 @@ export default function AnalyticsPage() {
       <div className="flex flex-wrap items-end gap-4 rounded-lg border bg-card p-4">
         <div className="grid gap-1">
           <label className="text-xs font-medium text-muted-foreground">Branch</label>
-          <select
-            className="h-10 rounded-md border border-input bg-background px-3 text-sm min-w-[220px]"
-            value={effectiveBranchId ?? ''}
-            onChange={(e) => {
-              setBranchId(e.target.value);
-              setCursor(undefined);
-            }}
-            disabled={branchesLoading || !!isBranchHead}
-          >
-            {!isBranchHead ? <option value="">All branches</option> : null}
-            {(branches ?? []).map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.name}
-              </option>
-            ))}
-          </select>
+          {branchLocked ? (
+            <LockedBranchSelect branchId={user?.branchId} selectClassName="min-w-[220px]" />
+          ) : (
+            <select
+              className="h-10 rounded-md border border-input bg-background px-3 text-sm min-w-[220px]"
+              value={effectiveBranchId ?? ''}
+              onChange={(e) => {
+                setBranchId(e.target.value);
+                setCursor(undefined);
+              }}
+              disabled={branchesLoading}
+            >
+              <option value="">All branches</option>
+              {(branches ?? []).map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
-        {isBranchHead ? (
+        {branchLocked ? (
           <div className="text-xs text-muted-foreground">
-            OPS scoped to your branch.
+            Analytics for your assigned branch only.
           </div>
         ) : null}
       </div>

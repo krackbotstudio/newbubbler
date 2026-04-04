@@ -65,6 +65,10 @@ export class PrismaSubscriptionsRepo implements SubscriptionsRepo {
     return this.prisma.subscription.count({ where: { active: true } });
   }
 
+  async countActiveForBranch(branchId: string): Promise<number> {
+    return this.prisma.subscription.count({ where: { active: true, branchId } });
+  }
+
   async listActiveByUserId(userId: string, branchId?: string | null): Promise<ActiveSubscriptionWithPlanRecord[]> {
     const subs = await (this.prisma as PrismaClient).subscription.findMany({
       where: {

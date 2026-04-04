@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import type { Role } from "@/lib/auth";
+import { isBranchScopedStaff, type Role } from "@/lib/auth";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -78,8 +78,8 @@ export function AdminUserDialog({
       setError("Role is required");
       return;
     }
-    if (role === "OPS" && !branchId) {
-      setError("Branch is required for Branch Head");
+    if (isBranchScopedStaff(role) && !branchId) {
+      setError("Branch is required for Branch Head and Agent");
       return;
     }
     if (!email) {
@@ -105,7 +105,7 @@ export function AdminUserDialog({
           name: name || null,
           email,
           role,
-          branchId: role === "OPS" ? branchId || null : null,
+          branchId: isBranchScopedStaff(role) ? branchId || null : null,
           isActive,
         });
         if (tempPassword && newUser) {
@@ -116,7 +116,7 @@ export function AdminUserDialog({
           id: user.id,
           name: name || null,
           role,
-          branchId: role === "OPS" ? branchId || null : null,
+          branchId: isBranchScopedStaff(role) ? branchId || null : null,
           isActive,
         });
       }
@@ -188,7 +188,7 @@ export function AdminUserDialog({
               onValueChange={(value) => {
                 const newRole = value as Role;
                 setRole(newRole);
-                if (newRole !== "OPS") setBranchId("");
+                if (!isBranchScopedStaff(newRole)) setBranchId("");
               }}
             >
               <SelectTrigger>
@@ -197,16 +197,17 @@ export function AdminUserDialog({
               <SelectContent>
                 <SelectItem value="ADMIN">Admin</SelectItem>
                 <SelectItem value="OPS">Branch Head</SelectItem>
+                <SelectItem value="AGENT">Agent</SelectItem>
               </SelectContent>
             </Select>
           </div>
-          {role === "OPS" && (
+          {isBranchScopedStaff(role) && (
             <div className="space-y-1">
               <label className="text-sm font-medium">Branch</label>
               <Select
                 value={branchId || ""}
                 onValueChange={setBranchId}
-                required={role === "OPS"}
+                required={isBranchScopedStaff(role)}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select branch (required)" />
@@ -220,7 +221,7 @@ export function AdminUserDialog({
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                Branch Head must be assigned to one branch. They will only see data for this branch.
+                Branch Head and Agent must be assigned to one branch. They only see data for that branch.
               </p>
             </div>
           )}

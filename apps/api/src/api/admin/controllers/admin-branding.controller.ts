@@ -14,6 +14,7 @@ import { diskStorage } from 'multer';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Role } from '@shared/enums';
+import { AGENT_ROLE } from '../../common/agent-role';
 import { JwtAuthGuard } from '../../common/jwt-auth.guard';
 import { CurrentUser } from '../../common/current-user.decorator';
 import { Roles } from '../../common/roles.decorator';
@@ -77,12 +78,12 @@ function brandingMulterOptions(prefix: string) {
 
 @Controller('admin/branding')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.ADMIN, Role.BILLING, Role.OPS)
+@Roles(Role.ADMIN, Role.BILLING, Role.OPS, AGENT_ROLE)
 export class AdminBrandingController {
   constructor(private readonly adminBrandingService: AdminBrandingService) {}
 
   @Get()
-  @Roles(Role.ADMIN, Role.BILLING, Role.OPS)
+  @Roles(Role.ADMIN, Role.BILLING, Role.OPS, AGENT_ROLE)
   async get() {
     return this.adminBrandingService.get();
   }

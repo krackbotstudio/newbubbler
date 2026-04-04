@@ -1,8 +1,11 @@
-import { Controller, Get, Post, Body, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Query, Req, UseGuards } from '@nestjs/common';
 import { Role } from '@shared/enums';
+import { AGENT_ROLE } from '../../common/agent-role';
 import { JwtAuthGuard } from '../../common/jwt-auth.guard';
 import { Roles } from '../../common/roles.decorator';
 import { RolesGuard } from '../../common/roles.guard';
+import type { AuthUser } from '../../common/roles.guard';
+import { isBranchScopedStaffRole } from '../../common/branch-scope.util';
 import { WalkInService } from '../services/walk-in.service';
 import { WalkInCustomerLookupQueryDto } from '../dto/walk-in-customer-lookup-query.dto';
 import { CreateWalkInCustomerDto } from '../dto/create-walk-in-customer.dto';
@@ -10,7 +13,7 @@ import { CreateWalkInOrderDto } from '../dto/create-walk-in-order.dto';
 
 @Controller('admin/walk-in')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.ADMIN, Role.OPS, Role.BILLING)
+@Roles(Role.ADMIN, Role.OPS, Role.BILLING, AGENT_ROLE)
 export class WalkInController {
   constructor(private readonly walkInService: WalkInService) {}
 
@@ -31,8 +34,11 @@ export class WalkInController {
   }
 
   @Post('orders')
-  async createOrder(@Body() body: CreateWalkInOrderDto) {
-    const order = await this.walkInService.createOrder(body.userId, body.branchId);
+  async createOrder(@Body() body: CreateWalkInOrderDto, @Req() req: { user: AuthUser }) {
+    const u = req.user;
+    const branchId =
+      isBranchScopedStaffRole(u.role) && u.branchId ? u.branchId : body.branchId;
+    const order = await this.walkInService.createOrder(body.userId, branchId);
     return { order: { id: order.id } };
   }
 }

@@ -14,12 +14,13 @@ function fetchDashboardKpis(): Promise<DashboardKpisResponse> {
   return api.get<DashboardKpisResponse>('/admin/analytics/dashboard-kpis').then((r) => r.data);
 }
 
-export function useDashboardKpis(options?: { enabled?: boolean }) {
+export function useDashboardKpis(options?: { enabled?: boolean; refetchInterval?: number }) {
   const enabled = options?.enabled ?? true;
   return useQuery({
     queryKey: ['admin', 'analytics', 'dashboard-kpis'],
     queryFn: fetchDashboardKpis,
     enabled,
+    refetchInterval: options?.refetchInterval,
   });
 }
 
@@ -46,10 +47,11 @@ export interface UseAnalyticsRevenueOptions {
   dateTo?: string;
   branchId?: string | null;
   enabled?: boolean;
+  refetchInterval?: number;
 }
 
 export function useAnalyticsRevenue(options: UseAnalyticsRevenueOptions) {
-  const { preset, dateFrom, dateTo, branchId, enabled = true } = options;
+  const { preset, dateFrom, dateTo, branchId, enabled = true, refetchInterval } = options;
   const usePreset = preset && preset !== 'CUSTOM';
   return useQuery({
     queryKey: ['admin', 'analytics', 'revenue', { preset, dateFrom, dateTo, branchId }],
@@ -61,6 +63,7 @@ export function useAnalyticsRevenue(options: UseAnalyticsRevenueOptions) {
         branchId ?? undefined
       ),
     enabled,
+    refetchInterval,
   });
 }
 

@@ -19,7 +19,8 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Button } from '@/components/ui/button';
 import { formatDate } from '@/lib/format';
 import type { CustomerPaymentRow } from '@/hooks/useCustomers';
-import type { Role } from '@/lib/auth';
+import { isBranchFilterLocked, type Role } from '@/lib/auth';
+import { LockedBranchSelect } from '@/components/shared/LockedBranchSelect';
 import { Eye } from 'lucide-react';
 
 export interface CustomerPaymentsTableProps {
@@ -30,9 +31,9 @@ export interface CustomerPaymentsTableProps {
 
 export function CustomerPaymentsTable({ userId, role, userBranchId }: CustomerPaymentsTableProps) {
   const router = useRouter();
-  const isBranchHead = role === 'OPS' && userBranchId;
-  const [branchIdFilter, setBranchIdFilter] = useState<string>(() => (isBranchHead ? userBranchId ?? '' : ''));
-  const effectiveBranchId = isBranchHead ? (userBranchId ?? '') : branchIdFilter;
+  const branchLocked = !!role && isBranchFilterLocked(role, userBranchId);
+  const [branchIdFilter, setBranchIdFilter] = useState<string>(() => (branchLocked ? userBranchId ?? '' : ''));
+  const effectiveBranchId = branchLocked ? (userBranchId ?? '') : branchIdFilter;
   const { data: branches = [] } = useBranches();
   const { data: payments, isLoading, error } = useCustomerPayments(userId, effectiveBranchId || undefined);
 
@@ -49,21 +50,24 @@ export function CustomerPaymentsTable({ userId, role, userBranchId }: CustomerPa
           <label htmlFor="payments-branch-filter" className="text-sm text-muted-foreground whitespace-nowrap">
             Branch
           </label>
-          <select
-            id="payments-branch-filter"
-            className="h-9 min-w-[160px] rounded-md border border-input bg-background px-3 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
-            value={effectiveBranchId}
-            disabled={!!isBranchHead}
-            onChange={(e) => setBranchIdFilter(e.target.value)}
-            title={isBranchHead ? 'Your assigned branch (filter locked)' : 'Filter by branch'}
-          >
-            <option value="">All branches</option>
-            {branches.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.name ?? b.id}
-              </option>
-            ))}
-          </select>
+          {branchLocked ? (
+            <LockedBranchSelect branchId={userBranchId} selectClassName="h-9 min-w-[160px]" />
+          ) : (
+            <select
+              id="payments-branch-filter"
+              className="h-9 min-w-[160px] rounded-md border border-input bg-background px-3 text-sm"
+              value={effectiveBranchId}
+              onChange={(e) => setBranchIdFilter(e.target.value)}
+              title="Filter by branch"
+            >
+              <option value="">All branches</option>
+              {branches.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name ?? b.id}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
       </CardHeader>
       <CardContent>

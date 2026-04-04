@@ -1,8 +1,9 @@
 import { IsString, IsEmail, IsIn, IsOptional, IsBoolean } from 'class-validator';
 import { Transform } from 'class-transformer';
-import { Role } from '@shared/enums';
+import type { Role } from '@shared/enums';
 
-const ALLOWED_ROLES = [Role.ADMIN, Role.OPS];
+/** Literal list so validation works even if a stale shared build omits `Role.AGENT`. */
+const CREATABLE_STAFF_ROLE_VALUES = ['ADMIN', 'OPS', 'AGENT'] as const;
 
 export class CreateAdminUserDto {
   @IsOptional()
@@ -12,7 +13,9 @@ export class CreateAdminUserDto {
   @IsEmail()
   email!: string;
 
-  @IsIn(ALLOWED_ROLES, { message: 'Only Admin and Branch Head roles are allowed' })
+  @IsIn(CREATABLE_STAFF_ROLE_VALUES, {
+    message: 'Only Admin, Branch Head, and Agent roles are allowed',
+  })
   role!: Role;
 
   @IsOptional()
