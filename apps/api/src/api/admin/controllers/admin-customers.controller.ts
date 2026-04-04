@@ -17,10 +17,10 @@ export class AdminCustomersController {
 
   @Get()
   async list(
+    @Req() req: { user: AuthUser },
     @Query('limit') limitStr?: string,
     @Query('cursor') cursor?: string,
     @Query('search') search?: string,
-    @Req() req: { user: AuthUser },
   ) {
     const limit = Math.min(Math.max(parseInt(limitStr ?? '20', 10) || 20, 1), 100);
     const user = req.user;

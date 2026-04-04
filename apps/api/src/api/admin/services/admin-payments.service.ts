@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { InvoiceType } from '@shared/enums';
+import { InvoiceType, OrderStatus } from '@shared/enums';
 import { updatePaymentStatus } from '../../../application/payments/update-payment-status.use-case';
 import { fulfillNewSubscriptionsFromAckInvoice } from '../../../application/invoices/fulfill-new-subscriptions-from-ack.use-case';
 import type { PaymentProvider, PaymentStatus } from '@shared/enums';
@@ -37,8 +37,8 @@ export class AdminPaymentsService {
     );
     if (dto.status === 'CAPTURED') {
       const order = await this.ordersRepo.getById(orderId);
-      if (order && order.status !== 'CANCELLED' && order.status !== 'DELIVERED') {
-        await this.ordersRepo.updateStatus(orderId, 'DELIVERED');
+      if (order && order.status !== OrderStatus.CANCELLED && order.status !== OrderStatus.DELIVERED) {
+        await this.ordersRepo.updateStatus(orderId, OrderStatus.DELIVERED);
       }
       await fulfillNewSubscriptionsFromAckInvoice(orderId, {
         ordersRepo: this.ordersRepo,
