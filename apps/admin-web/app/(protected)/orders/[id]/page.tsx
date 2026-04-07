@@ -1339,6 +1339,7 @@ export default function OrderDetailPage() {
             catalogMatrix={catalogMatrix}
             tagPrintOrderLabel={order.id}
             tagBrandName={branding?.businessName?.trim() || 'We You'}
+            tagCustomerName={customer.name ?? '—'}
             orderMode={ackOrderMode}
             subscriptionOnlyCanSave={
               ackOrderMode === 'SUBSCRIPTION_ONLY' &&
@@ -1605,6 +1606,7 @@ export default function OrderDetailPage() {
             catalogMatrix={catalogMatrix}
             tagPrintOrderLabel={order.id}
             tagBrandName={branding?.businessName?.trim() || 'We You'}
+            tagCustomerName={customer.name ?? '—'}
             orderMode="INDIVIDUAL"
             subscriptionUnit={hasSubscription && summary?.subscription ? (summary.subscription.kgLimit != null ? 'KG' : summary.subscription.itemsLimit != null ? 'Nos' : undefined) : undefined}
             subscriptionUsageRowIndex={undefined}

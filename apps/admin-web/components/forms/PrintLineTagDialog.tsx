@@ -27,6 +27,7 @@ const TAG_TITLE = 'We you';
 export interface PrintLineTagPayload {
   /** Legacy field from callers; printed title is fixed to TAG_TITLE. */
   brandName: string;
+  customerName: string;
   orderNumber: string;
   itemName: string;
   segment: string;
@@ -49,14 +50,14 @@ function escapeHtml(s: string): string {
 }
 
 function buildPrintHtml(
+  customerName: string,
   orderNumber: string,
   itemName: string,
-  segment: string,
   service: string,
   copies: number
 ): string {
+  const customer = (customerName || '—').trim();
   const item = (itemName || '—').trim();
-  const seg = (segment || '—').trim();
   const svc = (service || '—').trim();
 
   const pages = Array.from({ length: copies }, (_, copyIdx) => {
@@ -65,10 +66,10 @@ function buildPrintHtml(
     <div class="label-page">
       <div class="label-inner">
         <div class="tag-title">${escapeHtml(TAG_TITLE)}</div>
+        <div class="tag-customer">${escapeHtml(customer)}</div>
         <div class="tag-order">${escapeHtml(orderNumber.trim())}</div>
         <div class="tag-details-stack">
           <div class="tag-line">${escapeHtml(item)}</div>
-          <div class="tag-line">${escapeHtml(seg)}</div>
           <div class="tag-line">${escapeHtml(svc)}</div>
         </div>
         <div class="tag-qty">${current} / ${copies}</div>
@@ -110,12 +111,23 @@ body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   line-height: 1.02;
   color: #000;
 }
-.tag-order {
+.tag-customer {
+  text-align: center;
   font-size: 8.25pt;
+  font-weight: 800;
+  line-height: 1.02;
+  color: #000;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tag-order {
+  font-size: 7.75pt;
   font-weight: 700;
   line-height: 1.02;
   word-break: break-all;
   text-align: center;
+  letter-spacing: -0.01em;
 }
 .tag-details-stack {
   flex: 1;
@@ -205,9 +217,9 @@ export function PrintLineTagDialog({ open, onOpenChange, payload }: PrintLineTag
     setPrintLoading(true);
     try {
       const html = buildPrintHtml(
+        payload.customerName,
         payload.orderNumber,
         payload.itemName,
-        payload.segment,
         payload.service,
         n
       );
@@ -225,8 +237,8 @@ export function PrintLineTagDialog({ open, onOpenChange, payload }: PrintLineTag
     return null;
   }
 
+  const previewCustomer = (payload.customerName || '—').trim();
   const previewItem = (payload.itemName || '—').trim();
-  const previewSegment = (payload.segment || '—').trim();
   const previewService = (payload.service || '—').trim();
 
   const previewTotal = Math.max(1, parseInt(copiesDraft, 10) || copies || 1);
@@ -245,10 +257,10 @@ export function PrintLineTagDialog({ open, onOpenChange, payload }: PrintLineTag
           <div className="mx-auto w-full max-w-[280px] rounded-md border bg-muted/30 p-3">
             <div className="flex aspect-[36/30] max-h-[260px] w-full flex-col items-stretch justify-between gap-1 border border-border bg-background px-2 py-2.5 text-center leading-tight">
               <p className="text-xs font-extrabold">{TAG_TITLE}</p>
+              <p className="text-[11px] font-extrabold truncate">{previewCustomer}</p>
               <p className="font-mono text-[11px] font-bold break-all">{payload.orderNumber}</p>
               <div className="flex min-h-0 flex-1 flex-col justify-center gap-1 py-0.5">
                 <p className="text-xs font-extrabold text-foreground">{previewItem}</p>
-                <p className="text-xs font-extrabold text-foreground">{previewSegment}</p>
                 <p className="text-xs font-extrabold text-foreground">{previewService}</p>
               </div>
               <p className="text-[11px] font-bold text-muted-foreground">

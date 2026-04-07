@@ -129,6 +129,8 @@ interface InvoiceBuilderProps {
   tagPrintOrderLabel?: string | null;
   /** Printed top-center on line tags; defaults in dialog if omitted. */
   tagBrandName?: string | null;
+  /** Customer name shown on line tags. */
+  tagCustomerName?: string | null;
   /**
    * When issued + showPrintOnly + printAreaRef, use Ack-dialog-style print / download / WhatsApp
    * (clone print, html2pdf, JPEG + wa.me) instead of the legacy toolbar.
@@ -231,6 +233,7 @@ export function InvoiceBuilder({
   disableEditing = false,
   tagPrintOrderLabel = null,
   tagBrandName = null,
+  tagCustomerName = null,
   issuedShareAdvanced = null,
 }: InvoiceBuilderProps) {
   const isSubscriptionOnly = orderMode === 'SUBSCRIPTION_ONLY';
@@ -332,13 +335,14 @@ export function InvoiceBuilder({
     const brand = tagBrandName?.trim() || 'We You';
     return {
       brandName: brand,
+      customerName: (tagCustomerName ?? '—').trim() || '—',
       orderNumber: tagPrintOrderLabel.trim(),
       itemName: row.name ?? '—',
       segment,
       service,
       defaultCopies: Math.max(1, Math.min(999, defaultCopies)),
     };
-  }, [tagDialogRowIndex, items, tagPrintOrderLabel, tagBrandName, catalogMatrix, useMatrix]);
+  }, [tagDialogRowIndex, items, tagPrintOrderLabel, tagBrandName, tagCustomerName, catalogMatrix, useMatrix]);
 
   useEffect(() => {
     if (tagDialogRowIndex != null && (tagDialogRowIndex < 0 || tagDialogRowIndex >= items.length)) {
