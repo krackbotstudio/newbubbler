@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useMemo } from 'react';
 import { logout, type AuthUser } from '@/lib/auth';
-import { canAccessRoute } from '@/lib/permissions';
+import { canAccessRoute, isNavHidden } from '@/lib/permissions';
 import { cn } from '@/lib/utils';
 import { getApiOrigin } from '@/lib/api';
 import { useBranding } from '@/hooks/useBranding';
@@ -81,7 +81,7 @@ export function Sidebar({ user, collapsed = false, onToggleCollapse, mobileOpen 
   const navGroups = useMemo(
     () =>
       NAV_GROUPS.map((g) => ({
-        items: g.items.filter((item) => canAccessRoute(user.role, item.href)),
+        items: g.items.filter((item) => canAccessRoute(user.role, item.href) && !isNavHidden(user.role, item.href)),
       })).filter((g) => g.items.length > 0),
     [user.role],
   );

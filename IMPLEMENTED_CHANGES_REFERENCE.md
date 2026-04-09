@@ -121,8 +121,8 @@ Project: Weyouprod monorepo
 - **Redesign (text-only small tag):**
   - Removed QR entirely (no `qrcode` dependency, no preview image, no iframe image waiting).
   - Print size set to **36 mm × 30 mm** with **2 mm margin/padding** on all sides.
-  - Content shown (each copy): **We you** → **Order number** → **Item** / **Segment** / **Service** (stacked one per line) → **`current/total`** (e.g. `2 / 6`).
-  - Typography was tuned for thermal readability: larger bold text, then reduced slightly to avoid fully filling the tag.
+  - Content shown (each copy): **We you** → **Customer name** → **Order number** → **Item** / **Service** (stacked one per line; segment removed) → **`current/total`** (e.g. `2 / 6`).
+  - Typography was tuned after print tests: larger bold text first, then reduced slightly for fit; order-number text further reduced to avoid overflow on narrow labels.
 
 ## Admin Orders (detail page + invoice)
 

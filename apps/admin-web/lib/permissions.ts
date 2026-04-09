@@ -8,13 +8,14 @@ import type { Role } from '@/lib/auth';
  */
 export const ROLE_PERMISSIONS: Record<
   Role,
-  { allow?: readonly string[]; denyRoutes?: readonly string[] }
+  { allow?: readonly string[]; denyRoutes?: readonly string[]; navHide?: readonly string[] }
 > = {
   ADMIN: { allow: ['*'] },
   BILLING: { allow: ['*'] },
   OPS: { denyRoutes: ['/analytics', '/branding', '/admin-users'] },
   AGENT: {
-    allow: ['/dashboard', '/orders', '/walk-in-orders', '/customers', '/feedback'],
+    allow: ['/dashboard', '/orders', '/feedback'],
+    navHide: ['/orders', '/customers'],
   },
   CUSTOMER: { denyRoutes: ['*'] },
 };
@@ -38,6 +39,16 @@ export function canAccessRoute(role: Role, pathname: string): boolean {
     (r) => pathname === r || pathname.startsWith(r + '/')
   );
   return !denied;
+}
+
+/**
+ * Returns true if the nav item should be hidden from the sidebar for this role.
+ * The route may still be accessible (e.g. order detail via redirect) but won't show in nav.
+ */
+export function isNavHidden(role: Role, pathname: string): boolean {
+  const perm = ROLE_PERMISSIONS[role];
+  const hidden = perm?.navHide ?? [];
+  return hidden.some((r) => pathname === r);
 }
 
 /**

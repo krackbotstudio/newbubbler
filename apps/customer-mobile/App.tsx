@@ -22,6 +22,7 @@ import { WebView } from 'react-native-webview';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Notifications from 'expo-notifications';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
@@ -75,6 +76,16 @@ type Step = 'phone' | 'otp' | 'profile' | 'done';
 type HomeScreen = 'home' | 'subscriptions' | 'subscriptionDetail' | 'addresses' | 'addAddress' | 'areaRequestSent' | 'bookPickup' | 'myOrders' | 'orderDetail' | 'profile';
 type OrderFilter = 'all' | 'walk_in' | 'individual' | 'subscription';
 type BookingStep = 'services' | 'address' | 'date' | 'time' | 'confirm';
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+    shouldShowBanner: true,
+    shouldShowList: true,
+  }),
+});
 
 /** Darkest login gradient stop — fills safe areas, edge-to-edge gaps, and PWA/browser overscan. */
 const AUTH_SCREEN_BACKGROUND = '#3d0f3d';
@@ -418,33 +429,38 @@ export default function App() {
     apple.href = href;
   }, [welcomeBranding?.appIconUrl, welcomeBranding?.logoUrl]);
 
-  // Register for push notifications (lock screen) when user is logged in
+  // Set up Android notification channel
+  useEffect(() => {
+    if (Platform.OS === 'android') {
+      Notifications.setNotificationChannelAsync('default', {
+        name: 'Default',
+        importance: Notifications.AndroidImportance.MAX,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: '#FF231F7C',
+      }).catch(() => {});
+    }
+  }, []);
+
+  // Register for push notifications when user is logged in
   useEffect(() => {
     if (step !== 'done' || !token) return;
     let cancelled = false;
     (async () => {
       try {
         const DeviceModule = await import('expo-device').catch(() => null);
-        const NotificationsModule = await import('expo-notifications').catch(() => null);
-        if (!DeviceModule || !NotificationsModule) return;
+        if (!DeviceModule) return;
         const Device = DeviceModule.default ?? DeviceModule;
-        const Notifications = NotificationsModule.default ?? NotificationsModule;
         if (!Device?.isDevice) return;
-        const getPerms = Notifications?.getPermissionsAsync;
-        if (typeof getPerms !== 'function') return;
-        const { status: existing } = await getPerms.call(Notifications);
+        const { status: existing } = await Notifications.getPermissionsAsync();
         let final = existing;
         if (existing !== 'granted') {
-          const requestPerms = Notifications?.requestPermissionsAsync;
-          if (typeof requestPerms === 'function') {
-            const { status } = await requestPerms.call(Notifications);
-            final = status;
-          }
+          const { status } = await Notifications.requestPermissionsAsync();
+          final = status;
         }
         if (final !== 'granted' || cancelled) return;
-        const getToken = Notifications?.getExpoPushTokenAsync;
-        if (typeof getToken !== 'function') return;
-        const tokenData = await getToken.call(Notifications);
+        const tokenData = await Notifications.getExpoPushTokenAsync({
+          projectId: 'a3ee3cc2-2e62-4325-a33e-93842c502157',
+        });
         const pushToken = tokenData?.data;
         if (pushToken && !cancelled) await registerPushToken(token, pushToken);
       } catch (_) {
@@ -453,6 +469,17 @@ export default function App() {
     })();
     return () => { cancelled = true; };
   }, [step, token]);
+
+  // Handle notification tap — navigate to relevant screen
+  useEffect(() => {
+    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+      const data = response.notification.request.content.data as Record<string, string> | undefined;
+      if (data?.orderId && step === 'done') {
+        setHomeScreen('orderDetail');
+      }
+    });
+    return () => sub.remove();
+  }, [step]);
 
   const fetchCarousel = useCallback(() => {
     getPublicCarousel().then((r) => setCarouselImageUrls(r.imageUrls ?? []));
@@ -1413,98 +1440,112 @@ export default function App() {
       </View>
     );
   } else if (step === 'phone') {
-    const logoUri = welcomeBranding?.logoUrl ? brandingLogoFullUrl(welcomeBranding.logoUrl) : null;
+    const logoRaw = welcomeBranding?.logoUrl || welcomeBranding?.appIconUrl;
+    const logoUri = logoRaw ? brandingLogoFullUrl(logoRaw) : null;
     content = (
-      <View style={styles.welcomeScreenOuter}>
+      <View style={styles.phoneAuthRoot}>
         <LinearGradient
           colors={['#7a2d7a', '#5c1a5c', '#3d0f3d']}
           style={StyleSheet.absoluteFillObject}
         />
-        <View style={styles.welcomeCard}>
-        <View style={styles.welcomeHeader}>
-          {logoUri ? (
-            <Image
-              key={logoUri}
-              source={{ uri: logoUri }}
-              style={styles.welcomeLogo}
-              resizeMode="contain"
-              accessibilityLabel="Brand logo"
-            />
-          ) : (
-            <View style={styles.welcomeLogoPlaceholder}>
-              <Text style={styles.welcomeLogoPlaceholderText}>
-                {welcomeBranding?.businessName?.slice(0, 2)?.toUpperCase() ?? 'We'}
-              </Text>
-            </View>
-          )}
-        </View>
-        {error && (
-          <>
-            <Text style={styles.error}>{error}</Text>
-            <TouchableOpacity style={[styles.button, styles.buttonSecondary, { marginTop: 8 }]} onPress={handleRetryConnection} disabled={initializing}>
-              <Text style={styles.buttonSecondaryText}>Retry</Text>
-            </TouchableOpacity>
-          </>
-        )}
-        <View style={styles.phoneInputRow}>
-          <TextInput
-            style={[styles.input, styles.countryCodeInput]}
-            placeholder="+91"
-            keyboardType="phone-pad"
-            value={countryCode}
-            onChangeText={(value) => {
-              const d = value.replace(/\D/g, '').slice(0, 3);
-              setCountryCode(d ? '+' + d : '+91');
-            }}
-          />
-          <TextInput
-            style={[styles.input, styles.mobileInput]}
-            placeholder="Enter mobile number"
-            keyboardType="phone-pad"
-            value={mobile}
-            onChangeText={(value) => setMobile(value.replace(/\D/g, '').slice(0, 10))}
-            maxLength={10}
-          />
-        </View>
-        {hasLegalContent && (
-          <View style={styles.termsPrivacyBlock}>
-            <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={() => setAcceptedTermsAndPrivacy((v) => !v)}
-              style={styles.checkboxRowTouchable}
-            >
-              <View style={styles.checkboxRow}>
-                <View style={[styles.termsCheckbox, acceptedTermsAndPrivacy && styles.termsCheckboxChecked]}>
-                  {acceptedTermsAndPrivacy ? <MaterialIcons name="check" size={16} color={colors.white} /> : null}
+        <View style={styles.phoneAuthBody}>
+          <View style={styles.phoneAuthCard}>
+            <View style={styles.phoneAuthLogoWrap}>
+              {logoUri ? (
+                <Image
+                  key={logoUri}
+                  source={{ uri: logoUri }}
+                  style={styles.phoneAuthLogo}
+                  resizeMode="contain"
+                  accessibilityLabel="Brand logo"
+                />
+              ) : (
+                <View style={styles.phoneAuthLogoFallback}>
+                  <Text style={styles.phoneAuthLogoFallbackText}>
+                    {welcomeBranding?.businessName?.slice(0, 2)?.toUpperCase() ?? 'We'}
+                  </Text>
                 </View>
-                <Text style={styles.checkboxLabel}>
-                  I accept the{' '}
-                  {welcomeBranding?.privacyPolicy?.trim() ? (
-                    <Text
-                      style={styles.linkText}
-                      onPress={() =>
-                        setLegalModalContent({
-                          title: 'Terms and conditions & Privacy policy',
-                          body: welcomeBranding!.privacyPolicy!.trim(),
-                        })
-                      }
-                    >
-                      Terms and conditions & Privacy policy
+              )}
+            </View>
+
+            {error && (
+              <>
+                <Text style={styles.error}>{error}</Text>
+                <TouchableOpacity style={[styles.button, styles.buttonSecondary, { marginTop: 8 }]} onPress={handleRetryConnection} disabled={initializing}>
+                  <Text style={styles.buttonSecondaryText}>Retry</Text>
+                </TouchableOpacity>
+              </>
+            )}
+
+            <View style={styles.phoneAuthInputRow}>
+              <TextInput
+                style={[styles.input, styles.phoneAuthCountryCodeInput]}
+                placeholder="+91"
+                keyboardType="phone-pad"
+                value={countryCode}
+                onChangeText={(value) => {
+                  const d = value.replace(/\D/g, '').slice(0, 3);
+                  setCountryCode(d ? '+' + d : '+91');
+                }}
+              />
+              <TextInput
+                style={[styles.input, styles.phoneAuthMobileInput]}
+                placeholder="Enter mobile number"
+                keyboardType="phone-pad"
+                value={mobile}
+                onChangeText={(value) => setMobile(value.replace(/\D/g, '').slice(0, 10))}
+                maxLength={10}
+              />
+            </View>
+
+            {hasLegalContent && (
+              <View style={styles.phoneAuthTermsBlock}>
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  onPress={() => setAcceptedTermsAndPrivacy((v) => !v)}
+                  style={styles.checkboxRowTouchable}
+                >
+                  <View style={styles.checkboxRow}>
+                    <View style={[styles.termsCheckbox, acceptedTermsAndPrivacy && styles.termsCheckboxChecked]}>
+                      {acceptedTermsAndPrivacy ? <MaterialIcons name="check" size={16} color={colors.white} /> : null}
+                    </View>
+                    <Text style={styles.checkboxLabel}>
+                      I accept the{' '}
+                      {welcomeBranding?.privacyPolicy?.trim() ? (
+                        <Text
+                          style={styles.linkText}
+                          onPress={() =>
+                            setLegalModalContent({
+                              title: 'Terms and conditions & Privacy policy',
+                              body: welcomeBranding!.privacyPolicy!.trim(),
+                            })
+                          }
+                        >
+                          Terms and conditions & Privacy policy
+                        </Text>
+                      ) : null}
+                      .
                     </Text>
-                  ) : null}
-                  .
-                </Text>
+                  </View>
+                </TouchableOpacity>
               </View>
+            )}
+
+            <TouchableOpacity
+              style={[styles.button, styles.buttonPrimary, styles.phoneAuthSubmitBtn, (loading || (hasLegalContent && !acceptedTermsAndPrivacy)) && styles.buttonDisabled]}
+              onPress={handleRequestOtp}
+              disabled={loading || (hasLegalContent && !acceptedTermsAndPrivacy)}
+            >
+              <Text style={styles.buttonText}>{loading ? 'Sending OTP…' : 'Send OTP'}</Text>
             </TouchableOpacity>
           </View>
-        )}
-        <TouchableOpacity
-          style={[styles.button, styles.buttonPrimary, (loading || (hasLegalContent && !acceptedTermsAndPrivacy)) && styles.buttonDisabled]}
-          onPress={handleRequestOtp}
-          disabled={loading || (hasLegalContent && !acceptedTermsAndPrivacy)}
-        >
-          <Text style={styles.buttonText}>{loading ? 'Sending OTP…' : 'Send OTP'}</Text>
-        </TouchableOpacity>
+
+          <View style={styles.phoneAuthCreditRow}>
+            <Image source={krackbotLogo} style={styles.creditLogo} resizeMode="contain" accessibilityLabel="Krackbot Studio logo" />
+            <Text style={styles.creditNoteOnDark}>Designed & Developed by Krackbot Studio</Text>
+          </View>
+        </View>
+
         <Modal visible={!!legalModalContent} animationType="slide" transparent>
           <View style={styles.modalOverlay}>
             <View style={styles.modalCard}>
@@ -1518,11 +1559,6 @@ export default function App() {
             </View>
           </View>
         </Modal>
-        </View>
-        <View style={styles.creditRowOnDark}>
-          <Image source={krackbotLogo} style={styles.creditLogo} resizeMode="contain" accessibilityLabel="Krackbot Studio logo" />
-          <Text style={styles.creditNoteOnDark}>Designed & Developed by Krackbot Studio</Text>
-        </View>
       </View>
     );
   } else if (step === 'otp') {
@@ -1566,7 +1602,7 @@ export default function App() {
         </View>
         <View style={styles.creditRowOnDark}>
           <Image source={krackbotLogo} style={styles.creditLogo} resizeMode="contain" accessibilityLabel="Krackbot Studio logo" />
-          <Text style={styles.creditNoteOnDark}>Designed & Developed by Krackbot Studio</Text>
+          <Text style={styles.creditNoteOnDark}>designed & developed by krackbot studio</Text>
         </View>
       </View>
     );
@@ -3494,7 +3530,7 @@ export default function App() {
               </View>
             </View>
           ) : (
-            <View style={[isDesktopWeb ? styles.authShellDesktop : undefined, isDesktopWeb && { width: desktopMobileFrameWidth }]}>{content}</View>
+            <View style={[{ flex: 1 }, isDesktopWeb ? styles.authShellDesktop : undefined, isDesktopWeb && { width: desktopMobileFrameWidth }]}>{content}</View>
           )}
         </KeyboardAvoidingView>
         <Modal visible={!!purchaseConfirm} animationType="fade" transparent>
@@ -4243,33 +4279,141 @@ const styles = StyleSheet.create({
     width: '100%',
     alignSelf: 'stretch',
     justifyContent: 'center',
-    paddingBottom: 48,
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 24,
     backgroundColor: AUTH_SCREEN_BACKGROUND,
   },
-  welcomeCard: {
+  phoneAuthRoot: {
+    flex: 1,
+    width: '100%',
+    alignSelf: 'stretch',
+    backgroundColor: AUTH_SCREEN_BACKGROUND,
+  },
+  phoneAuthBody: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 20,
+  },
+  phoneAuthCard: {
+    width: '100%',
+    maxWidth: Platform.OS === 'web' ? 560 : 420,
+    alignSelf: 'center',
+    backgroundColor: '#FFD0E2',
+    borderRadius: 26,
+    paddingHorizontal: 24,
+    paddingTop: 20,
+    paddingBottom: 14,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 12,
+    elevation: 4,
+    minHeight: Platform.OS === 'web' ? 560 : 0,
+  },
+  phoneAuthLogoWrap: {
+    width: '100%',
+    height: Platform.OS === 'web' ? 220 : 110,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 18,
+  },
+  phoneAuthLogo: {
+    width: Platform.OS === 'web' ? 220 : 230,
+    height: '100%',
+  },
+  phoneAuthLogoFallback: {
+    width: Platform.OS === 'web' ? 220 : 230,
+    height: '100%',
     borderRadius: 20,
-    padding: 28,
-    marginHorizontal: 12,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  phoneAuthLogoFallbackText: {
+    fontSize: 42,
+    fontWeight: '700',
+    color: colors.white,
+    letterSpacing: 1,
+  },
+  phoneAuthInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'stretch',
+    width: '100%',
+    minWidth: 0,
+    marginTop: 0,
+  },
+  phoneAuthCountryCodeInput: {
+    width: 62,
+    minWidth: 62,
+    maxWidth: 62,
+    marginRight: 6,
+    marginBottom: 0,
+    paddingHorizontal: 6,
+    textAlign: 'center',
+    flexShrink: 0,
+    height: 52,
+  },
+  phoneAuthMobileInput: {
+    flex: 1,
+    minWidth: 0,
+    marginBottom: 0,
+    height: 52,
+  },
+  phoneAuthTermsBlock: {
+    marginTop: 12,
+    marginBottom: 14,
+  },
+  phoneAuthSubmitBtn: {
+    marginTop: 0,
+  },
+  phoneAuthCreditRow: {
+    marginTop: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  welcomeCard: {
+    borderRadius: 26,
+    paddingHorizontal: 24,
+    paddingTop: 20,
+    paddingBottom: 14,
+    marginHorizontal: 0,
     backgroundColor: '#FFD0E2',
     shadowColor: '#000',
     shadowOpacity: 0.1,
     shadowOffset: { width: 0, height: 4 },
     shadowRadius: 12,
     elevation: 4,
-    alignSelf: 'stretch',
+    alignSelf: 'center',
+    width: '100%',
+    maxWidth: Platform.OS === 'web' ? 560 : 420,
+    minHeight: 0,
   },
   welcomeHeader: {
     alignItems: 'center',
-    marginBottom: 4,
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  welcomeLogoFrame: {
+    width: '100%',
+    height: Platform.OS === 'web' ? 220 : 110,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
   },
   welcomeLogo: {
-    width: 220,
-    height: 220,
+    width: Platform.OS === 'web' ? 220 : 230,
+    height: '100%',
     marginBottom: 0,
   },
   welcomeLogoPlaceholder: {
-    width: 220,
-    height: 220,
+    width: Platform.OS === 'web' ? 220 : 230,
+    height: '100%',
     borderRadius: 20,
     backgroundColor: colors.primary,
     alignItems: 'center',
@@ -4289,7 +4433,7 @@ const styles = StyleSheet.create({
   },
   termsPrivacyBlock: {
     marginTop: 12,
-    marginBottom: 8,
+    marginBottom: Platform.OS === 'web' ? 8 : 8,
   },
   checkboxRow: {
     flexDirection: 'row',
@@ -4625,20 +4769,25 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
     width: '100%',
     minWidth: 0,
-    marginTop: 4,
+    marginTop: 6,
+    marginBottom: 0,
   },
   countryCodeInput: {
     width: 62,
     minWidth: 62,
     maxWidth: 62,
     marginRight: 6,
+    marginBottom: 0,
     paddingHorizontal: 6,
     textAlign: 'center',
     flexShrink: 0,
+    height: 52,
   },
   mobileInput: {
     flex: 1,
     minWidth: 0,
+    marginBottom: 0,
+    height: 52,
   },
   datePickerButton: {
     justifyContent: 'center',
@@ -4752,7 +4901,8 @@ const styles = StyleSheet.create({
   buttonPrimary: {
     backgroundColor: colors.primary,
     borderRadius: 12,
-    paddingVertical: 14,
+    paddingVertical: 12,
+    marginTop: 2,
   },
   rowButton: {
     flex: 1,
@@ -5050,7 +5200,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   creditRowOnDark: {
-    marginTop: 12,
+    marginTop: 10,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -5058,7 +5208,7 @@ const styles = StyleSheet.create({
   },
   creditNoteOnDark: {
     marginTop: 0,
-    fontSize: 12,
+    fontSize: 11,
     color: '#F6EAF4',
     textAlign: 'left',
     flexShrink: 1,

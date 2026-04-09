@@ -24,7 +24,7 @@
         "PRISMA_SKIP_POSTINSTALL_GENERATE": "1",
         "NPM_CONFIG_LEGACY_PEER_DEPS": "true",
         "EAS_BUILD_NO_EXPO_GO_WARNING": "1",
-        "EXPO_PUBLIC_API_URL": "https://weyouapi.krackbot.com/api"
+        "EXPO_PUBLIC_API_URL": "https://api.weyouthelaundryman.com/api"
       },
       "android": {
         "buildType": "apk"
@@ -37,7 +37,7 @@
         "PRISMA_SKIP_POSTINSTALL_GENERATE": "1",
         "NPM_CONFIG_LEGACY_PEER_DEPS": "true",
         "EAS_BUILD_NO_EXPO_GO_WARNING": "1",
-        "EXPO_PUBLIC_API_URL": "https://weyouapi.krackbot.com/api"
+        "EXPO_PUBLIC_API_URL": "https://api.weyouthelaundryman.com/api"
       },
       "android": {
         "buildType": "app-bundle"

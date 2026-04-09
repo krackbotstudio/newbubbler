@@ -5,6 +5,7 @@ import { updateOrderStatus } from '../../application/orders/update-order-status.
 import { createOrderFeedback } from '../../application/feedback/create-order-feedback.use-case';
 import { checkFeedbackEligibility } from '../../application/feedback/check-feedback-eligibility.use-case';
 import { listInvoicesForOrder } from '../../application/invoices/list-invoices-for-order.use-case';
+import { sendExpoPush } from '../../infra/expo-push';
 import type {
   OrdersRepo,
   SubscriptionsRepo,
@@ -21,6 +22,7 @@ import type {
   LaundryItemsRepo,
   SegmentCategoryRepo,
   ServiceCategoryRepo,
+  CustomersRepo,
 } from '../../application/ports';
 import {
   ORDERS_REPO,
@@ -37,6 +39,7 @@ import {
   LAUNDRY_ITEMS_REPO,
   SEGMENT_CATEGORY_REPO,
   SERVICE_CATEGORY_REPO,
+  CUSTOMERS_REPO,
 } from '../../infra/infra.module';
 import type { AuthUser } from '../common/roles.guard';
 import { AppError } from '../../application/errors';
@@ -58,6 +61,7 @@ export class OrdersService {
     @Inject(LAUNDRY_ITEMS_REPO) private readonly laundryItemsRepo: LaundryItemsRepo,
     @Inject(SEGMENT_CATEGORY_REPO) private readonly segmentCategoryRepo: SegmentCategoryRepo,
     @Inject(SERVICE_CATEGORY_REPO) private readonly serviceCategoryRepo: ServiceCategoryRepo,
+    @Inject(CUSTOMERS_REPO) private readonly customersRepo: CustomersRepo,
   ) {}
 
   async listInvoicesForOrder(orderId: string, user: AuthUser) {
@@ -129,6 +133,12 @@ export class OrdersService {
         addressesRepo: this.addressesRepo,
       },
     );
+    sendExpoPush(this.customersRepo, user.id, {
+      title: 'Booking confirmed',
+      body: `Your order has been placed successfully.`,
+      data: { orderId: result.orderId },
+    }).catch(() => {});
+
     return { orderId: result.orderId, orderType };
   }
 
@@ -152,10 +162,31 @@ export class OrdersService {
     status: OrderStatus,
     options?: { cancellationReason?: string | null },
   ): Promise<{ orderId: string; status: OrderStatus }> {
-    return updateOrderStatus(
+    const order = await this.ordersRepo.getById(id);
+    const result = await updateOrderStatus(
       { orderId: id, toStatus: status, cancellationReason: options?.cancellationReason },
       { ordersRepo: this.ordersRepo },
     );
+
+    if (order?.userId) {
+      const statusMessages: Partial<Record<OrderStatus, { title: string; body: string }>> = {
+        [OrderStatus.PICKED_UP]: { title: 'Order picked up', body: 'Your laundry has been picked up.' },
+        [OrderStatus.IN_PROCESSING]: { title: 'In progress', body: 'Your laundry is being processed.' },
+        [OrderStatus.READY]: { title: 'Ready for delivery', body: 'Your laundry is ready and will be delivered soon.' },
+        [OrderStatus.OUT_FOR_DELIVERY]: { title: 'Out for delivery', body: 'Your laundry is on the way!' },
+        [OrderStatus.DELIVERED]: { title: 'Delivered', body: 'Your laundry has been delivered. Thank you!' },
+        [OrderStatus.CANCELLED]: { title: 'Order cancelled', body: 'Your order has been cancelled.' },
+      };
+      const msg = statusMessages[status];
+      if (msg) {
+        sendExpoPush(this.customersRepo, order.userId, {
+          ...msg,
+          data: { orderId: id },
+        }).catch(() => {});
+      }
+    }
+
+    return result;
   }
 
   async getFeedbackEligibility(orderId: string, user: AuthUser) {

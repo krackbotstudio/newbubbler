@@ -21,6 +21,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { ErrorDisplay } from '@/components/shared/ErrorDisplay';
 import { LockedBranchSelect } from '@/components/shared/LockedBranchSelect';
 import { formatMoney, isoToLocalDateKey } from '@/lib/format';
+import { toast } from 'sonner';
 import type { AdminOrderListRow, OrderRecord, OrderStatus, ServiceType } from '@/types';
 
 const DASHBOARD_STATUS_CHIPS: { status: OrderStatus | 'CONFIRMED'; label: string }[] = [
@@ -115,8 +116,8 @@ function isSubscriptionOrder(row: AdminOrderListRow): boolean {
 
 const DASHBOARD_REFRESH_MS = 5000;
 
-/** Short two-tone chime when a new order id appears after refresh. May be blocked until user interacts (browser autoplay). */
-function playNewOrderChime(): void {
+/** Gentle 10-second chime (nature-inspired wind-chime melody) for new order alerts. */
+function playNewOrderAlert(): void {
   if (typeof window === 'undefined') return;
   try {
     const AC =
@@ -124,23 +125,31 @@ function playNewOrderChime(): void {
       (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!AC) return;
     const ctx = new AC();
-    const beep = (startAt: number, freq: number) => {
+    void ctx.resume?.();
+    const master = ctx.createGain();
+    master.gain.value = 0.30;
+    master.connect(ctx.destination);
+    const chime = (startAt: number, freq: number, dur: number) => {
       const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
+      const env = ctx.createGain();
+      osc.connect(env);
+      env.connect(master);
       osc.type = 'sine';
       osc.frequency.value = freq;
-      gain.gain.setValueAtTime(0, startAt);
-      gain.gain.linearRampToValueAtTime(0.1, startAt + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.001, startAt + 0.16);
+      env.gain.setValueAtTime(0, startAt);
+      env.gain.linearRampToValueAtTime(0.8, startAt + 0.01);
+      env.gain.exponentialRampToValueAtTime(0.001, startAt + dur);
       osc.start(startAt);
-      osc.stop(startAt + 0.18);
+      osc.stop(startAt + dur);
     };
+    const notes = [523, 659, 784, 1047, 784, 659];
     const t = ctx.currentTime;
-    beep(t, 784);
-    beep(t + 0.12, 988);
-    void ctx.resume?.();
+    for (let cycle = 0; cycle < 5; cycle++) {
+      const base = t + cycle * 2.0;
+      for (let i = 0; i < notes.length; i++) {
+        chime(base + i * 0.22, notes[i], 0.6);
+      }
+    }
   } catch {
     /* autoplay or Web Audio unavailable */
   }
@@ -149,6 +158,7 @@ function playNewOrderChime(): void {
 export default function DashboardPage() {
   const user = useMemo(() => getStoredUser(), []);
   const role = user?.role ?? 'CUSTOMER';
+  const isAgent = role === 'AGENT';
   const branchScoped = isBranchScopedStaff(role);
   const branchLocked = isBranchFilterLocked(role, user?.branchId);
   const [branchId, setBranchId] = useState<string>(() =>
@@ -219,14 +229,42 @@ export default function DashboardPage() {
       prevOrderIdsRef.current = ids;
       return;
     }
-    let hasNew = false;
-    for (const id of ids) {
-      if (!prev.has(id)) {
-        hasNew = true;
-        break;
+    const newOrders: AdminOrderListRow[] = [];
+    for (const row of rows) {
+      if (!prev.has(row.id)) newOrders.push(row);
+    }
+    if (newOrders.length > 0 && prev.size > 0) {
+      playNewOrderAlert();
+      for (const order of newOrders) {
+        const name = order.customerName || 'Unknown customer';
+        const pickup = order.pickupDate
+          ? new Date(order.pickupDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+          : '—';
+        const time = order.timeWindow || '—';
+        toast(`New order from ${name}`, {
+          description: `Pickup: ${pickup} · ${time}`,
+          duration: Infinity,
+          position: 'bottom-right',
+          action: {
+            label: '→ View',
+            onClick: () => setPreviewOrderId(order.id),
+          },
+          actionButtonStyle: {
+            backgroundColor: '#c2185b',
+            color: '#fff',
+            fontWeight: 600,
+            borderRadius: '6px',
+            padding: '6px 14px',
+          },
+          style: {
+            backgroundColor: '#fce4ec',
+            borderColor: '#f48fb1',
+            color: '#880e4f',
+          },
+          descriptionClassName: 'text-pink-800/70',
+        });
       }
     }
-    if (hasNew && prev.size > 0) playNewOrderChime();
     prevOrderIdsRef.current = ids;
   }, [ordersData?.data]);
 
@@ -307,7 +345,7 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* KPIs: Branch Head / Agent — branch today metrics only (no org-wide KPIs). */}
+      {!isAgent && (
       <div
         className={`grid grid-cols-2 gap-4 sm:grid-cols-3 ${branchScoped ? 'lg:grid-cols-3' : 'lg:grid-cols-5'}`}
       >
@@ -380,6 +418,7 @@ export default function DashboardPage() {
           </>
         ) : null}
       </div>
+      )}
 
       {/* Status filter chips */}
       <div className="flex flex-wrap gap-2">

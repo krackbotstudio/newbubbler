@@ -219,13 +219,13 @@ export function AddItemsToInvoiceDialog({
               <button
                 key={item.id}
                 type="button"
-                className="flex flex-col items-center justify-center rounded-lg border bg-card p-4 hover:bg-muted/50 transition-colors min-h-[100px]"
+                className="flex flex-col items-center justify-start rounded-lg border bg-card p-3 hover:bg-muted/50 transition-colors min-h-[110px]"
                 onClick={() => openConfig(item.id)}
               >
-                <span className="flex items-center justify-center w-14 h-14 rounded-lg border bg-muted/50 mb-2 shrink-0">
+                <span className="flex items-center justify-center w-14 h-14 rounded-lg border bg-muted/50 mb-1.5 shrink-0">
                   <CatalogItemIcon icon={item.icon} size={40} cacheBuster={item.updatedAt} />
                 </span>
-                <span className="font-medium text-sm text-center line-clamp-2">{item.name}</span>
+                <span className="font-semibold text-xs text-center leading-tight line-clamp-2 w-full">{item.name}</span>
               </button>
             ))}
             {activeItems.length === 0 && (
