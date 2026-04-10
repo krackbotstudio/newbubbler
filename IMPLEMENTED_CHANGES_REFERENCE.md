@@ -81,9 +81,28 @@ Project: Weyouprod monorepo
 ## Customer mobile — version bump & EAS config
 
 - **Files:** `apps/customer-mobile/app.json`, `apps/customer-mobile/eas.json`
-- Current store-facing version: **1.0.5** (`android.versionCode: 6`) after adaptive-icon fix; earlier **1.0.4** / `versionCode: 5` documented in history.
+- Current store-facing version: **1.0.6** (`android.versionCode: 7`) after app-name and service-icon update; earlier **1.0.5** / `versionCode: 6` documented in history.
 - `EXPO_PUBLIC_API_URL` set to `https://api.weyouthelaundryman.com/api` in both `preview` and `production` EAS build profiles.
 - Updated app icons (adaptive-icon, favicon, icon, splash-icon).
+
+## Customer mobile — app display name
+
+- **File:** `apps/customer-mobile/app.json`
+- Updated app display name from **`Weyou`** to **`WeYou`** (`expo.name`) so installed app label shows as **WeYou** on device launchers.
+- Note: app-name changes are native metadata and require a fresh APK/AAB install (OTA update alone does not rename launcher label).
+
+## Customer mobile + Customer PWA — service tile icon refresh
+
+- **Files:** `apps/customer-mobile/App.tsx`, `apps/customer-mobile/assets/service-icons/*`
+- Replaced emoji-based service icons in **Select services** with provided PNG assets:
+  - `wash-and-fold.png`
+  - `wash-and-iron.png`
+  - `dry-cleaning.png`
+  - `shoe-cleaning.png`
+  - `steam-iron.png`
+  - `home-linen.png`
+- Implemented `SERVICE_ICON_SOURCE` mapping by `ServiceTypeId` and rendered tiles via `<Image>` (`serviceIconImage`) instead of text emoji.
+- Applies to both **native** and **Customer PWA**, because `apps/customer-pwa/index.js` imports `../customer-mobile/App`.
 
 ## Customer mobile — Android adaptive launcher icon (safe zone)
 

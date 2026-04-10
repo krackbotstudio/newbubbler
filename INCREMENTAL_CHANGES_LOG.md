@@ -33,6 +33,8 @@ Use this file to track setup and code changes as you do them. Update the **Statu
 | 27 | Admin web | **Dashboard new-order alerts** — sound + persistent toast | ✅ Done | Web Audio 10s chime; `sonner` toast per new order (customer name, pickup date/time, `duration: Infinity`, magenta "→ View" button, light pink bg). Global `<Toaster>` close button enabled. |
 | 28 | Admin web | **AGENT role** — sidebar & dashboard restrictions | ✅ Done | Removed Walk-in/Orders/Customers from AGENT sidebar; `navHide` + `isNavHidden()` in `permissions.ts`; KPI cards hidden for AGENT; order detail pages still accessible via direct URL. |
 | 29 | Customer mobile | **Android adaptive icon** — keyline inset + v1.0.5 | ✅ Done | `update-icon-from-branding.js` + `sharp`: 1024px white canvas, logo fits 66/108 safe zone; `app.json` v1.0.5 / `versionCode: 6`. |
+| 30 | Customer mobile | **App name + version bump** | ✅ Done | `app.json`: app name `Weyou` → `WeYou`; version **1.0.6**, `android.versionCode: 7`; fresh APK generated for installer label update. |
+| 31 | Customer mobile + PWA | **Service tile icon refresh (6 PNGs)** | ✅ Done | `App.tsx` now uses `<Image>` + `SERVICE_ICON_SOURCE`; added `assets/service-icons/{wash-and-fold,wash-and-iron,dry-cleaning,shoe-cleaning,steam-iron,home-linen}.png`; applies to both native + PWA (shared app). |
 
 **Legend:** ⬜ Pending · 🔄 In progress · ✅ Done · ⏭️ Skipped
 
@@ -106,6 +108,10 @@ Use this file to track setup and code changes as you do them. Update the **Statu
 
 - **2026-04-10** — **Android adaptive launcher icon:** `apps/customer-mobile/scripts/update-icon-from-branding.js` — after branding download, builds `adaptive-icon.png` as 1024×1024 white canvas with logo scaled to Android **66/108** keyline (`sharp` devDependency); fallback to raw logo if sharp fails. Regenerated committed asset. **`app.json`:** version **1.0.5**, **`versionCode: 6`** for new Play build (OTA does not update launcher icons).
 
+- **2026-04-10** — **Customer mobile app name + APK version:** `apps/customer-mobile/app.json` updated app name to **WeYou** and bumped to **v1.0.6** (`versionCode: 7`). New APK generated so launcher label and version are reflected on installed Android builds.
+
+- **2026-04-10** — **Service icons updated (native + PWA):** Replaced Select Services emoji icons with provided PNGs: `wash-and-fold.png`, `wash-and-iron.png`, `dry-cleaning.png`, `shoe-cleaning.png`, `steam-iron.png`, `home-linen.png`. Added under `apps/customer-mobile/assets/service-icons/` and mapped in `apps/customer-mobile/App.tsx`. Customer PWA picks this automatically via `apps/customer-pwa/index.js` importing `../customer-mobile/App`.
+
 ---
 
 ## Ideas / follow-ups (optional)
@@ -115,4 +121,4 @@ Use this file to track setup and code changes as you do them. Update the **Statu
 
 ---
 
-*Last updated: 2026-04-10 — Android adaptive icon keyline inset (`sharp`), customer-mobile v1.0.5 / versionCode 6; see row 29 and 2026-04-10 bullet.*
+*Last updated: 2026-04-10 — app name set to WeYou, customer-mobile v1.0.6 / versionCode 7, and service tile PNG icons updated for native + PWA; see rows 30-31 and latest 2026-04-10 bullets.*
