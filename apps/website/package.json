@@ -1,0 +1,22 @@
+{
+  "name": "website",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3015",
+    "build": "next build",
+    "start": "next start -p 3015",
+    "prisma:generate": "echo \"No Prisma needed for website\"",
+    "build:api": "next build"
+  },
+  "dependencies": {
+    "next": "^16.1.6",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "25.5.0",
+    "@types/react": "18.3.28",
+    "typescript": "5.9.3"
+  }
+}
