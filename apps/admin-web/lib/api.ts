@@ -148,7 +148,11 @@ export function getFriendlyErrorMessage(error: unknown): string {
       const p = error.config.url?.startsWith('/') ? error.config.url : `/${error.config.url ?? ''}`;
       tried = b ? ` Request: ${b}${p === '//' ? '' : p}` : '';
     }
-    return `The endpoint was not found (404).${tried} Confirm the API project is deployed and serves this path (try GET /api/health on the API host). If you use Vercel, set API_BASE_URL or NEXT_PUBLIC_API_URL on the admin project to your API base ending in /api, then redeploy.`;
+    const proxyHint =
+      axios.isAxiosError(error) && error.config?.baseURL === '/api-proxy'
+        ? ' For Vercel admin + API on another host, set API_BASE_URL on the admin project to your API root ending in /api (same value as NEXT_PUBLIC_API_URL), then redeploy so the server proxy can reach the API.'
+        : '';
+    return `The endpoint was not found (404).${tried} Confirm the API project is deployed and serves this path (try GET /api/health on the API host). If you use Vercel, set API_BASE_URL or NEXT_PUBLIC_API_URL on the admin project to your API base ending in /api, then redeploy.${proxyHint}`;
   }
   if (api.status === 401) {
     return 'Invalid email or password. Check that the user exists with role Admin/Billing/OPS and the password is correct.';

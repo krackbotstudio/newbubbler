@@ -19,7 +19,7 @@ From repo root:
 ```bash
 npm install
 cp apps/admin-web/.env.local.example apps/admin-web/.env.local
-# Edit .env.local: set NEXT_PUBLIC_API_URL=http://localhost:3000/api
+# Edit .env.local: set NEXT_PUBLIC_API_URL=http://localhost:3003/api (see .env.local.example for Vercel)
 ```
 
 ## Run

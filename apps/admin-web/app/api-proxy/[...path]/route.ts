@@ -1,12 +1,11 @@
 import { type NextRequest, NextResponse } from 'next/server';
 
-// Server-side: API_BASE_URL first (set on Vercel if needed), then public URL baked at build.
+// Server-side: API_BASE_URL first (set on Vercel if needed), then NEXT_PUBLIC_API_URL.
+// On Vercel, set both to the same value (e.g. https://bubbler-api.vercel.app/api) so this route can reach the API.
 const getApiBase = (): string => {
-  const base =
-    process.env.API_BASE_URL ||
-    process.env.NEXT_PUBLIC_API_URL ||
-    'http://localhost:3003/api';
-  return base.replace(/\/$/, '');
+  const raw =
+    (process.env.API_BASE_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3003/api').trim();
+  return raw.replace(/\/$/, '');
 };
 
 /** Ensure upstream URL always has /api prefix (backend expects /api/admin/...). */
