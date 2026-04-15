@@ -170,6 +170,19 @@ To add another admin domain, edit `apps/api/src/bootstrap/create-app.ts` (`allow
 
 ---
 
+## Customer PWA (`apps/customer-pwa`)
+
+Use a **separate Vercel project** from the API. Recommended:
+
+- **Root Directory:** `apps/customer-pwa` (or repo root; see below).
+- **Framework preset:** Expo (or Other if you override the build).
+- **Build Command:** `npm run build`  
+  If you copied the API template (`npm run prisma:generate && npm run build:api`), that still works: this package defines `build:api` to run the same Expo web export as `npm run build`.
+- **Install Command:** from **repo root**, `npm ci` (so workspaces resolve). If Root Directory is `apps/customer-pwa`, set Install Command to `cd ../.. && npm ci` unless Vercel already installs from the monorepo root.
+- **Output directory:** Expo web export output (see `apps/customer-pwa/scripts/postexport-pwa.js` / Expo docs for the folder name, often `dist`).
+
+---
+
 ## Summary
 
 | Setup   | Root Directory   | Result |
