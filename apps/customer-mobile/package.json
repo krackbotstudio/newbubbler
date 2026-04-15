@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
+    "prisma:generate": "node -e \"process.exit(0)\"",
     "start": "expo start",
     "start:clear": "expo start -c",
     "android": "expo run:android",

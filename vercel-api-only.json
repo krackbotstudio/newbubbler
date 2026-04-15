@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "version": 2,
-  "buildCommand": "npm run prisma:generate && npm run build:api",
+  "buildCommand": "node scripts/spawn-with-api-env.cjs node scripts/run-prisma-cli.cjs generate --schema=apps/api/src/infra/prisma/schema.prisma && npm run build:api",
   "installCommand": "npm ci",
   "builds": [
     { "src": "api/health.js", "use": "@vercel/node" },

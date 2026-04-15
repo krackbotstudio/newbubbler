@@ -4,6 +4,7 @@
   "private": true,
   "main": "index.js",
   "scripts": {
+    "prisma:generate": "node -e \"process.exit(0)\"",
     "dev": "expo start --web --clear",
     "start": "expo start --web",
     "sync-icons": "node ../customer-mobile/scripts/update-icon-from-branding.js",
