@@ -182,6 +182,25 @@ a {
   opacity: 1;
 }
 
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.topbar-blue .topbar-login {
+  color: #e8f4ff;
+  border-color: rgba(180, 213, 255, 0.55);
+  background: rgba(6, 20, 55, 0.35);
+}
+
+.topbar-blue .topbar-login:hover {
+  background: rgba(12, 40, 95, 0.55);
+}
+
 .btn {
   border: none;
   cursor: pointer;

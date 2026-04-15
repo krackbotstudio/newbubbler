@@ -3,6 +3,9 @@
 import { useEffect, useState } from 'react';
 import Image from 'next/image';
 
+/** Production admin app (Vercel). */
+const ADMIN_WEB_LOGIN_URL = 'https://bubbler-admin-web.vercel.app/login';
+
 const featureCards = [
   {
     title: 'Order & Pickup Flow',
@@ -169,9 +172,19 @@ export default function WebsitePage() {
             <a href="#how-it-works">How It Works</a>
             <a href="#why-bubbler">Why Bubbler</a>
           </nav>
-          <a className="btn btn-demo" href="#demo">
-            Book a Demo
-          </a>
+          <div className="topbar-actions">
+            <a
+              className="btn btn-ghost topbar-login"
+              href={ADMIN_WEB_LOGIN_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Login
+            </a>
+            <a className="btn btn-demo" href="#demo">
+              Book a Demo
+            </a>
+          </div>
         </header>
       </div>
 
