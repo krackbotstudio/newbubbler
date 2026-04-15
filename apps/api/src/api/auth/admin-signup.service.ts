@@ -10,9 +10,8 @@ import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Role } from '@shared/enums';
-import { Prisma } from '@prisma/client';
+import { Prisma, type User } from '@prisma/client';
 import * as jwt from 'jsonwebtoken';
-import type { Express } from 'express';
 import { prisma } from '../../infra/prisma/prisma-client';
 import { hashAdminPassword } from './password.util';
 import type { SupabaseJwtPayload } from './supabase-jwt.guard';
@@ -166,7 +165,7 @@ export class AdminSignupService {
       );
     }
 
-    let result: { user: { id: string; email: string | null; branchId: string | null }; branch: { id: string } };
+    let result: { user: User; branch: { id: string } };
     try {
       result = await prisma.$transaction(async (tx) => {
         const branch = await tx.branch.create({

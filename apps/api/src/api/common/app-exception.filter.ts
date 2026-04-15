@@ -135,7 +135,9 @@ export class AppExceptionFilter implements ExceptionFilter {
       case 'FEEDBACK_INVALID':
       case 'DESCRIPTION_TOO_LONG':
       case 'SUBSCRIPTION_PLAN_ALREADY_REDEEMED':
+      case 'QUOTA':
         return HttpStatus.BAD_REQUEST;
+      case 'FORBIDDEN':
       case 'USER_DISABLED':
         return HttpStatus.FORBIDDEN;
       case 'CANNOT_DISABLE_SELF':
