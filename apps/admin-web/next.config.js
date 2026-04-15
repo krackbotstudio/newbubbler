@@ -1,6 +1,9 @@
 /** @type {import('next').NextConfig} */
 const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3003/api';
-const useProxy = apiUrl.includes('onrender.com');
+/** Same-origin proxy: Render↔Render, or admin on *.vercel.app calling API on another *.vercel.app (avoids browser CORS). */
+const useProxy =
+  apiUrl.includes('onrender.com') ||
+  (apiUrl.startsWith('http') && apiUrl.includes('vercel.app'));
 
 const nextConfig = {
   reactStrictMode: true,

@@ -4,6 +4,11 @@ import { getToken } from './auth';
 export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3003/api';
 
+function apiHostnameFromPublicUrl(): string | null {
+  const m = API_BASE_URL.match(/^https?:\/\/([^/]+)/);
+  return m?.[1] ?? null;
+}
+
 /** Same-origin or proxy when admin and API share a domain (Vercel one-project, or Render proxy). */
 export function getBaseURL(): string {
   if (typeof window === 'undefined') return API_BASE_URL;
@@ -15,6 +20,17 @@ export function getBaseURL(): string {
   const onRender = window.location.hostname.endsWith('.onrender.com');
   const apiOnRender = API_BASE_URL.includes('onrender.com');
   if (onRender && apiOnRender) return '/api-proxy';
+  // Admin on *.vercel.app + API on another *.vercel.app → same-origin /api-proxy (next.config rewrites)
+  const onVercel = window.location.hostname.endsWith('.vercel.app');
+  const apiHost = apiHostnameFromPublicUrl();
+  if (
+    onVercel &&
+    apiHost &&
+    apiHost.endsWith('.vercel.app') &&
+    apiHost !== window.location.hostname
+  ) {
+    return '/api-proxy';
+  }
   return API_BASE_URL;
 }
 
@@ -27,11 +43,13 @@ export function getApiOrigin(): string {
 }
 
 const baseURL = API_BASE_URL;
-const isRender = baseURL.includes('onrender.com');
+const longTimeoutHost =
+  baseURL.includes('onrender.com') ||
+  (baseURL.startsWith('http') && baseURL.includes('vercel.app'));
 
 export const api = axios.create({
   baseURL,
-  timeout: isRender ? 60000 : 15000, // Render cold start can take 30–60s
+  timeout: longTimeoutHost ? 60000 : 15000, // Remote cold start (Render / Vercel serverless)
   headers: {
     'Content-Type': 'application/json',
   },
