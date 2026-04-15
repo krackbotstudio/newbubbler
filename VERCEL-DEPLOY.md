@@ -96,9 +96,10 @@ Vercel returns **404 NOT_FOUND** when the request path does not match any resour
    - If you still get 404 → the project is not using the API config or the repo root.
 
 3. **API project settings (must match)**  
-   - **Root Directory:** leave **empty** (repo root). If set to `apps/admin-web` or anything else, the `api/` folder is not in the project and every request 404s.  
+   - **Root Directory:** leave **empty** (repo root). **`vercel-api-only.json` expects repo root:** the `api/` folder (serverless entry) and `npm run build:api` live at the monorepo root. If Root Directory is `apps/api`, `apps/admin-web`, or `apps/customer-pwa`, installs/builds break or the URL shows **404: NOT_FOUND** for every path.  
    - **Configuration File:** set to **`vercel-api-only.json`** (Settings → General).  
-   - **Framework Preset:** **Other** (so Vercel uses your config, not Next.js auto-detect).
+   - **Framework Preset:** **Other** (so Vercel uses your config, not Next.js auto-detect).  
+   - **Build Command:** leave default from `vercel-api-only.json` unless you know you need an override. A wrong override (e.g. `npm run prisma:generate && npm run build:api` resolved from a workspace that has no `build:api`) causes a **failed deployment**; failed deploys also surface as this same Vercel 404 page.
 
 4. **Redeploy after any change**  
    Change config or env → Save → **Deployments → … → Redeploy** (or push a new commit).
