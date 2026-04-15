@@ -6,13 +6,36 @@
  *
  * Prisma CLI does not read DOTENV_CONFIG_PATH — it needs DATABASE_URL in the
  * actual env, so we parse apps/api/.env here (same source as dev:api).
+ * Parsing is inlined so `npm install` postinstall does not depend on `dotenv`.
  *
  * Usage: node scripts/spawn-with-api-env.cjs npx prisma migrate deploy --schema=apps/api/src/infra/prisma/schema.prisma
  */
 const { spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
-const dotenv = require('dotenv');
+
+/** Minimal .env parser (no dotenv package) so postinstall works when node_modules is not fully linked yet. */
+function parseEnvFile(contents) {
+  const out = {};
+  for (const line of contents.split(/\r?\n/)) {
+    const t = line.trim();
+    if (!t || t.startsWith('#')) continue;
+    const body = t.startsWith('export ') ? t.slice(7).trimStart() : t;
+    const eq = body.indexOf('=');
+    if (eq === -1) continue;
+    const key = body.slice(0, eq).trim();
+    if (!key) continue;
+    let val = body.slice(eq + 1).trim();
+    if (
+      (val.startsWith('"') && val.endsWith('"')) ||
+      (val.startsWith("'") && val.endsWith("'"))
+    ) {
+      val = val.slice(1, -1);
+    }
+    out[key] = val;
+  }
+  return out;
+}
 
 const root = path.resolve(__dirname, '..');
 const cmd = process.argv.slice(2);
@@ -25,7 +48,7 @@ if (cmd.length === 0) {
 const apiEnvPath = path.join(root, 'apps', 'api', '.env');
 let fromApiEnv = {};
 try {
-  fromApiEnv = dotenv.parse(fs.readFileSync(apiEnvPath, 'utf8'));
+  fromApiEnv = parseEnvFile(fs.readFileSync(apiEnvPath, 'utf8'));
 } catch (e) {
   if (e.code !== 'ENOENT') {
     console.warn(`[spawn-with-api-env] Could not read ${apiEnvPath}: ${e.message}`);
