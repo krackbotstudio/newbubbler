@@ -142,7 +142,13 @@ export function getFriendlyErrorMessage(error: unknown): string {
     return `Cannot connect to the API at ${baseURL}. For local API run npm run dev:api from repo root. Set NEXT_PUBLIC_API_URL in apps/admin-web/.env.local (e.g. http://localhost:3003/api).${cacheHint}`;
   }
   if (api.status === 404) {
-    return 'The endpoint was not found (404). Redeploy the API so routes like /api/admin/analytics/revenue are available.';
+    let tried = '';
+    if (axios.isAxiosError(error) && error.config) {
+      const b = (error.config.baseURL ?? '').replace(/\/$/, '');
+      const p = error.config.url?.startsWith('/') ? error.config.url : `/${error.config.url ?? ''}`;
+      tried = b ? ` Request: ${b}${p === '//' ? '' : p}` : '';
+    }
+    return `The endpoint was not found (404).${tried} Confirm the API project is deployed and serves this path (try GET /api/health on the API host). If you use Vercel, set API_BASE_URL or NEXT_PUBLIC_API_URL on the admin project to your API base ending in /api, then redeploy.`;
   }
   if (api.status === 401) {
     return 'Invalid email or password. Check that the user exists with role Admin/Billing/OPS and the password is correct.';

@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from 'next/server';
 
-// Server-side: prefer API_BASE_URL (Render backend). Fallback for local/dev.
+// Server-side: API_BASE_URL first (set on Vercel if needed), then public URL baked at build.
 const getApiBase = (): string => {
   const base =
     process.env.API_BASE_URL ||
