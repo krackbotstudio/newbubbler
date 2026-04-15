@@ -8,7 +8,7 @@
  * actual env, so we parse apps/api/.env here (same source as dev:api).
  * Parsing is inlined so `npm install` postinstall does not depend on `dotenv`.
  *
- * Usage: node scripts/spawn-with-api-env.cjs npx prisma migrate deploy --schema=apps/api/src/infra/prisma/schema.prisma
+ * Usage: node scripts/spawn-with-api-env.cjs node ./node_modules/prisma/build/index.js migrate deploy --schema=apps/api/src/infra/prisma/schema.prisma
  */
 const { spawnSync } = require('child_process');
 const fs = require('fs');
