@@ -54,14 +54,12 @@ import {
   checkOrderFeedbackEligibility,
   submitOrderFeedback,
   fetchInvoicePdfBase64,
-  getAvailablePlans,
   getPublicBranding,
   brandingLogoFullUrl,
   brandingWelcomeBackgroundFullUrl,
   getPublicCarousel,
   carouselImageFullUrl,
   listPriceList,
-  purchaseSubscription,
   registerPushToken,
   type BackendAddress,
   type CustomerPriceListItem,
@@ -69,7 +67,7 @@ import {
   type OrderSummary,
   type OrderDetail,
   type OrderInvoice,
-  type AvailablePlanItem,
+  type BranchForPincodeOption,
   type ActiveSubscriptionItem,
   type PastSubscriptionItem,
   getSubscriptionDetail,
@@ -80,7 +78,7 @@ import { SERVICE_TYPES, type ServiceTypeId } from './src/types';
 import { parseLatLngFromMapsUrl, reverseGeocodeAddress } from './src/googlePlaces';
 
 type Step = 'phone' | 'otp' | 'profile' | 'done';
-type HomeScreen = 'home' | 'subscriptions' | 'subscriptionDetail' | 'addresses' | 'addAddress' | 'areaRequestSent' | 'bookPickup' | 'myOrders' | 'orderDetail' | 'profile';
+type HomeScreen = 'home' | 'branches' | 'subscriptionDetail' | 'addresses' | 'addAddress' | 'areaRequestSent' | 'bookPickup' | 'myOrders' | 'orderDetail' | 'profile';
 type OrderFilter = 'all' | 'walk_in' | 'individual' | 'subscription';
 type BookingStep = 'services' | 'address' | 'branch' | 'date' | 'time' | 'confirm';
 
@@ -211,19 +209,10 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
 
   const [meData, setMeData] = useState<{ activeSubscriptions: ActiveSubscriptionItem[]; pastSubscriptions: PastSubscriptionItem[] } | null>(null);
-  const [availablePlans, setAvailablePlans] = useState<AvailablePlanItem[]>([]);
-  const [plansLoading, setPlansLoading] = useState(false);
-  const [purchaseLoading, setPurchaseLoading] = useState(false);
-  const [purchaseError, setPurchaseError] = useState<string | null>(null);
-  const [purchaseSuccess, setPurchaseSuccess] = useState<string | null>(null);
-  const [subscriptionPurchaseAddressId, setSubscriptionPurchaseAddressId] = useState<string | null>(null);
-  /** Selected address on Plans page (for branch message and filtering available plans). */
-  const [plansAddressId, setPlansAddressId] = useState<string | null>(null);
-  /** Branch serving the selected address's pincode (from serviceability). */
-  const [plansBranchInfo, setPlansBranchInfo] = useState<{ branchId: string; branchName: string } | null>(null);
-  const [plansBranchLoading, setPlansBranchLoading] = useState(false);
-  /** Tab on Plans page: Active plan(s) vs Completed. */
-  const [subscriptionPlansTab, setSubscriptionPlansTab] = useState<'active' | 'completed'>('active');
+  /** Selected saved address on Branches tab (pincode used to list branches). */
+  const [branchesAddressId, setBranchesAddressId] = useState<string | null>(null);
+  const [branchesForPincode, setBranchesForPincode] = useState<BranchForPincodeOption[]>([]);
+  const [branchesListLoading, setBranchesListLoading] = useState(false);
   const [selectedSubscriptionId, setSelectedSubscriptionId] = useState<string | null>(null);
   const [subscriptionDetail, setSubscriptionDetail] = useState<SubscriptionDetailResponse | null>(null);
   const [subscriptionDetailLoading, setSubscriptionDetailLoading] = useState(false);
@@ -241,12 +230,6 @@ export default function App() {
   const [bookingSubscriptionValidTill, setBookingSubscriptionValidTill] = useState<string | null>(null);
   /** Ref so address step knows we came from subscription even if state was reset (e.g. hot reload). */
   const bookingFromSubscriptionRef = useRef(false);
-  /** ScrollView ref for Plans page (used to scroll to address section on "Change address"). */
-  const plansScrollViewRef = useRef<ScrollView>(null);
-  /** When true, highlight the address chips section on Plans page (after "Change address" in purchase confirm). */
-  const [highlightPlansAddressSection, setHighlightPlansAddressSection] = useState(false);
-  /** Custom modal for "Confirm subscription" (replaces native Alert so design matches app). */
-  const [purchaseConfirm, setPurchaseConfirm] = useState<{ planId: string; planName: string; addressId: string; addressLabel: string } | null>(null);
   const [returnToBookPickupAddress, setReturnToBookPickupAddress] = useState(false);
   const [editingAddressId, setEditingAddressId] = useState<string | null>(null);
 
@@ -307,15 +290,6 @@ export default function App() {
     });
     return ids;
   }, [orders]);
-
-  /** Available plans for the selected address's branch: common plans (no branchIds) + plans for that branch. */
-  const plansForSelectedBranch = useMemo(() => {
-    const branchId = plansBranchInfo?.branchId;
-    return availablePlans.filter((plan) => {
-      const ids = plan.branchIds ?? [];
-      return ids.length === 0 || (branchId != null && ids.includes(branchId));
-    });
-  }, [availablePlans, plansBranchInfo?.branchId]);
 
   /** Notifications derived from orders and subscriptions (booking confirmed, picked up, invoice, payment, delivered, subscription activated). */
   const notificationsList = useMemo(() => {
@@ -647,7 +621,7 @@ export default function App() {
   }, [step, homeScreen, token, fetchAddresses]);
 
   useEffect(() => {
-    if (step === 'done' && homeScreen === 'subscriptions' && token) {
+    if (step === 'done' && homeScreen === 'branches' && token) {
       fetchAddresses();
     }
   }, [step, homeScreen, token, fetchAddresses]);
@@ -775,40 +749,29 @@ export default function App() {
 
   const fetchSubscriptionsData = useCallback(async () => {
     if (!token) return;
-    setPlansLoading(true);
-    setPurchaseError(null);
-    setPurchaseSuccess(null);
     try {
-      const [meRes, plans] = await Promise.all([getMe(token), getAvailablePlans(token)]);
+      const meRes = await getMe(token);
       setMeData({
         activeSubscriptions: meRes.activeSubscriptions ?? [],
         pastSubscriptions: meRes.pastSubscriptions ?? [],
       });
-      setAvailablePlans(plans);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load subscriptions');
-    } finally {
-      setPlansLoading(false);
+      setError(err instanceof Error ? err.message : 'Failed to load account');
     }
   }, [token]);
 
   useEffect(() => {
-    if (step === 'done' && (homeScreen === 'subscriptions' || homeScreen === 'bookPickup') && token) {
+    if (step === 'done' && (homeScreen === 'branches' || homeScreen === 'bookPickup') && token) {
       fetchSubscriptionsData();
     }
   }, [step, homeScreen, token, fetchSubscriptionsData]);
 
-  // Default plans address to first saved address when opening Plans with none selected
+  // Default Branches tab address to first saved address when none selected
   useEffect(() => {
-    if (homeScreen === 'subscriptions' && savedAddresses.length > 0 && plansAddressId == null) {
-      setPlansAddressId(savedAddresses[0].id);
+    if (homeScreen === 'branches' && savedAddresses.length > 0 && branchesAddressId == null) {
+      setBranchesAddressId(savedAddresses[0].id);
     }
-  }, [homeScreen, savedAddresses.length, plansAddressId]);
-
-  // Use chip-selected address as purchase address (no separate address selector in Available plans)
-  useEffect(() => {
-    if (plansAddressId) setSubscriptionPurchaseAddressId(plansAddressId);
-  }, [plansAddressId]);
+  }, [homeScreen, savedAddresses.length, branchesAddressId]);
 
   // Fetch subscription detail when user opens subscription detail screen
   useEffect(() => {
@@ -829,45 +792,32 @@ export default function App() {
     return () => { cancelled = true; };
   }, [homeScreen, selectedSubscriptionId, token]);
 
-  // When user taps "Change address" in purchase confirm: scroll Plans to top and highlight address section
+  // Load branches for selected address pincode on Branches tab
   useEffect(() => {
-    if (!highlightPlansAddressSection) return;
-    plansScrollViewRef.current?.scrollTo({ y: 0, animated: true });
-    const t = setTimeout(() => setHighlightPlansAddressSection(false), 5000);
-    return () => clearTimeout(t);
-  }, [highlightPlansAddressSection]);
-
-  // When selected address changes on Plans page, resolve branch for that pincode
-  useEffect(() => {
-    if (plansAddressId == null) {
-      setPlansBranchInfo(null);
+    if (homeScreen !== 'branches' || branchesAddressId == null) {
+      setBranchesForPincode([]);
       return;
     }
-    const addr = savedAddresses.find((a) => a.id === plansAddressId);
-    if (!addr?.pincode) {
-      setPlansBranchInfo(null);
+    const addr = savedAddresses.find((a) => a.id === branchesAddressId);
+    const pin = addr?.pincode?.trim();
+    if (!pin) {
+      setBranchesForPincode([]);
       return;
     }
     let cancelled = false;
-    setPlansBranchLoading(true);
-    checkServiceability(addr.pincode.trim())
+    setBranchesListLoading(true);
+    getBranchesForPincode(pin)
       .then((res) => {
-        if (cancelled) return;
-        setPlansBranchLoading(false);
-        if (res.serviceable && res.branchId && res.branchName) {
-          setPlansBranchInfo({ branchId: res.branchId, branchName: res.branchName });
-        } else {
-          setPlansBranchInfo(null);
-        }
+        if (!cancelled) setBranchesForPincode(res.branches ?? []);
       })
       .catch(() => {
-        if (!cancelled) {
-          setPlansBranchLoading(false);
-          setPlansBranchInfo(null);
-        }
+        if (!cancelled) setBranchesForPincode([]);
+      })
+      .finally(() => {
+        if (!cancelled) setBranchesListLoading(false);
       });
     return () => { cancelled = true; };
-  }, [plansAddressId, savedAddresses]);
+  }, [homeScreen, branchesAddressId, savedAddresses]);
 
   // Startup: verify API connection and log result (no silent failures)
   useEffect(() => {
@@ -2253,7 +2203,7 @@ export default function App() {
                   setError(null);
                   if (bookingSubscriptionId) {
                     bookingFromSubscriptionRef.current = false;
-                    setHomeScreen('subscriptions');
+                    setHomeScreen('branches');
                     setBookingSubscriptionId(null);
                     setBookingSubscriptionValidFrom(null);
                     setBookingSubscriptionValidTill(null);
@@ -2605,32 +2555,32 @@ export default function App() {
       } else {
         content = null;
       }
-    } else if (homeScreen === 'subscriptions') {
-      const selectedPlansAddress = plansAddressId ? savedAddresses.find((a) => a.id === plansAddressId) : null;
+    } else if (homeScreen === 'branches') {
+      const selectedBranchesAddress = branchesAddressId ? savedAddresses.find((a) => a.id === branchesAddressId) : null;
       content = (
-        <ScrollView ref={plansScrollViewRef} style={styles.scroll} contentContainerStyle={[styles.scrollContent, styles.scrollContentNoTopPadding]}>
+        <ScrollView style={styles.scroll} contentContainerStyle={[styles.scrollContent, styles.scrollContentNoTopPadding]}>
           <View style={styles.plansPageWrapper}>
-            <Text style={styles.title}>Plans</Text>
-            <Text style={[styles.subtitle, styles.plansSubtitleOneLine]} numberOfLines={1}>Select an address to see plans for your area.</Text>
-            {purchaseSuccess && <Text style={styles.orderAmountPaid}>{purchaseSuccess}</Text>}
-            {(purchaseError || error) && <Text style={styles.error}>{purchaseError || error}</Text>}
+            <Text style={styles.title}>Branches</Text>
+            <Text style={[styles.subtitle, styles.plansSubtitleOneLine]} numberOfLines={2}>
+              Select an address to see branches that serve your pincode.
+            </Text>
+            {error ? <Text style={styles.error}>{error}</Text> : null}
 
-            {/* Address chips: labels only, select one (no "Address" title to save space) */}
             {savedAddresses.length > 0 ? (
-              <View style={[styles.plansAddressSection, highlightPlansAddressSection && styles.plansAddressSectionHighlight]}>
+              <View style={styles.plansAddressSection}>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ flexDirection: 'row', gap: 8, paddingVertical: 4 }}>
                   {savedAddresses.map((a) => (
                     <TouchableOpacity
                       key={a.id}
-                      onPress={() => { setPlansAddressId(a.id); setHighlightPlansAddressSection(false); }}
+                      onPress={() => { setBranchesAddressId(a.id); }}
                       style={[
                         styles.orderFilterChip,
-                        plansAddressId === a.id && styles.orderFilterChipActive,
+                        branchesAddressId === a.id && styles.orderFilterChipActive,
                         { marginRight: 0 },
                       ]}
                       activeOpacity={0.8}
                     >
-                      <Text style={[styles.orderFilterChipText, plansAddressId === a.id && styles.orderFilterChipTextActive]} numberOfLines={1}>
+                      <Text style={[styles.orderFilterChipText, branchesAddressId === a.id && styles.orderFilterChipTextActive]} numberOfLines={1}>
                         {a.label || 'Address'}
                       </Text>
                     </TouchableOpacity>
@@ -2640,7 +2590,7 @@ export default function App() {
             ) : (
               <View style={{ marginBottom: 12 }}>
                 <Text style={[styles.muted, { marginBottom: 8 }]}>
-                  You don't have any addresses yet. Add one to see plans for your area.
+                  You don't have any addresses yet. Add one to see which branches serve your area.
                 </Text>
                 <TouchableOpacity
                   style={[styles.buttonSecondary, { marginRight: 0 }]}
@@ -2655,235 +2605,37 @@ export default function App() {
               </View>
             )}
 
-            {/* Available plans header row: title + pincode-branch on the right (one line) */}
-            <View style={styles.availablePlansHeaderRow}>
-              <Text style={[styles.subtitle, styles.availablePlansTitle]} numberOfLines={1}>
-                Available plans
-              </Text>
-              {selectedPlansAddress && (
-                plansBranchLoading ? (
-                  <Text style={[styles.muted, { flexShrink: 0 }]}>Checking…</Text>
-                ) : plansBranchInfo ? (
-                  <Text style={styles.availablePlansBranchTag} numberOfLines={1}>
-                    {selectedPlansAddress.pincode} - {plansBranchInfo.branchName}
-                  </Text>
-                ) : (
-                  <Text style={styles.availablePlansBranchTag} numberOfLines={1}>
-                    {selectedPlansAddress.pincode} - Not serviceable
-                  </Text>
-                )
-              )}
-            </View>
+            {selectedBranchesAddress?.pincode ? (
+              <Text style={[styles.muted, { marginBottom: 12 }]}>Pincode: {selectedBranchesAddress.pincode}</Text>
+            ) : null}
+
             {savedAddresses.length === 0 ? (
-              <Text style={[styles.muted, { marginBottom: 16 }]}>Add an address in Profile → My addresses to see and purchase plans.</Text>
-            ) : plansLoading ? (
-              <Text style={[styles.muted, { marginBottom: 16 }]}>Loading…</Text>
-            ) : plansForSelectedBranch.length === 0 ? (
-              <Text style={[styles.muted, { marginBottom: 16 }]}>No plans available for this area.</Text>
+              <Text style={[styles.muted, { marginBottom: 16 }]}>Add an address in Profile → My addresses to see branches for your area.</Text>
+            ) : branchesListLoading ? (
+              <Text style={[styles.muted, { marginBottom: 16 }]}>Loading branches…</Text>
+            ) : branchesForPincode.length === 0 ? (
+              <Text style={[styles.muted, { marginBottom: 16 }]}>No branches listed for this pincode.</Text>
             ) : (
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                style={styles.availablePlansScroll}
-                contentContainerStyle={styles.availablePlansScrollContent}
-              >
-                {plansForSelectedBranch.map((plan) => {
-                  const isPurchased = !plan.isRedeemable && plan.reason === 'ALREADY_REDEEMED';
-                  const isFree = plan.pricePaise === 0;
-                  const variant = (plan.variant || '').toUpperCase();
-                  const planGradientColors: [string, string] = isFree
-                    ? ['#15803d', '#166534']
-                    : variant === 'COUPLE'
-                      ? ['#1d4ed8', '#1e40af']
-                      : variant === 'FAMILY'
-                        ? ['#c2410c', '#9a3412']
-                        : ['#ca8a04', '#a16207'];
-                  const tileContent = (
-                    <>
-                      <Text
-                        style={isPurchased ? styles.addressLabel : styles.availablePlanTileTitleLight}
-                        numberOfLines={1}
-                      >
-                        {plan.name}
-                      </Text>
-                      {plan.description?.trim() ? (
-                        <Text
-                          style={isPurchased ? styles.addressLine : styles.availablePlanTileDescLight}
-                          numberOfLines={3}
-                        >
-                          {plan.description}
-                        </Text>
-                      ) : null}
-                      <Text style={isPurchased ? styles.muted : styles.availablePlanTileMetaLight}>
-                        ₹{(plan.pricePaise / 100).toFixed(2)} · {plan.validityDays} days · {plan.maxPickups} pickups
-                        {plan.kgLimit != null ? ` · ${plan.kgLimit} kg` : ''}
-                      </Text>
-                      {isPurchased ? (
-                        <Text style={[styles.muted, { marginTop: 6 }]}>Purchase will be available when this plan is inactive.</Text>
-                      ) : null}
-                      <TouchableOpacity
-                        style={[
-                          styles.buttonSecondary,
-                          { marginTop: 8 },
-                          (purchaseLoading || !plan.isRedeemable) && styles.buttonDisabled,
-                        ]}
-                        onPress={() => {
-                          if (!token || !plan.isRedeemable) return;
-                          const addressId = plansAddressId || subscriptionPurchaseAddressId;
-                          if (!addressId) {
-                            setPurchaseError('Please select an address at the top.');
-                            return;
-                          }
-                          const addressLabel = selectedPlansAddress?.label || 'selected address';
-                          setPurchaseConfirm({ planId: plan.id, planName: plan.name, addressId, addressLabel });
-                        }}
-                        disabled={purchaseLoading || !plan.isRedeemable}
-                      >
-                        <Text style={styles.buttonSecondaryText}>
-                          {purchaseLoading
-                            ? 'Processing…'
-                            : plan.isRedeemable
-                              ? isFree
-                                ? 'Free'
-                                : 'Purchase'
-                              : plan.reason === 'ALREADY_REDEEMED'
-                                ? 'Active'
-                                : 'Purchase'}
-                        </Text>
-                      </TouchableOpacity>
-                    </>
-                  );
-                  return (
-                    <View key={plan.id} style={styles.availablePlanTile}>
-                      {isPurchased ? (
-                        <View style={[styles.availablePlanTileInner, styles.availablePlanTilePurchased]}>
-                          {tileContent}
-                        </View>
-                      ) : (
-                        <LinearGradient
-                          colors={planGradientColors}
-                          start={{ x: 0, y: 0 }}
-                          end={{ x: 1, y: 1 }}
-                          style={styles.availablePlanTileInner}
-                        >
-                          {tileContent}
-                        </LinearGradient>
-                      )}
-                    </View>
-                  );
-                })}
-              </ScrollView>
-            )}
-
-            {/* Secondary toggle: Active plan | Completed */}
-            <View style={styles.plansTabToggle}>
-              <TouchableOpacity
-                style={[styles.plansTabToggleSegment, subscriptionPlansTab === 'active' && styles.plansTabToggleSegmentActive]}
-                onPress={() => setSubscriptionPlansTab('active')}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.plansTabToggleText, subscriptionPlansTab === 'active' && styles.plansTabToggleTextActive]}>Active plan</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.plansTabToggleSegment, subscriptionPlansTab === 'completed' && styles.plansTabToggleSegmentActive]}
-                onPress={() => setSubscriptionPlansTab('completed')}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.plansTabToggleText, subscriptionPlansTab === 'completed' && styles.plansTabToggleTextActive]}>Completed</Text>
-              </TouchableOpacity>
-            </View>
-
-            {subscriptionPlansTab === 'active' ? (
-              (meData?.activeSubscriptions?.length ?? 0) === 0 ? (
-                <Text style={styles.muted}>No active plan. Purchase one above.</Text>
-              ) : (
-                (meData?.activeSubscriptions ?? []).map((sub) => {
-                  const canBook = sub.remainingPickups > 0 && !sub.hasActiveOrder && new Date(sub.validTill) >= new Date();
-                  const desc = sub.planDescription?.trim() || `Valid till ${sub.validTill.slice(0, 10)} · Pickups: ${sub.remainingPickups}/${sub.maxPickups}${sub.kgLimit != null ? ` · ${sub.kgLimit} kg` : ''}${sub.itemsLimit != null ? ` · ${sub.itemsLimit} items` : ''}`;
-                  const subAddressId = (sub as ActiveSubscriptionItem).addressId ?? null;
-                  const addressLabel = (sub as ActiveSubscriptionItem & { addressLabel?: string | null }).addressLabel ?? (subAddressId ? (savedAddresses.find((a) => a.id === subAddressId)?.label || 'Address') : null);
-                  return (
-                    <TouchableOpacity
-                      key={sub.id}
-                      style={[styles.addressCard, { marginBottom: 10 }]}
-                      onPress={() => { setSelectedSubscriptionId(sub.id); setHomeScreen('subscriptionDetail'); }}
-                      activeOpacity={0.9}
-                    >
-                      <View>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 2 }}>
-                          <Text style={styles.addressLabel}>{sub.planName}</Text>
-                          {addressLabel ? (
-                            <View style={[styles.defaultAddressTag, { backgroundColor: colors.primaryLight }]}>
-                              <Text style={styles.defaultAddressTagText}>{addressLabel}</Text>
-                            </View>
-                          ) : null}
-                        </View>
-                        <Text style={styles.addressLine}>{desc}</Text>
-                        <Text style={styles.muted}>Left: {sub.remainingPickups} pickups{sub.remainingKg != null ? ` · ${sub.remainingKg} kg` : ''}{sub.remainingItems != null ? ` · ${sub.remainingItems} items` : ''} · Valid till {sub.validTill.slice(0, 10)}</Text>
-                        {canBook ? (
-                          <TouchableOpacity
-                            style={[styles.button, { marginTop: 8 }]}
-                            onPress={(e) => { e?.stopPropagation?.();
-                            setError(null);
-                            bookingFromSubscriptionRef.current = true;
-                            setBookingSubscriptionId(sub.id);
-                            setBookingSubscriptionValidFrom(sub.validityStartDate?.slice(0, 10) ?? null);
-                            setBookingSubscriptionValidTill(sub.validTill?.slice(0, 10) ?? null);
-                            setBookingStep('address');
-                            setSelectedServiceIds([]);
-                            const subAddressId = (sub as ActiveSubscriptionItem).addressId ?? null;
-                            if (subAddressId) {
-                              const addr = savedAddresses.find((a) => a.id === subAddressId);
-                              setBookingAddressId(subAddressId);
-                              setBookingAddress(addr ?? null);
-                            } else {
-                              setBookingAddressId(null);
-                              setBookingAddress(null);
-                            }
-                            setBookingDate('');
-                            setBookingTimeSlot('');
-                            setSlotAvailability(null);
-                            setHomeScreen('bookPickup');
-                            }}
-                          >
-                            <Text style={styles.buttonText}>Book pickup</Text>
-                          </TouchableOpacity>
-                        ) : (
-                          <Text style={styles.muted}>{sub.hasActiveOrder ? 'You have an ongoing order with this plan.' : sub.remainingPickups === 0 ? 'No pickups left.' : 'Plan expired.'}</Text>
-                        )}
-                      </View>
-                    </TouchableOpacity>
-                  );
-                })
-              )
-            ) : (meData?.pastSubscriptions?.length ?? 0) === 0 ? (
-              <Text style={styles.muted}>No completed plans yet.</Text>
-            ) : (
-              (meData?.pastSubscriptions ?? []).map((sub) => {
-                const desc = `From ${sub.validityStartDate.slice(0, 10)} to ${sub.validTill.slice(0, 10)} · Used pickups: ${sub.usedPickups}/${sub.maxPickups}${sub.kgLimit != null ? ` · ${sub.usedKg}/${sub.kgLimit} kg` : ''}${
-                  sub.itemsLimit != null ? ` · ${sub.usedItemsCount}/${sub.itemsLimit} items` : ''
-                }`;
-                const pastSub = sub as PastSubscriptionItem & { addressId?: string | null; addressLabel?: string | null };
-                const pastAddressId = pastSub.addressId ?? null;
-                const pastAddressLabel = pastSub.addressLabel ?? (pastAddressId ? (savedAddresses.find((a) => a.id === pastAddressId)?.label || 'Address') : null);
+              branchesForPincode.map((b) => {
+                const rawLogoUri = brandingLogoFullUrl(b.logoUrl?.trim() ? b.logoUrl : null);
+                const logoUri =
+                  rawLogoUri && b.updatedAt
+                    ? `${rawLogoUri}${rawLogoUri.includes('?') ? '&' : '?'}v=${encodeURIComponent(b.updatedAt)}`
+                    : rawLogoUri;
+                const initial = (b.name?.trim()?.[0] ?? '?').toUpperCase();
                 return (
-                  <TouchableOpacity
-                    key={sub.id}
-                    style={[styles.addressCard, { marginBottom: 10 }]}
-                    onPress={() => { setSelectedSubscriptionId(sub.id); setHomeScreen('subscriptionDetail'); }}
-                    activeOpacity={0.9}
-                  >
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 2 }}>
-                      <Text style={styles.addressLabel}>{sub.planName}</Text>
-                      {pastAddressLabel ? (
-                        <View style={[styles.defaultAddressTag, { backgroundColor: '#9ca3af' }]}>
-                          <Text style={styles.defaultAddressTagText}>{pastAddressLabel}</Text>
-                        </View>
-                      ) : null}
-                    </View>
-                    <Text style={styles.addressLine}>{desc}</Text>
-                    <Text style={styles.muted}>Ended on {sub.inactivatedAt.slice(0, 10)}</Text>
-                  </TouchableOpacity>
+                  <View key={b.id} style={[styles.addressCard, styles.branchPickerRow, { marginBottom: 10 }]}>
+                    {logoUri ? (
+                      <Image source={{ uri: logoUri }} style={styles.branchPickerLogo} resizeMode="contain" />
+                    ) : (
+                      <View style={styles.branchPickerLogoInitial}>
+                        <Text style={styles.branchPickerLogoInitialText}>{initial}</Text>
+                      </View>
+                    )}
+                    <Text style={[styles.addressLabel, styles.branchPickerName]} numberOfLines={2}>
+                      {b.name}
+                    </Text>
+                  </View>
                 );
               })
             )}
@@ -2894,8 +2646,8 @@ export default function App() {
       content = (
         <ScrollView style={styles.scroll} contentContainerStyle={[styles.scrollContent, styles.scrollContentNoTopPadding]}>
           <View style={styles.card}>
-            <TouchableOpacity style={styles.textButton} onPress={() => { setHomeScreen('subscriptions'); setSelectedSubscriptionId(null); setSubscriptionDetail(null); }}>
-              <Text style={styles.textButtonText}>← Back to Plans</Text>
+            <TouchableOpacity style={styles.textButton} onPress={() => { setHomeScreen('branches'); setSelectedSubscriptionId(null); setSubscriptionDetail(null); }}>
+              <Text style={styles.textButtonText}>← Back to Branches</Text>
             </TouchableOpacity>
             {subscriptionDetailLoading ? (
               <Text style={styles.muted}>Loading…</Text>
@@ -3488,7 +3240,7 @@ export default function App() {
             </View>
             <View style={[styles.card, styles.homeWelcomeCard]}>
               <Text style={styles.title}>Welcome{ name ? `, ${name}` : ''}</Text>
-              <Text style={styles.subtitle}>Use the menu below to book a pickup, view subscriptions, orders, or manage your profile.</Text>
+              <Text style={styles.subtitle}>Use the menu below to book a pickup, see branches for your area, view orders, or manage your profile.</Text>
               {error && <Text style={styles.error}>{error}</Text>}
             </View>
             {token && (() => {
@@ -3644,11 +3396,11 @@ export default function App() {
                       <Text style={[styles.navItemText, homeScreen === 'home' && styles.navItemTextActive]} numberOfLines={1}>Home</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
-                      style={[styles.navItem, (homeScreen === 'subscriptions' || homeScreen === 'subscriptionDetail') && styles.navItemActive]}
-                      onPress={() => { setError(null); setHomeScreen('subscriptions'); setSelectedSubscriptionId(null); setSubscriptionDetail(null); }}
+                      style={[styles.navItem, (homeScreen === 'branches' || homeScreen === 'subscriptionDetail') && styles.navItemActive]}
+                      onPress={() => { setError(null); setHomeScreen('branches'); setSelectedSubscriptionId(null); setSubscriptionDetail(null); }}
                     >
-                      <MaterialIcons name="card-membership" size={24} color={homeScreen === 'subscriptions' ? colors.white : colors.navBarIcon} />
-                      <Text style={[styles.navItemText, homeScreen === 'subscriptions' && styles.navItemTextActive]} numberOfLines={1}>Plans</Text>
+                      <MaterialIcons name="storefront" size={24} color={(homeScreen === 'branches' || homeScreen === 'subscriptionDetail') ? colors.white : colors.navBarIcon} />
+                      <Text style={[styles.navItemText, (homeScreen === 'branches' || homeScreen === 'subscriptionDetail') && styles.navItemTextActive]} numberOfLines={1}>Branches</Text>
                     </TouchableOpacity>
                   </View>
                   <View style={styles.navCenterSlot} pointerEvents="box-none">
@@ -3698,53 +3450,6 @@ export default function App() {
             <View style={[{ flex: 1 }, isDesktopWeb ? styles.authShellDesktop : undefined, isDesktopWeb && { width: desktopMobileFrameWidth }]}>{content}</View>
           )}
         </KeyboardAvoidingView>
-        <Modal visible={!!purchaseConfirm} animationType="fade" transparent>
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalCard}>
-              <Text style={styles.modalTitle}>Confirm subscription</Text>
-              <Text style={styles.modalBody}>
-                {purchaseConfirm
-                  ? `This subscription will be assigned to "${purchaseConfirm.addressLabel}". It cannot be changed later. Do you want to continue?`
-                  : ''}
-              </Text>
-              <View style={styles.modalButtonRow}>
-                <TouchableOpacity
-                  style={[styles.button, styles.buttonSecondary, styles.modalButton]}
-                  onPress={() => {
-                    setHighlightPlansAddressSection(true);
-                    setPurchaseConfirm(null);
-                  }}
-                >
-                  <Text style={styles.buttonSecondaryText}>Change address</Text>
-                </TouchableOpacity>
-                <View style={styles.modalButtonSpacer} />
-                <TouchableOpacity
-                  style={[styles.button, styles.buttonPrimary, styles.modalButton]}
-                  disabled={purchaseLoading}
-                  onPress={async () => {
-                    if (!token || !purchaseConfirm) return;
-                    setPurchaseError(null);
-                    setPurchaseSuccess(null);
-                    setPurchaseLoading(true);
-                    try {
-                      await purchaseSubscription(token, purchaseConfirm.planId, purchaseConfirm.addressId);
-                      setPurchaseSuccess(`Purchased "${purchaseConfirm.planName}" successfully.`);
-                      fetchSubscriptionsData();
-                      setPurchaseConfirm(null);
-                    } catch (err) {
-                      setPurchaseError(err instanceof Error ? err.message : 'Payment failed');
-                    } finally {
-                      setPurchaseLoading(false);
-                    }
-                  }}
-                >
-                  <Text style={styles.buttonText}>{purchaseLoading ? 'Processing…' : 'Confirm'}</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        </Modal>
-
         <Modal visible={feedbackModalVisible} animationType="fade" transparent>
           <View style={styles.modalOverlay}>
             <View style={styles.modalCard}>
