@@ -4,7 +4,7 @@
  * - subtotal, tax(=0), total correct. amount = quantity * unitPrice for non-discount (validate or compute).
  */
 import { InvoiceItemType } from '@shared/enums';
-import { calculateInvoiceTotals } from '../../invoices/calculate-invoice-totals';
+import { calculateInvoiceTotals } from '../invoices/calculate-invoice-totals';
 
 describe('T5: Invoice totals calculation', () => {
   it('computes subtotal and total correctly with SERVICE + FEE + DISCOUNT', () => {

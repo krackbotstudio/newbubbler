@@ -273,6 +273,9 @@ export function createFakeSubscriptionsRepo(
     async countActive(): Promise<number> {
       return records.filter((r) => r.active).length;
     },
+    async countActiveForBranch(branchId: string): Promise<number> {
+      return records.filter((r) => r.active && r.branchId === branchId).length;
+    },
     async create(data: CreateSubscriptionInput): Promise<SubscriptionRecord> {
       const rec: SubscriptionRecord = {
         id: uuid(),
@@ -535,6 +538,9 @@ export function createFakeHolidaysRepo(opts?: { isHoliday?: boolean }): Holidays
   return {
     async isHoliday(_date: Date, _branchId?: string | null): Promise<boolean> {
       return isHoliday;
+    },
+    async getById(_id: string): Promise<{ id: string; date: Date; label: string | null; branchId: string | null } | null> {
+      return null;
     },
     async list(_from: Date, _to: Date, _branchId?: string | null): Promise<{ id: string; date: Date; label: string | null; branchId: string | null }[]> {
       return [];

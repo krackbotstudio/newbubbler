@@ -4,9 +4,8 @@
  * - ACK invoice allowed from BOOKING_CONFIRMED onward (before or after pickup)
  */
 import { OrderStatus } from '@shared/enums';
-import { AppError } from '../../errors';
-import { assertCanIssueFinalInvoice } from '../../invoices/issue-final-invoice.use-case';
-import { assertCanIssueAcknowledgementInvoice } from '../../invoices/issue-ack-invoice.use-case';
+import { assertCanIssueFinalInvoice } from '../invoices/issue-final-invoice.use-case';
+import { assertCanIssueAcknowledgementInvoice } from '../invoices/issue-ack-invoice.use-case';
 import { createFakeOrdersRepo } from './fakes/in-memory-repos';
 
 describe('Invoice workflow', () => {

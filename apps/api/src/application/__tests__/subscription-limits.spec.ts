@@ -12,6 +12,7 @@ describe('Subscription limits', () => {
     userId: 'u1',
     planId: 'plan-1',
     branchId: null,
+    addressId: null,
     validityStartDate: new Date(),
     remainingPickups: 2,
     usedKg: 0,

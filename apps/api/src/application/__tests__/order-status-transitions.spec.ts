@@ -4,8 +4,8 @@
  * - Invalid: BOOKING_CONFIRMED -> DELIVERED throws INVALID_STATUS_TRANSITION.
  */
 import { OrderStatus } from '@shared/enums';
-import { AppError } from '../../errors';
-import { updateOrderStatus } from '../../orders/update-order-status.use-case';
+import { AppError } from '../errors';
+import { updateOrderStatus } from '../orders/update-order-status.use-case';
 import { createFakeOrdersRepo } from './fakes/in-memory-repos';
 
 describe('T4: Order status transition validation', () => {

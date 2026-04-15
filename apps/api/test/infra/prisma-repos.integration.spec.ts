@@ -3,11 +3,10 @@
  * Run with: npm test -- prisma-repos.integration
  * Skip if no DB: set SKIP_DB_TESTS=1 or omit DATABASE_URL.
  */
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, SubscriptionVariant } from '@prisma/client';
 import { OrderStatus, ServiceType } from '@shared/enums';
 import { AppError, isAppError } from '../../src/application/errors';
 import { PrismaOrdersRepo } from '../../src/infra/prisma/repos/prisma-orders-repo';
-import { PrismaSubscriptionsRepo } from '../../src/infra/prisma/repos/prisma-subscriptions-repo';
 import { PrismaSubscriptionUsageRepo } from '../../src/infra/prisma/repos/prisma-subscription-usage-repo';
 
 const databaseUrl = process.env.DATABASE_URL_TEST ?? process.env.DATABASE_URL;
@@ -79,7 +78,9 @@ describeIfDb('Prisma repos (integration)', () => {
       data: {
         name: 'Plan A',
         validityDays: 30,
-        totalPickups: 2,
+        maxPickups: 2,
+        variant: SubscriptionVariant.SINGLE,
+        pricePaise: 100,
         minKgPerPickup: 3,
         applicableServiceTypes: [ServiceType.WASH_FOLD],
         active: true,

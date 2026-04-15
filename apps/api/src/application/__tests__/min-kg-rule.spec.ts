@@ -3,7 +3,7 @@
  * Orders with any weight (including < 3 kg) can be confirmed.
  */
 import { ServiceType } from '@shared/enums';
-import { createOrder } from '../../orders/create-order.use-case';
+import { createOrder } from '../orders/create-order.use-case';
 import {
   createFakeOrdersRepo,
   createFakeSubscriptionsRepo,

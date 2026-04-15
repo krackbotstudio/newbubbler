@@ -6,8 +6,8 @@
  * - SLOT_FULL when slot capacity reached.
  */
 import { ServiceType } from '@shared/enums';
-import { AppError, isAppError } from '../../errors';
-import { createOrder } from '../../orders/create-order.use-case';
+import { AppError, isAppError } from '../errors';
+import { createOrder } from '../orders/create-order.use-case';
 import {
   createFakeOrdersRepo,
   createFakeSubscriptionsRepo,
