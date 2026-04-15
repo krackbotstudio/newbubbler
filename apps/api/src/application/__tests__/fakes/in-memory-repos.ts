@@ -1,5 +1,11 @@
 import { OrderStatus, OrderType, ServiceType } from '@shared/enums';
 import type {
+  AddressRecord,
+  AddressListRecord,
+  DefaultAddressRecord,
+  AddressesRepo,
+  CreateAddressInput,
+  UpdateAddressPatch,
   CreateOrderInput,
   OrderRecord,
   OrdersRepo,
@@ -566,6 +572,125 @@ export function createFakeOperatingHoursRepo(opts?: {
     async set(branchId: string | null, startTime: string, endTime: string): Promise<OperatingHoursRecord> {
       return { id: 'default', branchId, startTime, endTime };
     },
+  };
+}
+
+/** In-memory addresses for create-order and related tests (default: addr-1 for user-1, pincode 500081). */
+export function createFakeAddressesRepo(
+  initial?: Array<{
+    id: string;
+    userId: string;
+    label?: string;
+    addressLine?: string;
+    pincode: string;
+    isDefault?: boolean;
+  }>,
+): AddressesRepo {
+  const seed =
+    initial ??
+    [
+      { id: 'addr-1', userId: 'user-1', label: 'Home', addressLine: '1 Test St', pincode: '500081', isDefault: true },
+      { id: 'a1', userId: 'user-1', label: 'Other', addressLine: '2 Test St', pincode: '500081', isDefault: false },
+    ];
+  const rows: AddressListRecord[] = seed.map((a) => ({
+    id: a.id,
+    userId: a.userId,
+    label: a.label ?? 'Home',
+    addressLine: a.addressLine ?? '1 Test St',
+    houseNo: null,
+    streetArea: null,
+    city: null,
+    pincode: a.pincode,
+    isDefault: a.isDefault ?? true,
+    googleMapUrl: null,
+  }));
+  return {
+    async getById(id: string): Promise<AddressRecord | null> {
+      const a = rows.find((x) => x.id === id);
+      return a ? { id: a.id, userId: a.userId, pincode: a.pincode } : null;
+    },
+    async getByIdForUser(id: string, userId: string): Promise<AddressListRecord | null> {
+      return rows.find((x) => x.id === id && x.userId === userId) ?? null;
+    },
+    async listByUserId(userId: string): Promise<AddressListRecord[]> {
+      return rows.filter((x) => x.userId === userId);
+    },
+    async findDefaultByUserId(userId: string): Promise<DefaultAddressRecord | null> {
+      const a = rows.find((x) => x.userId === userId && x.isDefault);
+      return a ? { id: a.id, pincode: a.pincode } : null;
+    },
+    async create(userId: string, input: CreateAddressInput): Promise<AddressRecord> {
+      const rec: AddressRecord = { id: uuid(), userId, pincode: input.pincode };
+      rows.push({
+        id: rec.id,
+        userId,
+        label: input.label,
+        addressLine: input.addressLine,
+        houseNo: input.houseNo ?? null,
+        streetArea: input.streetArea ?? null,
+        city: input.city ?? null,
+        pincode: input.pincode,
+        isDefault: input.isDefault ?? false,
+        googleMapUrl: input.googleMapUrl ?? null,
+      });
+      return rec;
+    },
+    async update(id: string, userId: string, patch: UpdateAddressPatch): Promise<AddressListRecord> {
+      const i = rows.findIndex((x) => x.id === id && x.userId === userId);
+      if (i < 0) throw new Error('Address not found');
+      const prev = rows[i];
+      rows[i] = {
+        ...prev,
+        ...(patch.label !== undefined ? { label: patch.label } : {}),
+        ...(patch.addressLine !== undefined ? { addressLine: patch.addressLine } : {}),
+        ...(patch.houseNo !== undefined ? { houseNo: patch.houseNo } : {}),
+        ...(patch.streetArea !== undefined ? { streetArea: patch.streetArea } : {}),
+        ...(patch.city !== undefined ? { city: patch.city } : {}),
+        ...(patch.pincode !== undefined ? { pincode: patch.pincode } : {}),
+        ...(patch.isDefault !== undefined ? { isDefault: patch.isDefault } : {}),
+        ...(patch.googleMapUrl !== undefined ? { googleMapUrl: patch.googleMapUrl } : {}),
+      };
+      return rows[i];
+    },
+    async delete(_id: string, _userId: string): Promise<void> {},
+  };
+}
+
+/** Full OrderRecord defaults for tests (keeps specs small when OrderRecord grows). */
+export function minimalTestOrderRecord(
+  o: Partial<OrderRecord> & Pick<OrderRecord, 'id' | 'userId' | 'status'>,
+): OrderRecord {
+  const now = new Date();
+  const st = o.serviceType ?? ServiceType.WASH_FOLD;
+  return {
+    id: o.id,
+    userId: o.userId,
+    orderType: o.orderType ?? OrderType.INDIVIDUAL,
+    orderSource: o.orderSource ?? null,
+    serviceType: st,
+    serviceTypes: o.serviceTypes ?? [st],
+    addressId: o.addressId ?? 'addr-1',
+    addressLabel: o.addressLabel ?? null,
+    addressLine: o.addressLine ?? null,
+    pincode: o.pincode ?? '500081',
+    pickupDate: o.pickupDate ?? now,
+    timeWindow: o.timeWindow ?? '10:00-12:00',
+    estimatedWeightKg: o.estimatedWeightKg ?? 4,
+    actualWeightKg: o.actualWeightKg ?? null,
+    status: o.status,
+    subscriptionId: o.subscriptionId ?? null,
+    branchId: o.branchId ?? 'branch-1',
+    paymentStatus: o.paymentStatus ?? 'PENDING',
+    createdAt: o.createdAt ?? now,
+    updatedAt: o.updatedAt ?? now,
+    confirmedAt: o.confirmedAt ?? null,
+    pickedUpAt: o.pickedUpAt ?? null,
+    inProgressAt: o.inProgressAt ?? null,
+    readyAt: o.readyAt ?? null,
+    outForDeliveryAt: o.outForDeliveryAt ?? null,
+    deliveredAt: o.deliveredAt ?? null,
+    cancellationReason: o.cancellationReason,
+    cancelledAt: o.cancelledAt,
   };
 }
 

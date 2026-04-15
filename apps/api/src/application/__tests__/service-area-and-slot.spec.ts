@@ -9,6 +9,7 @@ import { ServiceType } from '@shared/enums';
 import { AppError, isAppError } from '../errors';
 import { createOrder } from '../orders/create-order.use-case';
 import {
+  createFakeAddressesRepo,
   createFakeOrdersRepo,
   createFakeSubscriptionsRepo,
   createFakeSubscriptionUsageRepo,
@@ -18,10 +19,12 @@ import {
   createFakeOperatingHoursRepo,
 } from './fakes/in-memory-repos';
 
+const futurePickup = new Date(Date.now() + 86400000 * 3);
+
 const baseParams = {
   userId: 'user-1',
   addressId: 'addr-1',
-  pickupDate: new Date(),
+  pickupDate: futurePickup,
   timeWindow: '10:00-12:00',
   estimatedWeightKg: 3,
   subscriptionId: null as string | null,
@@ -36,7 +39,7 @@ describe('Service area and slot capacity validations', () => {
     const slotConfigRepo = createFakeSlotConfigRepo({
       slot: {
         id: 'slot-1',
-        date: new Date(),
+        date: futurePickup,
         timeWindow: '10:00-12:00',
         pincode: '500000',
         capacity: 10,
@@ -61,6 +64,7 @@ describe('Service area and slot capacity validations', () => {
           slotConfigRepo,
           holidaysRepo: createFakeHolidaysRepo(),
           operatingHoursRepo: createFakeOperatingHoursRepo(),
+          addressesRepo: createFakeAddressesRepo(),
         },
       );
     } catch (e) {
@@ -78,7 +82,7 @@ describe('Service area and slot capacity validations', () => {
     const slotConfigRepo = createFakeSlotConfigRepo({
       slot: {
         id: 'slot-1',
-        date: new Date(),
+        date: futurePickup,
         timeWindow: '10:00-12:00',
         pincode: '500081',
         capacity: 1,
@@ -103,6 +107,7 @@ describe('Service area and slot capacity validations', () => {
           slotConfigRepo,
           holidaysRepo: createFakeHolidaysRepo(),
           operatingHoursRepo: createFakeOperatingHoursRepo(),
+          addressesRepo: createFakeAddressesRepo(),
         },
       );
     } catch (e) {
@@ -118,7 +123,6 @@ describe('Service area and slot capacity validations', () => {
     const subscriptionUsageRepo = createFakeSubscriptionUsageRepo();
     const serviceAreaRepo = createFakeServiceAreaRepo(new Set(['500081']));
     const slotConfigRepo = createFakeSlotConfigRepo({
-      slot: null,
       existingCount: 0,
     });
 
@@ -139,6 +143,7 @@ describe('Service area and slot capacity validations', () => {
           slotConfigRepo,
           holidaysRepo: createFakeHolidaysRepo(),
           operatingHoursRepo: createFakeOperatingHoursRepo(), // null = no auto-create
+          addressesRepo: createFakeAddressesRepo(),
         },
       );
     } catch (e) {

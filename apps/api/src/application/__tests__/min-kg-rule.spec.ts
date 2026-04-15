@@ -5,6 +5,7 @@
 import { ServiceType } from '@shared/enums';
 import { createOrder } from '../orders/create-order.use-case';
 import {
+  createFakeAddressesRepo,
   createFakeOrdersRepo,
   createFakeSubscriptionsRepo,
   createFakeSubscriptionUsageRepo,
@@ -34,6 +35,7 @@ const baseDeps = {
   }),
   holidaysRepo: createFakeHolidaysRepo(),
   operatingHoursRepo: createFakeOperatingHoursRepo(),
+  addressesRepo: createFakeAddressesRepo(),
 };
 
 const baseParams = {

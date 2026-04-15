@@ -5,11 +5,10 @@
  * - Customer cannot submit feedback for other customer's order => FEEDBACK_ACCESS_DENIED
  * - General feedback works without orderId
  */
-import { OrderStatus } from '@shared/enums';
-import { AppError } from '../errors';
+import { FeedbackStatus, FeedbackType, OrderStatus } from '@shared/enums';
 import { createOrderFeedback } from '../feedback/create-order-feedback.use-case';
 import { createGeneralFeedback } from '../feedback/create-general-feedback.use-case';
-import { createFakeOrdersRepo, createFakeFeedbackRepo } from './fakes/in-memory-repos';
+import { createFakeOrdersRepo, createFakeFeedbackRepo, minimalTestOrderRecord } from './fakes/in-memory-repos';
 
 describe('Feedback use-cases', () => {
   const userId = 'user-1';
@@ -17,22 +16,13 @@ describe('Feedback use-cases', () => {
 
   it('throws FEEDBACK_NOT_ALLOWED when order is not DELIVERED', async () => {
     const ordersRepo = createFakeOrdersRepo([
-      {
+      minimalTestOrderRecord({
         id: orderId,
         userId,
-        serviceType: 'WASH_FOLD' as any,
-        addressId: 'a1',
-        pincode: '500081',
-        pickupDate: new Date(),
-        timeWindow: '10:00-12:00',
-        estimatedWeightKg: 5,
-        actualWeightKg: null,
         status: OrderStatus.PICKED_UP,
-        subscriptionId: null,
+        addressId: 'a1',
         paymentStatus: 'CAPTURED',
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      },
+      }),
     ]);
     const feedbackRepo = createFakeFeedbackRepo();
 
@@ -46,22 +36,13 @@ describe('Feedback use-cases', () => {
 
   it('allows feedback for DELIVERED order even when payment is not CAPTURED', async () => {
     const ordersRepo = createFakeOrdersRepo([
-      {
+      minimalTestOrderRecord({
         id: orderId,
         userId,
-        serviceType: 'WASH_FOLD' as any,
-        addressId: 'a1',
-        pincode: '500081',
-        pickupDate: new Date(),
-        timeWindow: '10:00-12:00',
-        estimatedWeightKg: 5,
-        actualWeightKg: null,
         status: OrderStatus.DELIVERED,
-        subscriptionId: null,
+        addressId: 'a1',
         paymentStatus: 'PENDING',
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      },
+      }),
     ]);
     const feedbackRepo = createFakeFeedbackRepo();
 
@@ -75,33 +56,26 @@ describe('Feedback use-cases', () => {
 
   it('throws FEEDBACK_ALREADY_EXISTS when submitting second feedback for same order', async () => {
     const ordersRepo = createFakeOrdersRepo([
-      {
+      minimalTestOrderRecord({
         id: orderId,
         userId,
-        serviceType: 'WASH_FOLD' as any,
-        addressId: 'a1',
-        pincode: '500081',
-        pickupDate: new Date(),
-        timeWindow: '10:00-12:00',
-        estimatedWeightKg: 5,
-        actualWeightKg: null,
         status: OrderStatus.DELIVERED,
-        subscriptionId: null,
+        addressId: 'a1',
         paymentStatus: 'CAPTURED',
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      },
+      }),
     ]);
     const feedbackRepo = createFakeFeedbackRepo([
       {
         id: 'fb-1',
         userId,
         orderId,
-        type: 'ORDER',
+        customerName: null,
+        customerPhone: null,
+        type: FeedbackType.ORDER,
         rating: 5,
         tags: [],
         message: null,
-        status: 'NEW',
+        status: FeedbackStatus.NEW,
         adminNotes: null,
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -119,22 +93,13 @@ describe('Feedback use-cases', () => {
   it('throws FEEDBACK_ACCESS_DENIED when order belongs to another user', async () => {
     const otherUser = 'user-2';
     const ordersRepo = createFakeOrdersRepo([
-      {
+      minimalTestOrderRecord({
         id: orderId,
         userId: otherUser,
-        serviceType: 'WASH_FOLD' as any,
-        addressId: 'a1',
-        pincode: '500081',
-        pickupDate: new Date(),
-        timeWindow: '10:00-12:00',
-        estimatedWeightKg: 5,
-        actualWeightKg: null,
         status: OrderStatus.DELIVERED,
-        subscriptionId: null,
+        addressId: 'a1',
         paymentStatus: 'CAPTURED',
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      },
+      }),
     ]);
     const feedbackRepo = createFakeFeedbackRepo();
 
@@ -148,22 +113,13 @@ describe('Feedback use-cases', () => {
 
   it('creates order feedback when DELIVERED', async () => {
     const ordersRepo = createFakeOrdersRepo([
-      {
+      minimalTestOrderRecord({
         id: orderId,
         userId,
-        serviceType: 'WASH_FOLD' as any,
-        addressId: 'a1',
-        pincode: '500081',
-        pickupDate: new Date(),
-        timeWindow: '10:00-12:00',
-        estimatedWeightKg: 5,
-        actualWeightKg: null,
         status: OrderStatus.DELIVERED,
-        subscriptionId: null,
+        addressId: 'a1',
         paymentStatus: 'CAPTURED',
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      },
+      }),
     ]);
     const feedbackRepo = createFakeFeedbackRepo();
 
@@ -172,7 +128,7 @@ describe('Feedback use-cases', () => {
       { ordersRepo, feedbackRepo },
     );
 
-    expect(result.type).toBe('ORDER');
+    expect(result.type).toBe(FeedbackType.ORDER);
     expect(result.rating).toBe(5);
     expect(result.orderId).toBe(orderId);
     expect(result.userId).toBe(userId);
@@ -187,7 +143,7 @@ describe('Feedback use-cases', () => {
       { feedbackRepo },
     );
 
-    expect(result.type).toBe('GENERAL');
+    expect(result.type).toBe(FeedbackType.GENERAL);
     expect(result.rating).toBe(4);
     expect(result.orderId).toBeNull();
     expect(result.userId).toBe(userId);

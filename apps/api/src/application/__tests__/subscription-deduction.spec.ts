@@ -4,11 +4,21 @@
  * - createOrder with subscriptionId and estimatedWeightKg >= 3.
  * - Order created with subscriptionId; remainingPickups unchanged; no SubscriptionUsage yet.
  */
-import { ServiceType } from '@shared/enums';
+import { OrderType, ServiceType } from '@shared/enums';
 import { createOrder } from '../orders/create-order.use-case';
-import { createFakeOrdersRepo, createFakeSubscriptionsRepo, createFakeSubscriptionUsageRepo } from './fakes/in-memory-repos';
+import {
+  createFakeAddressesRepo,
+  createFakeOrdersRepo,
+  createFakeSubscriptionsRepo,
+  createFakeSubscriptionUsageRepo,
+  createFakeServiceAreaRepo,
+  createFakeSlotConfigRepo,
+  createFakeHolidaysRepo,
+  createFakeOperatingHoursRepo,
+} from './fakes/in-memory-repos';
 
 describe('T2: Subscription eligibility at order creation (no deduction)', () => {
+  const pickupDate = new Date(Date.now() + 86400000);
   const ordersRepo = createFakeOrdersRepo();
   const subscription = {
     id: 'sub-1',
@@ -19,19 +29,41 @@ describe('T2: Subscription eligibility at order creation (no deduction)', () => 
     usedItemsCount: 0,
     expiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
     active: true,
+    addressId: 'addr-1',
+    branchId: 'branch-1',
   };
   const subscriptionsRepo = createFakeSubscriptionsRepo([subscription]);
   const subscriptionUsageRepo = createFakeSubscriptionUsageRepo();
-  const deps = { ordersRepo, subscriptionsRepo, subscriptionUsageRepo };
+  const deps = {
+    ordersRepo,
+    subscriptionsRepo,
+    subscriptionUsageRepo,
+    unitOfWork: undefined,
+    serviceAreaRepo: createFakeServiceAreaRepo(new Set(['500081'])),
+    slotConfigRepo: createFakeSlotConfigRepo({
+      slot: {
+        id: 'slot-1',
+        date: pickupDate,
+        timeWindow: '10:00-12:00',
+        pincode: '500081',
+        capacity: 10,
+      },
+      existingCount: 0,
+    }),
+    holidaysRepo: createFakeHolidaysRepo(),
+    operatingHoursRepo: createFakeOperatingHoursRepo(),
+    addressesRepo: createFakeAddressesRepo(),
+  };
 
   it('creates order with subscriptionId and does not deduct (deduction at ACK)', async () => {
     const result = await createOrder(
       {
         userId: 'user-1',
+        orderType: OrderType.SUBSCRIPTION,
         serviceType: ServiceType.WASH_FOLD,
         addressId: 'addr-1',
         pincode: '500081',
-        pickupDate: new Date(),
+        pickupDate,
         timeWindow: '10:00-12:00',
         estimatedWeightKg: 4,
         subscriptionId: 'sub-1',

@@ -1,11 +1,7 @@
 /**
  * Analytics date presets produce correct ranges (including FY boundaries).
  */
-import {
-  getRevenueDateRange,
-  getRevenueDateRangeCustom,
-  type RevenuePreset,
-} from '../time/analytics-date';
+import { getRevenueDateRange, getRevenueDateRangeCustom } from '../time/analytics-date';
 
 describe('Analytics date presets', () => {
   // Fixed "now": 15 June 2025 in India

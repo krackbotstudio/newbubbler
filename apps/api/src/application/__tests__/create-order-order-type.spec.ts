@@ -5,6 +5,7 @@ import { ServiceType, OrderType, OrderStatus } from '@shared/enums';
 import { AppError, isAppError } from '../errors';
 import { createOrder } from '../orders/create-order.use-case';
 import {
+  createFakeAddressesRepo,
   createFakeOrdersRepo,
   createFakeSubscriptionsRepo,
   createFakeSubscriptionUsageRepo,
@@ -12,6 +13,7 @@ import {
   createFakeSlotConfigRepo,
   createFakeHolidaysRepo,
   createFakeOperatingHoursRepo,
+  minimalTestOrderRecord,
 } from './fakes/in-memory-repos';
 
 const futureDate = new Date(Date.now() + 86400000 * 2);
@@ -35,6 +37,7 @@ const baseDeps = {
   }),
   holidaysRepo: createFakeHolidaysRepo(),
   operatingHoursRepo: createFakeOperatingHoursRepo(),
+  addressesRepo: createFakeAddressesRepo(),
 };
 
 const baseParams = {
@@ -117,12 +120,15 @@ describe('Create order – orderType and slot-in-past', () => {
         remainingPickups: 5,
         expiryDate: new Date(Date.now() + 86400000 * 30),
         active: true,
+        addressId: 'addr-1',
+        branchId: 'branch-1',
       },
     ]);
-    const existingOrder = {
+    const existingOrder = minimalTestOrderRecord({
       id: 'order-existing',
       userId: 'user-1',
-      orderType: OrderType.SUBSCRIPTION as const,
+      status: OrderStatus.BOOKING_CONFIRMED,
+      orderType: OrderType.SUBSCRIPTION,
       serviceType: ServiceType.WASH_FOLD,
       serviceTypes: [ServiceType.WASH_FOLD],
       addressId: 'addr-1',
@@ -130,19 +136,8 @@ describe('Create order – orderType and slot-in-past', () => {
       pickupDate: futureDate,
       timeWindow: '10:00-12:00',
       estimatedWeightKg: 3,
-      actualWeightKg: null,
-      status: OrderStatus.BOOKING_CONFIRMED,
       subscriptionId: 'sub-1',
-      paymentStatus: 'PENDING',
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      confirmedAt: null,
-      pickedUpAt: null,
-      inProgressAt: null,
-      readyAt: null,
-      outForDeliveryAt: null,
-      deliveredAt: null,
-    };
+    });
     const ordersRepo = createFakeOrdersRepo([existingOrder]);
     await expect(
       createOrder(
@@ -167,6 +162,8 @@ describe('Create order – orderType and slot-in-past', () => {
         remainingPickups: 5,
         expiryDate: new Date(Date.now() + 86400000 * 30),
         active: true,
+        addressId: 'addr-1',
+        branchId: 'branch-1',
       },
     ]);
     const ordersRepo = createFakeOrdersRepo();
