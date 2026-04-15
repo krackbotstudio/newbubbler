@@ -4,33 +4,16 @@ import { getToken } from './auth';
 export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3003/api';
 
-function apiHostnameFromPublicUrl(): string | null {
-  const m = API_BASE_URL.match(/^https?:\/\/([^/]+)/);
-  return m?.[1] ?? null;
-}
-
-/** Same-origin or proxy when admin and API share a domain (Vercel one-project, or Render proxy). */
+/**
+ * Browser base URL for API requests.
+ * - Relative `/api` → same origin (admin + API on one deployment).
+ * - Absolute `https://…/api` → direct calls (CORS must allow this admin origin on the API).
+ * - `NEXT_PUBLIC_USE_API_PROXY=true` → same-origin `/api-proxy` (App Router route); use only if you cannot use CORS.
+ */
 export function getBaseURL(): string {
   if (typeof window === 'undefined') return API_BASE_URL;
-  // Relative /api = same origin (e.g. Vercel single project: admin + API on one domain)
   if (API_BASE_URL === '/api' || API_BASE_URL.startsWith('/api/')) return '/api';
-  // Force proxy via env (e.g. Render admin service)
   if (process.env.NEXT_PUBLIC_USE_API_PROXY === 'true') return '/api-proxy';
-  // Use proxy when this app is on Render and the API URL is also on Render
-  const onRender = window.location.hostname.endsWith('.onrender.com');
-  const apiOnRender = API_BASE_URL.includes('onrender.com');
-  if (onRender && apiOnRender) return '/api-proxy';
-  // Admin on *.vercel.app + API on another *.vercel.app → same-origin /api-proxy (next.config rewrites)
-  const onVercel = window.location.hostname.endsWith('.vercel.app');
-  const apiHost = apiHostnameFromPublicUrl();
-  if (
-    onVercel &&
-    apiHost &&
-    apiHost.endsWith('.vercel.app') &&
-    apiHost !== window.location.hostname
-  ) {
-    return '/api-proxy';
-  }
   return API_BASE_URL;
 }
 
