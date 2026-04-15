@@ -5,9 +5,39 @@ import type { CreateDraftInput } from '../ports';
 import { calculateInvoiceTotals } from './calculate-invoice-totals';
 import type { InvoiceItemType } from '@shared/enums';
 
-/** Final invoice code: IN{order number} so business can relate to order. */
-function finalInvoiceCode(orderId: string): string {
-  return `IN${orderId}`;
+/** Normalize branch invoice prefix for use inside invoice codes (alphanumeric + _ -). */
+export function normalizeBranchInvoicePrefixSegment(raw: string | null | undefined): string | null {
+  if (!raw?.trim()) return null;
+  const t = raw.trim().replace(/\s+/g, '-').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 20);
+  return t || null;
+}
+
+/** ACK invoice code; optional branch segment when `invoicePrefix` is set on the branch. */
+export function formatAckInvoiceCode(orderId: string, branchInvoicePrefix: string | null | undefined): string {
+  const p = normalizeBranchInvoicePrefixSegment(branchInvoicePrefix);
+  return p ? `ACK-${p}-${orderId}` : `ACK - ${orderId}`;
+}
+
+/** Final invoice code; optional branch segment when `invoicePrefix` is set on the branch. */
+export function formatFinalInvoiceCode(orderId: string, branchInvoicePrefix: string | null | undefined): string {
+  const p = normalizeBranchInvoicePrefixSegment(branchInvoicePrefix);
+  return p ? `IN-${p}-${orderId}` : `IN${orderId}`;
+}
+
+/** Raw `invoicePrefix` from the branch that owns this order (by branchId or service-area pincode). */
+export async function getBranchInvoicePrefixForOrder(
+  order: OrderRecord,
+  deps: { branchRepo: BranchRepo; serviceAreaRepo: ServiceAreaRepo },
+): Promise<string | null> {
+  let branchId = order.branchId ?? null;
+  if (!branchId && order.pincode) {
+    const sa = await deps.serviceAreaRepo.getByPincode(order.pincode);
+    branchId = sa?.branchId ?? null;
+  }
+  if (!branchId) return null;
+  const branch = await deps.branchRepo.getById(branchId);
+  const raw = branch?.invoicePrefix?.trim();
+  return raw ? raw : null;
 }
 
 export interface CreateFinalInvoiceDraftInput {
@@ -76,7 +106,7 @@ export async function getBrandingSnapshotForOrder(
         upiQrUrl: branch.upiQrUrl ?? null,
         panNumber: branch.panNumber ?? null,
         gstNumber: branch.gstNumber ?? null,
-        termsAndConditions: null,
+        termsAndConditions: branch.termsAndConditions?.trim() || null,
       };
     }
   }
@@ -131,7 +161,7 @@ export async function getBrandingSnapshotForBranchId(
         upiQrUrl: branch.upiQrUrl ?? null,
         panNumber: branch.panNumber ?? null,
         gstNumber: branch.gstNumber ?? null,
-        termsAndConditions: null,
+        termsAndConditions: branch.termsAndConditions?.trim() || null,
       };
     }
   }
@@ -210,7 +240,11 @@ export async function createFinalInvoiceDraft(
 
   const order = await deps.ordersRepo.getById(input.orderId);
   if (!order) throw new Error('Order not found');
-  const code = finalInvoiceCode(input.orderId);
+  const invoicePrefix = await getBranchInvoicePrefixForOrder(order, {
+    branchRepo: deps.branchRepo,
+    serviceAreaRepo: deps.serviceAreaRepo,
+  });
+  const code = formatFinalInvoiceCode(order.id, invoicePrefix);
 
   const brandingSnapshot = await getBrandingSnapshotForOrder(order, {
     branchRepo: deps.branchRepo,

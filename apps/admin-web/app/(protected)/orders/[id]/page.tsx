@@ -40,8 +40,8 @@ import { toast } from 'sonner';
 import { ExternalLink } from 'lucide-react';
 import { AcknowledgementInvoiceDialog } from '@/components/admin/orders/AcknowledgementInvoiceDialog';
 import { FinalInvoiceDialog } from '@/components/admin/orders/FinalInvoiceDialog';
-import { CUSTOMER_PWA_URL } from '@/lib/customer-app-url';
 import { getStoredUser } from '@/lib/auth';
+import { CUSTOMER_APP_URL } from '@/lib/customer-app-url';
 
 const STATUS_FLOW: OrderStatus[] = [
   'BOOKING_CONFIRMED',
@@ -139,7 +139,7 @@ export default function OrderDetailPage() {
       `Final invoice: ${invoiceLabel}`,
       `Amount payable (final): *${formatMoney(fin.total)}*`,
       '',
-      `Open our app: ${CUSTOMER_PWA_URL}`,
+      `Open our app: ${CUSTOMER_APP_URL}`,
     ];
     return parts.join('\n');
   }, [summary]);
@@ -373,6 +373,12 @@ export default function OrderDetailPage() {
   const customer = summary.customer ?? { id: '', name: null, phone: null, email: null };
   const address = summary.address ?? { id: '', label: '', addressLine: '', pincode: '', googleMapUrl: null };
   const mapsUrl = getGoogleMapsUrl(address.googleMapUrl);
+  const branchLogoPath = summary.branch?.logoUrl?.trim();
+  const orgLogoPath = branding?.logoUrl?.trim();
+  const invoiceHeaderLogoPath = branchLogoPath || orgLogoPath;
+  const invoiceHeaderLogoCacheKey = branchLogoPath
+    ? (summary.branch?.updatedAt ?? '')
+    : (branding?.updatedAt ?? '');
   /** Same rules as API assertCanIssueFinalInvoice (issue + save final draft). */
   const canIssueFinalInvoice =
     order.status === 'OUT_FOR_DELIVERY' ||
@@ -1136,9 +1142,9 @@ export default function OrderDetailPage() {
           {/* Header: centered logo only */}
           <div className="flex border-b pb-4 items-center justify-center">
             <div className="flex-shrink-0 flex justify-center">
-              {branding?.logoUrl ? (
+              {invoiceHeaderLogoPath ? (
                 <img
-                  src={`${branding.logoUrl.startsWith('http') ? branding.logoUrl : `${getApiOrigin()}${branding.logoUrl}`}${(branding.logoUrl.startsWith('http') ? branding.logoUrl : `${getApiOrigin()}${branding.logoUrl}`).includes('?') ? '&' : '?'}v=${encodeURIComponent(branding.updatedAt)}`}
+                  src={`${invoiceHeaderLogoPath.startsWith('http') ? invoiceHeaderLogoPath : `${getApiOrigin()}${invoiceHeaderLogoPath}`}${(invoiceHeaderLogoPath.startsWith('http') ? invoiceHeaderLogoPath : `${getApiOrigin()}${invoiceHeaderLogoPath}`).includes('?') ? '&' : '?'}v=${encodeURIComponent(invoiceHeaderLogoCacheKey)}`}
                   alt="Logo"
                   className="h-14 w-auto object-contain"
                 />
@@ -1405,7 +1411,12 @@ export default function OrderDetailPage() {
             catalog={catalog ?? undefined}
             catalogMatrix={catalogMatrix}
             tagPrintOrderLabel={order.id}
-            tagBrandName={branding?.businessName?.trim() || 'We You'}
+            tagBrandName={
+              summary.branch?.itemTagBrandName?.trim() ||
+              summary.branch?.name?.trim() ||
+              branding?.businessName?.trim() ||
+              undefined
+            }
             tagCustomerName={customer.name ?? '—'}
             orderMode={ackOrderMode}
             subscriptionOnlyCanSave={
@@ -1487,9 +1498,9 @@ export default function OrderDetailPage() {
           {/* Header: centered logo only */}
           <div className="flex border-b pb-4 items-center justify-center">
             <div className="flex-shrink-0 flex justify-center">
-              {branding?.logoUrl ? (
+              {invoiceHeaderLogoPath ? (
                 <img
-                  src={`${branding.logoUrl.startsWith('http') ? branding.logoUrl : `${getApiOrigin()}${branding.logoUrl}`}${(branding.logoUrl.startsWith('http') ? branding.logoUrl : `${getApiOrigin()}${branding.logoUrl}`).includes('?') ? '&' : '?'}v=${encodeURIComponent(branding.updatedAt)}`}
+                  src={`${invoiceHeaderLogoPath.startsWith('http') ? invoiceHeaderLogoPath : `${getApiOrigin()}${invoiceHeaderLogoPath}`}${(invoiceHeaderLogoPath.startsWith('http') ? invoiceHeaderLogoPath : `${getApiOrigin()}${invoiceHeaderLogoPath}`).includes('?') ? '&' : '?'}v=${encodeURIComponent(invoiceHeaderLogoCacheKey)}`}
                   alt="Logo"
                   className="h-14 w-auto object-contain"
                 />
@@ -1674,7 +1685,12 @@ export default function OrderDetailPage() {
             catalog={catalog ?? undefined}
             catalogMatrix={catalogMatrix}
             tagPrintOrderLabel={order.id}
-            tagBrandName={branding?.businessName?.trim() || 'We You'}
+            tagBrandName={
+              summary.branch?.itemTagBrandName?.trim() ||
+              summary.branch?.name?.trim() ||
+              branding?.businessName?.trim() ||
+              undefined
+            }
             tagCustomerName={customer.name ?? '—'}
             orderMode="INDIVIDUAL"
             subscriptionUnit={hasSubscription && summary?.subscription ? (summary.subscription.kgLimit != null ? 'KG' : summary.subscription.itemsLimit != null ? 'Nos' : undefined) : undefined}

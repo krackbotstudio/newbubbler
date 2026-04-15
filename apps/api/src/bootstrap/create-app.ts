@@ -1,4 +1,57 @@
-import 'dotenv/config';
+import * as fs from 'fs';
+import * as path from 'path';
+import dotenv from 'dotenv';
+
+// Load apps/api/.env before Nest boot. Resolves several entry layouts (repo root, apps/api cwd, absolute DOTENV_CONFIG_PATH).
+(() => {
+  const cwd = process.cwd();
+  const fromArgvMain = (() => {
+    const entry = process.argv[1];
+    if (!entry) return null;
+    const abs = path.isAbsolute(entry) ? entry : path.join(cwd, entry);
+    const dir = path.dirname(abs);
+    const name = path.basename(abs, path.extname(abs));
+    if (name === 'main') {
+      return path.join(dir, '..', '..', '.env');
+    }
+    return null;
+  })();
+  const dotenvExplicit = process.env.DOTENV_CONFIG_PATH
+    ? path.isAbsolute(process.env.DOTENV_CONFIG_PATH)
+      ? process.env.DOTENV_CONFIG_PATH
+      : path.join(cwd, process.env.DOTENV_CONFIG_PATH)
+    : null;
+  const candidates = [
+    dotenvExplicit,
+    path.join(cwd, 'apps', 'api', '.env'),
+    fromArgvMain,
+    path.join(cwd, '.env'),
+  ].filter((p): p is string => Boolean(p));
+  const seen = new Set<string>();
+  for (const p of candidates) {
+    const resolved = path.normalize(p);
+    if (seen.has(resolved)) continue;
+    seen.add(resolved);
+    if (fs.existsSync(resolved)) {
+      dotenv.config({ path: resolved, override: true });
+      if (process.env.NODE_ENV !== 'production') {
+        // eslint-disable-next-line no-console
+        console.log(`[api] Loaded env from ${resolved}`);
+      }
+      break;
+    }
+  }
+  if (process.env.NODE_ENV !== 'production') {
+    const raw = process.env.ALLOW_DEV_SIGNUP_BYPASS?.trim().toLowerCase();
+    const bypassOn = raw === 'true' || raw === '1' || raw === 'yes';
+    const jwtSet = Boolean(process.env.SUPABASE_JWT_SECRET?.trim());
+    // eslint-disable-next-line no-console
+    console.log(
+      `[api] NODE_ENV=${process.env.NODE_ENV ?? '(unset)'}; admin signup dev bypass: ${bypassOn ? 'on' : 'off'}; SUPABASE_JWT_SECRET: ${jwtSet ? 'set' : 'missing (paste JWT secret from Supabase → Settings → API)'}`,
+    );
+  }
+})();
+
 import 'reflect-metadata';
 import * as jwt from 'jsonwebtoken';
 import { NestFactory } from '@nestjs/core';
@@ -46,7 +99,7 @@ export async function createApp(): Promise<INestApplication> {
 
   const adapter = app.getHttpAdapter();
   const rootPayload = {
-    message: 'Weyou API',
+    message: 'Bubbler API',
     api: '/api',
     docs: 'Use /api as the base path for all endpoints (e.g. /api/auth/customer/otp/request)',
   };
@@ -57,7 +110,7 @@ export async function createApp(): Promise<INestApplication> {
     res.status(200).json(rootPayload);
   });
   adapter.get('/api/health', (_req: unknown, res: { status: (n: number) => { json: (o: object) => void } }) => {
-    res.status(200).json({ ok: true, service: 'weyou-api', analytics: true });
+    res.status(200).json({ ok: true, service: 'bubbler-api', analytics: true });
   });
   adapter.get('/api/admin/analytics/_ping', (_req: unknown, res: { status: (n: number) => { json: (o: object) => void } }) => {
     res.status(200).json({ ok: true, message: 'analytics routes available' });

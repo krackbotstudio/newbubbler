@@ -30,6 +30,8 @@ export interface ActiveSubscriptionRecord {
 export interface ActiveSubscriptionWithPlanRecord extends ActiveSubscriptionRecord {
   planId: string;
   planName: string;
+  /** Branch this subscription is tied to (slots and orders use this branch). */
+  branchId: string | null;
   addressId: string | null;
   /** Snapshot at purchase; still displayed after address is edited/deleted. */
   addressLabel: string | null;

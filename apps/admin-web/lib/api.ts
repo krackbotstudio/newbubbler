@@ -43,6 +43,9 @@ api.interceptors.request.use((config) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+  if (config.data instanceof FormData) {
+    delete config.headers['Content-Type'];
+  }
   return config;
 });
 
@@ -83,7 +86,25 @@ export function getApiError(error: unknown): ApiError {
     return { message: msg, status: error.response?.status };
   }
   if (error instanceof Error) {
-    return { message: error.message };
+    const withCode = error as Error & { code?: string; status?: number };
+    return {
+      message: error.message,
+      code: typeof withCode.code === 'string' ? withCode.code : undefined,
+      status: typeof withCode.status === 'number' ? withCode.status : undefined,
+    };
+  }
+  if (
+    error &&
+    typeof error === 'object' &&
+    'message' in error &&
+    typeof (error as { message: unknown }).message === 'string'
+  ) {
+    const o = error as { message: string; code?: string; status?: number };
+    return {
+      message: o.message,
+      code: typeof o.code === 'string' ? o.code : undefined,
+      status: typeof o.status === 'number' ? o.status : undefined,
+    };
   }
   return { message: 'An unexpected error occurred' };
 }
@@ -108,8 +129,23 @@ export function getFriendlyErrorMessage(error: unknown): string {
   if (api.status === 401) {
     return 'Invalid email or password. Check that the user exists with role Admin/Billing/OPS and the password is correct.';
   }
+  if (api.status === 409) {
+    return api.message || 'This request conflicts with existing data.';
+  }
   if (api.code === 'USER_DISABLED') {
     return 'This account is disabled. Contact an administrator.';
+  }
+  const msgLower = (api.message || '').toLowerCase();
+  if (
+    api.code === 'over_email_send_rate_limit' ||
+    msgLower.includes('rate limit') ||
+    msgLower.includes('over_email_send') ||
+    msgLower.includes('too many requests')
+  ) {
+    return 'Too many verification emails were sent to this address. Wait a few minutes and try again, or use Resend on the code step after the cooldown. (Supabase enforces per-email send limits.)';
+  }
+  if (msgLower.includes('dev signup bypass')) {
+    return 'Verification could not be completed. Please try again in a moment.';
   }
   return api.message || 'Network/API error';
 }
@@ -132,5 +168,11 @@ export function getApiErrorDetails(error: unknown): string {
     }
     return parts.filter(Boolean).join('\n');
   }
-  return error instanceof Error ? error.message : 'An unexpected error occurred';
+  if (error instanceof Error) {
+    const any = error as Error & { code?: string; status?: number };
+    return [any.name, any.code ? `Code: ${any.code}` : '', any.status ? `Status: ${any.status}` : '', error.message]
+      .filter(Boolean)
+      .join('\n');
+  }
+  return 'An unexpected error occurred';
 }

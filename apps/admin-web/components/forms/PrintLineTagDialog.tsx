@@ -22,10 +22,8 @@ const LABEL_W_MM = 36;
 const LABEL_H_MM = 30;
 const LABEL_PADDING_MM = 2;
 
-const TAG_TITLE = 'WeYou';
-
 export interface PrintLineTagPayload {
-  /** Legacy field from callers; printed title is fixed to TAG_TITLE. */
+  /** Top line on the tag (branch “short brand” / item tag brand from branch details, or fallbacks from caller). */
   brandName: string;
   customerName: string;
   orderNumber: string;
@@ -50,12 +48,14 @@ function escapeHtml(s: string): string {
 }
 
 function buildPrintHtml(
+  tagTitle: string,
   customerName: string,
   orderNumber: string,
   itemName: string,
   service: string,
   copies: number
 ): string {
+  const title = (tagTitle || '—').trim() || '—';
   const customer = (customerName || '—').trim();
   const item = (itemName || '—').trim();
   const svc = (service || '—').trim();
@@ -65,7 +65,7 @@ function buildPrintHtml(
     return `
     <div class="label-page">
       <div class="label-inner">
-        <div class="tag-title">${escapeHtml(TAG_TITLE)}</div>
+        <div class="tag-title">${escapeHtml(title)}</div>
         <div class="tag-customer">${escapeHtml(customer)}</div>
         <div class="tag-order">${escapeHtml(orderNumber.trim())}</div>
         <div class="tag-details-stack">
@@ -216,7 +216,9 @@ export function PrintLineTagDialog({ open, onOpenChange, payload }: PrintLineTag
     const n = Math.max(1, Math.min(999, Number.isFinite(parsed) ? parsed : copies));
     setPrintLoading(true);
     try {
+      const tagTitle = (payload.brandName || '').trim() || '—';
       const html = buildPrintHtml(
+        tagTitle,
         payload.customerName,
         payload.orderNumber,
         payload.itemName,
@@ -237,6 +239,7 @@ export function PrintLineTagDialog({ open, onOpenChange, payload }: PrintLineTag
     return null;
   }
 
+  const previewBrand = (payload.brandName || '').trim() || '—';
   const previewCustomer = (payload.customerName || '—').trim();
   const previewItem = (payload.itemName || '—').trim();
   const previewService = (payload.service || '—').trim();
@@ -256,7 +259,7 @@ export function PrintLineTagDialog({ open, onOpenChange, payload }: PrintLineTag
         <div className="space-y-3 text-sm">
           <div className="mx-auto w-full max-w-[280px] rounded-md border bg-muted/30 p-3">
             <div className="flex aspect-[36/30] max-h-[260px] w-full flex-col items-stretch justify-between gap-1 border border-border bg-background px-2 py-2.5 text-center leading-tight">
-              <p className="text-xs font-extrabold">{TAG_TITLE}</p>
+              <p className="text-xs font-extrabold truncate">{previewBrand}</p>
               <p className="text-[11px] font-extrabold truncate">{previewCustomer}</p>
               <p className="font-mono text-[11px] font-bold break-all">{payload.orderNumber}</p>
               <div className="flex min-h-0 flex-1 flex-col justify-center gap-1 py-0.5">

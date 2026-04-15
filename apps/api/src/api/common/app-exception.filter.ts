@@ -101,12 +101,14 @@ export class AppExceptionFilter implements ExceptionFilter {
       case 'NO_REMAINING_PICKUPS':
       case 'EXCEEDED_LIMIT':
       case 'PINCODE_NOT_SERVICEABLE':
+      case 'BRANCH_NOT_SERVING_PINCODE':
         return HttpStatus.BAD_REQUEST;
       case 'INVALID_STATUS_TRANSITION':
       case 'UNIQUE_CONSTRAINT':
       case 'SLOT_NOT_AVAILABLE':
       case 'SLOT_FULL':
       case 'PINCODE_ALREADY_IN_OTHER_BRANCH':
+      case 'CATALOG_ITEM_IN_USE':
         return HttpStatus.CONFLICT;
       case 'ADDRESS_NOT_FOUND':
       case 'BRANDING_NOT_FOUND':

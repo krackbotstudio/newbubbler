@@ -43,15 +43,11 @@ const NAV_GROUPS: { items: NavItem[] }[] = [
     ],
   },
   {
-    items: [
-      { href: '/final-invoices', label: 'Final Invoices', icon: FileCheck },
-      { href: '/subscriptions', label: 'Subscriptions', icon: FileText },
-    ],
+    items: [{ href: '/final-invoices', label: 'Final Invoices', icon: FileCheck }],
   },
   {
     items: [
       { href: '/catalog', label: 'Catalog', icon: FileText },
-      { href: '/subscription-plans', label: 'Subscription plans', icon: FileText },
       { href: '/schedule', label: 'Schedule & calendar', icon: Calendar },
       { href: '/service-areas', label: 'Service areas', icon: MapPin },
       { href: '/branding', label: 'Branding', icon: Palette },

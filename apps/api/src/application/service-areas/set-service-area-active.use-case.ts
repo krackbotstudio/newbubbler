@@ -5,9 +5,9 @@ export interface SetServiceAreaActiveDeps {
 }
 
 export async function setServiceAreaActive(
-  pincode: string,
+  id: string,
   active: boolean,
   deps: SetServiceAreaActiveDeps,
 ): Promise<ServiceAreaRecord> {
-  return deps.serviceAreaRepo.setActive(pincode, active);
+  return deps.serviceAreaRepo.setActive(id, active);
 }

@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { getStoredUser, isBranchScopedStaff } from '@/lib/auth';
-import { RoleGate } from '@/components/shared/RoleGate';
 import { ErrorDisplay } from '@/components/shared/ErrorDisplay';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -30,6 +29,8 @@ export default function ServiceAreasPage() {
   const user = getStoredUser();
   const role = user?.role ?? 'CUSTOMER';
   const isBranchHead = isBranchScopedStaff(role) && !!user?.branchId;
+  /** Branch heads (OPS) manage pincodes for their branch only; admins manage all. */
+  const canManageServiceAreas = role === 'ADMIN' || (role === 'OPS' && !!user?.branchId);
 
   const [addOpen, setAddOpen] = useState(false);
   const [editArea, setEditArea] = useState<ServiceArea | null>(null);
@@ -78,9 +79,9 @@ export default function ServiceAreasPage() {
               <option key={b.id} value={b.id}>{b.name}</option>
             ))}
           </select>
-          <RoleGate role={role} gate="catalogEdit">
+          {canManageServiceAreas ? (
             <Button onClick={() => setAddOpen(true)}>Add Pincode</Button>
-          </RoleGate>
+          ) : null}
         </div>
       </div>
 
@@ -102,23 +103,26 @@ export default function ServiceAreasPage() {
                   <TableHead>Branch</TableHead>
                   <TableHead>Pincode</TableHead>
                   <TableHead>Active</TableHead>
-                  {role === 'ADMIN' && <TableHead className="w-[100px]">Actions</TableHead>}
+                  {canManageServiceAreas && <TableHead className="w-[100px]">Actions</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {(areas ?? []).map((area) => (
                   <ServiceAreaRow
-                    key={area.pincode}
+                    key={area.id}
                     area={area}
                     branchName={branchesLoading ? '…' : (branchNameById[area.branchId] ?? `Branch (${area.branchId})`)}
-                    canEdit={role === 'ADMIN'}
+                    canEdit={
+                      canManageServiceAreas &&
+                      (role === 'ADMIN' || (role === 'OPS' && user?.branchId === area.branchId))
+                    }
                     queryKey={['admin', 'service-areas', branchIdForApi ?? 'all']}
                     onEdit={() => { setEditArea(area); setEditOpen(true); }}
                   />
                 ))}
                 {(!areas || areas.length === 0) && (
                   <TableRow>
-                    <TableCell colSpan={role === 'ADMIN' ? 4 : 3} className="text-center text-muted-foreground">
+                    <TableCell colSpan={canManageServiceAreas ? 4 : 3} className="text-center text-muted-foreground">
                       No pincodes yet.
                     </TableCell>
                   </TableRow>
@@ -129,8 +133,20 @@ export default function ServiceAreasPage() {
         </CardContent>
       </Card>
 
-      <AddPincodeModal open={addOpen} onOpenChange={setAddOpen} />
-      <EditPincodeModal area={editArea} open={editOpen} onOpenChange={(open) => { setEditOpen(open); if (!open) setEditArea(null); }} />
+      <AddPincodeModal
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        lockedBranchId={role === 'OPS' && user?.branchId ? user.branchId : null}
+      />
+      <EditPincodeModal
+        area={editArea}
+        open={editOpen}
+        onOpenChange={(open) => {
+          setEditOpen(open);
+          if (!open) setEditArea(null);
+        }}
+        lockedBranchId={role === 'OPS' && user?.branchId ? user.branchId : null}
+      />
     </div>
   );
 }
@@ -149,14 +165,14 @@ function ServiceAreaRow({
   onEdit: () => void;
 }) {
   const queryClient = useQueryClient();
-  const patchArea = usePatchServiceArea(area.pincode);
+  const patchArea = usePatchServiceArea(area.id);
   const deleteArea = useDeleteServiceArea();
 
   const handleToggle = (checked: boolean) => {
     if (!canEdit) return;
     const previous = queryClient.getQueryData<ServiceArea[]>(queryKey);
     queryClient.setQueryData<ServiceArea[]>(queryKey, (old) =>
-      (old ?? []).map((a) => (a.pincode === area.pincode ? { ...a, active: checked } : a))
+      (old ?? []).map((a) => (a.id === area.id ? { ...a, active: checked } : a))
     );
     patchArea.mutate(
       { active: checked },
@@ -177,7 +193,7 @@ function ServiceAreaRow({
   const handleDelete = () => {
     if (!canEdit) return;
     if (!confirm(`Remove pincode ${area.pincode} from service areas?`)) return;
-    deleteArea.mutate(area.pincode, {
+    deleteArea.mutate(area.id, {
       onSuccess: () => toast.success('Pincode removed'),
       onError: (err) => toast.error(getApiError(err).message),
     });

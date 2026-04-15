@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsBoolean } from 'class-validator';
+import { IsString, IsOptional, IsBoolean, MaxLength } from 'class-validator';
 
 export class CreateBranchDto {
   @IsString()
@@ -26,6 +26,21 @@ export class CreateBranchDto {
   @IsOptional()
   @IsString()
   footerNote?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(24)
+  invoicePrefix?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  itemTagBrandName?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200000)
+  termsAndConditions?: string | null;
 
   @IsOptional()
   @IsString()

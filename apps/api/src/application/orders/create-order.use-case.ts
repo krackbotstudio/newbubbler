@@ -31,6 +31,8 @@ export interface CreateOrderParams {
   timeWindow: string;
   estimatedWeightKg?: number | null;
   subscriptionId?: string | null;
+  /** Individual orders: optional branch that must actively serve `pincode`. Ignored for subscription orders. */
+  branchId?: string | null;
 }
 
 export interface CreateOrderDeps {
@@ -159,8 +161,22 @@ export async function createOrder(
         { pincode: effectivePincode },
       );
     }
-    const area = await serviceAreaRepo.getByPincode(effectivePincode);
-    branchId = area?.branchId ?? null;
+    const preferred = params.branchId?.trim();
+    if (preferred) {
+      const areas = await serviceAreaRepo.listActiveByPincode(effectivePincode);
+      const hit = areas.find((a) => a.branchId === preferred);
+      if (!hit) {
+        throw new AppError(
+          'BRANCH_NOT_SERVING_PINCODE',
+          'This branch does not serve your address pincode.',
+          { pincode: effectivePincode, branchId: preferred },
+        );
+      }
+      branchId = hit.branchId;
+    } else {
+      const area = await serviceAreaRepo.getByPincode(effectivePincode);
+      branchId = area?.branchId ?? null;
+    }
   }
 
   // Holiday check (common + branch-specific)

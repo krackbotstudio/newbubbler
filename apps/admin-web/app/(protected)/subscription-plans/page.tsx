@@ -2,7 +2,6 @@
 
 import { useState, useMemo } from 'react';
 import { getStoredUser, isBranchScopedStaff } from '@/lib/auth';
-import { RoleGate } from '@/components/shared/RoleGate';
 import { BranchFilter } from '@/components/shared/BranchFilter';
 import { ErrorDisplay } from '@/components/shared/ErrorDisplay';
 import { Button } from '@/components/ui/button';
@@ -86,9 +85,9 @@ export default function SubscriptionPlansPage() {
             compactLabel
             disabled={!!isBranchHead}
           />
-          <RoleGate role={role} gate="catalogEdit">
+          {role === 'ADMIN' ? (
             <Button onClick={() => setAddOpen(true)}>Add plan</Button>
-          </RoleGate>
+          ) : null}
         </div>
       </div>
 
@@ -115,9 +114,7 @@ export default function SubscriptionPlansPage() {
                   <TableHead>Limit</TableHead>
                   <TableHead>Price</TableHead>
                   <TableHead>Active</TableHead>
-                  <RoleGate role={role} gate="catalogEdit">
-                    <TableHead className="w-[80px]"></TableHead>
-                  </RoleGate>
+                  {role === 'ADMIN' ? <TableHead className="w-[80px]"></TableHead> : null}
                 </TableRow>
               </TableHeader>
               <TableBody>

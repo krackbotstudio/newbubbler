@@ -9,6 +9,7 @@ export class SlotsController {
   async getAvailability(
     @Query('pincode') pincode: string,
     @Query('date') date: string,
+    @Query('branchId') branchId?: string,
   ) {
     if (!pincode || !date) {
       return {
@@ -18,6 +19,6 @@ export class SlotsController {
         message: 'pincode and date are required',
       };
     }
-    return this.slotsService.getAvailability(pincode.trim(), date.trim());
+    return this.slotsService.getAvailability(pincode.trim(), date.trim(), branchId?.trim() || undefined);
   }
 }

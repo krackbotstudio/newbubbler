@@ -127,7 +127,7 @@ interface InvoiceBuilderProps {
   disableEditing?: boolean;
   /** When set (e.g. order UUID on order detail), each line shows “Print tag” for thermal labels. */
   tagPrintOrderLabel?: string | null;
-  /** Printed top-center on line tags; defaults in dialog if omitted. */
+  /** Printed top line on line tags: branch “Short brand on item tag” (`itemTagBrandName`), then branch name, etc. (see order page). */
   tagBrandName?: string | null;
   /** Customer name shown on line tags. */
   tagCustomerName?: string | null;
@@ -332,7 +332,7 @@ export function InvoiceBuilder({
         row.serviceCategoryId;
     }
     const defaultCopies = Math.ceil(Number(row.quantity) || 1);
-    const brand = tagBrandName?.trim() || 'We You';
+    const brand = tagBrandName?.trim() ?? '';
     return {
       brandName: brand,
       customerName: (tagCustomerName ?? '—').trim() || '—',

@@ -28,13 +28,15 @@ interface EditPincodeModalProps {
   area: ServiceArea | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Branch head: cannot move pincode to another branch. */
+  lockedBranchId?: string | null;
 }
 
-export function EditPincodeModal({ area, open, onOpenChange }: EditPincodeModalProps) {
+export function EditPincodeModal({ area, open, onOpenChange, lockedBranchId = null }: EditPincodeModalProps) {
   const [pincode, setPincode] = useState('');
   const [branchId, setBranchId] = useState('');
   const [active, setActive] = useState(true);
-  const patchArea = usePatchServiceArea(area?.pincode ?? '');
+  const patchArea = usePatchServiceArea(area?.id ?? '');
   const createArea = useCreateServiceArea();
   const deleteArea = useDeleteServiceArea();
   const { data: branches = [] } = useBranches();
@@ -42,10 +44,10 @@ export function EditPincodeModal({ area, open, onOpenChange }: EditPincodeModalP
   useEffect(() => {
     if (open && area) {
       setPincode(area.pincode);
-      setBranchId(area.branchId);
+      setBranchId(lockedBranchId ?? area.branchId);
       setActive(area.active);
     }
-  }, [open, area]);
+  }, [open, area, lockedBranchId]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -64,7 +66,7 @@ export function EditPincodeModal({ area, open, onOpenChange }: EditPincodeModalP
     }
     const pincodeChanged = result.data.pincode !== area.pincode;
     if (pincodeChanged) {
-      deleteArea.mutate(area.pincode, {
+      deleteArea.mutate(area.id, {
         onSuccess: () => {
           createArea.mutate({ pincode: result.data.pincode, branchId, active }, {
             onSuccess: () => {
@@ -74,7 +76,7 @@ export function EditPincodeModal({ area, open, onOpenChange }: EditPincodeModalP
             onError: (err) => {
               const apiErr = getApiError(err);
               if (apiErr.code === 'PINCODE_ALREADY_IN_OTHER_BRANCH') {
-                toast.error('This pincode is already added to another branch.');
+                toast.error('That branch already has this pincode.');
               } else {
                 toast.error(apiErr.message);
               }
@@ -101,7 +103,7 @@ export function EditPincodeModal({ area, open, onOpenChange }: EditPincodeModalP
         onError: (err) => {
           const apiErr = getApiError(err);
           if (apiErr.code === 'PINCODE_ALREADY_IN_OTHER_BRANCH') {
-            toast.error('This pincode is already added to another branch.');
+            toast.error('That branch already has this pincode.');
           } else {
             toast.error(apiErr.message);
           }
@@ -124,20 +126,26 @@ export function EditPincodeModal({ area, open, onOpenChange }: EditPincodeModalP
               <label htmlFor="edit-branch" className="text-sm font-medium">
                 Branch
               </label>
-              <select
-                id="edit-branch"
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                value={branchId}
-                onChange={(e) => setBranchId(e.target.value)}
-                required
-              >
-                <option value="">Select branch…</option>
-                {branches.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name}
-                  </option>
-                ))}
-              </select>
+              {lockedBranchId ? (
+                <p id="edit-branch" className="text-sm rounded-md border border-input bg-muted/40 px-3 py-2">
+                  {branches.find((b) => b.id === lockedBranchId)?.name ?? lockedBranchId}
+                </p>
+              ) : (
+                <select
+                  id="edit-branch"
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  value={branchId}
+                  onChange={(e) => setBranchId(e.target.value)}
+                  required
+                >
+                  <option value="">Select branch…</option>
+                  {branches.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
             <div className="grid gap-2">
               <label htmlFor="edit-pincode" className="text-sm font-medium">

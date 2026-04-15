@@ -1,8 +1,8 @@
 {
   "expo": {
-    "name": "Weyou Customer PWA",
-    "slug": "weyou-customer-pwa",
-    "scheme": "weyou-customer-pwa",
+    "name": "Bubbler Customer PWA",
+    "slug": "bubbler-customer-pwa",
+    "scheme": "bubbler-customer-pwa",
     "version": "1.0.0",
     "icon": "../customer-mobile/assets/icon.png",
     "orientation": "portrait",

@@ -26,12 +26,15 @@ export class PrismaAdminUsersRepo implements AdminUsersRepo {
   constructor(private readonly prisma: PrismaLike) {}
 
   async listAdmin(filters: AdminUsersFilters): Promise<AdminUsersResult> {
-    const { role, active, search, limit, cursor } = filters;
+    const { role, active, search, branchId, limit, cursor } = filters;
 
     // Use `not: CUSTOMER` so we do not send `AGENT` in SQL until Postgres enum includes it (avoids 22P02 before migrate).
     const where: any = {
       role: role ? role : { not: 'CUSTOMER' },
     };
+    if (branchId) {
+      where.branchId = branchId;
+    }
     if (active !== undefined) {
       where.isActive = active;
     }
@@ -128,6 +131,12 @@ export class PrismaAdminUsersRepo implements AdminUsersRepo {
   async deleteUser(id: string): Promise<void> {
     await this.prisma.user.delete({
       where: { id },
+    });
+  }
+
+  async countByBranchAndRole(branchId: string, role: string): Promise<number> {
+    return this.prisma.user.count({
+      where: { branchId, role: role as any },
     });
   }
 }

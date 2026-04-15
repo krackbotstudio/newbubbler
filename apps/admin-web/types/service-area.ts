@@ -1,4 +1,5 @@
 export interface ServiceArea {
+  id: string;
   pincode: string;
   branchId: string;
   active: boolean;

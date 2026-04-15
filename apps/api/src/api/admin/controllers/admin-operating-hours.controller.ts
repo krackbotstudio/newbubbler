@@ -1,9 +1,19 @@
-import { BadRequestException, Controller, Get, Put, Body, Query, UseGuards, Req } from '@nestjs/common';
+import {
+  BadRequestException,
+  Controller,
+  Get,
+  Put,
+  Body,
+  Query,
+  UseGuards,
+  ForbiddenException,
+} from '@nestjs/common';
 import { Role } from '@shared/enums';
 import { JwtAuthGuard } from '../../common/jwt-auth.guard';
 import { Roles } from '../../common/roles.decorator';
 import { RolesGuard } from '../../common/roles.guard';
 import type { AuthUser } from '../../common/roles.guard';
+import { CurrentUser } from '../../common/current-user.decorator';
 import { AdminOperatingHoursService } from '../services/admin-operating-hours.service';
 import { SetOperatingHoursDto } from '../dto/set-operating-hours.dto';
 
@@ -14,9 +24,8 @@ export class AdminOperatingHoursController {
   constructor(private readonly adminOperatingHoursService: AdminOperatingHoursService) {}
 
   @Get()
-  async get(@Query('branchId') branchId?: string, @Req() req?: { user: AuthUser }) {
-    const user = req?.user as AuthUser | undefined;
-    const effectiveBranchId = user?.role === Role.OPS && user?.branchId ? user.branchId : branchId;
+  async get(@Query('branchId') branchId: string | undefined, @CurrentUser() user: AuthUser) {
+    const effectiveBranchId = user.role === Role.OPS && user.branchId ? user.branchId : branchId;
     if (!effectiveBranchId || effectiveBranchId.trim() === '') {
       throw new BadRequestException('branchId is required');
     }
@@ -24,11 +33,17 @@ export class AdminOperatingHoursController {
   }
 
   @Put()
-  @Roles(Role.ADMIN)
-  async set(@Body() dto: SetOperatingHoursDto) {
+  @Roles(Role.ADMIN, Role.OPS)
+  async set(@Body() dto: SetOperatingHoursDto, @CurrentUser() user: AuthUser) {
     if (!dto.branchId || dto.branchId.trim() === '') {
       throw new BadRequestException('branchId is required');
     }
-    return this.adminOperatingHoursService.set(dto.branchId, dto.startTime, dto.endTime);
+    const bid = dto.branchId.trim();
+    if (user.role === Role.OPS) {
+      if (!user.branchId || user.branchId !== bid) {
+        throw new ForbiddenException('You can only set operating hours for your branch.');
+      }
+    }
+    return this.adminOperatingHoursService.set(bid, dto.startTime, dto.endTime);
   }
 }

@@ -21,6 +21,13 @@ export class PrismaHolidaysRepo implements HolidaysRepo {
     return !!row;
   }
 
+  async getById(id: string): Promise<HolidayRecord | null> {
+    const row = await this.prisma.holiday.findUnique({ where: { id } });
+    return row
+      ? { id: row.id, date: row.date, label: row.label ?? null, branchId: row.branchId }
+      : null;
+  }
+
   async list(from: Date, to: Date, branchId?: string | null): Promise<HolidayRecord[]> {
     const fromKey = toIndiaDateKey(from);
     const toKey = toIndiaDateKey(to);

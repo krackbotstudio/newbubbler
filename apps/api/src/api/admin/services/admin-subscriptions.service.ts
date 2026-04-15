@@ -55,7 +55,6 @@ export class AdminSubscriptionsService {
     const mainBranchBranding = mainBranch
       ? await getBrandingSnapshotForBranchId(mainBranch.id, { branchRepo: this.branchRepo, brandingRepo: this.brandingRepo })
       : null;
-    // Branch snapshot has no termsAndConditions (Branch model); use global branding for logo + terms on subscription bills
     const globalBranding = await this.brandingRepo.get();
     const brandingSnapshotJson = mainBranchBranding
       ? {
@@ -70,7 +69,10 @@ export class AdminSubscriptionsService {
           upiQrUrl: mainBranchBranding.upiQrUrl ?? null,
           panNumber: mainBranchBranding.panNumber ?? null,
           gstNumber: mainBranchBranding.gstNumber ?? null,
-          termsAndConditions: (mainBranchBranding.termsAndConditions && mainBranchBranding.termsAndConditions.trim()) || (globalBranding && globalBranding.termsAndConditions) || null,
+          termsAndConditions:
+            (mainBranchBranding.termsAndConditions && mainBranchBranding.termsAndConditions.trim()) ||
+            (globalBranding && globalBranding.termsAndConditions) ||
+            null,
         }
       : (invoice.brandingSnapshotJson as Record<string, unknown> | null) ?? null;
     return {

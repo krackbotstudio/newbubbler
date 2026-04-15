@@ -242,6 +242,8 @@ export interface ActiveSubscriptionItem {
   planId: string;
   planName: string;
   planDescription?: string | null;
+  /** Branch tied to this subscription (slots and billing). */
+  branchId?: string | null;
   /** Address this subscription is tied to (pickup/delivery only at this address). */
   addressId: string | null;
   /** Address label at purchase; still shown after address is edited/deleted. */
@@ -471,6 +473,30 @@ export async function checkServiceability(pincode: string): Promise<Serviceabili
   };
 }
 
+// --- Branches serving a pincode (public) ---
+export interface BranchForPincodeOption {
+  id: string;
+  name: string;
+  /** Relative or absolute URL; resolve with `brandingLogoFullUrl`. */
+  logoUrl: string | null;
+  /** ISO timestamp for cache-busting when building image URI. */
+  updatedAt: string | null;
+}
+
+export interface BranchesForPincodeResponse {
+  branches: BranchForPincodeOption[];
+}
+
+export async function getBranchesForPincode(pincode: string): Promise<BranchesForPincodeResponse> {
+  const base = apiBase();
+  if (!base) return { branches: [] };
+  const res = await fetchWithTimeout(
+    `${base}/serviceability/branches?pincode=${encodeURIComponent(pincode.trim())}`,
+  );
+  if (!res.ok) return { branches: [] };
+  return res.json() as Promise<BranchesForPincodeResponse>;
+}
+
 // --- Slot availability (public) ---
 export interface SlotAvailability {
   isServiceable: boolean;
@@ -482,15 +508,19 @@ export interface SlotAvailability {
 
 export async function getSlotAvailability(
   pincode: string,
-  date: string
+  date: string,
+  branchId?: string | null,
 ): Promise<SlotAvailability> {
   const base = apiBase();
   if (!base) {
     return { isServiceable: false, isHoliday: false, timeSlots: [] };
   }
-  const res = await fetchWithTimeout(
-    `${base}/slots/availability?pincode=${encodeURIComponent(pincode)}&date=${encodeURIComponent(date)}`
-  );
+  const q = new URLSearchParams({
+    pincode: pincode.trim(),
+    date: date.trim(),
+  });
+  if (branchId?.trim()) q.set('branchId', branchId.trim());
+  const res = await fetchWithTimeout(`${base}/slots/availability?${q.toString()}`);
   const data = (await res.json()) as SlotAvailability;
   return data;
 }
@@ -695,6 +725,8 @@ export async function createOrder(
     /** For subscription booking: use existing subscription. */
     orderType?: 'INDIVIDUAL' | 'SUBSCRIPTION';
     subscriptionId?: string | null;
+    /** Individual: branch that serves the address pincode (when multiple branches serve the area). */
+    branchId?: string | null;
   }
 ): Promise<{ orderId: string }> {
   const base = apiBase();
@@ -711,6 +743,9 @@ export async function createOrder(
     payload.subscriptionId = body.subscriptionId;
   } else {
     payload.selectedServices = body.selectedServices ?? ['WASH_FOLD'];
+    if (body.branchId?.trim()) {
+      payload.branchId = body.branchId.trim();
+    }
   }
   const res = await fetchWithTimeout(`${base}/orders`, {
     method: 'POST',

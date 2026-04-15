@@ -31,7 +31,7 @@ export class SlotsService {
     @Inject(BRANCH_REPO) private readonly branchRepo: BranchRepo,
   ) {}
 
-  async getAvailability(pincode: string, date: string): Promise<{
+  async getAvailability(pincode: string, date: string, preferredBranchId?: string): Promise<{
     isServiceable: boolean;
     isHoliday: boolean;
     branchName?: string;
@@ -42,8 +42,18 @@ export class SlotsService {
     if (!isServiceable) {
       return { isServiceable: false, isHoliday: false, timeSlots: [] };
     }
-    const area = await this.serviceAreaRepo.getByPincode(pincode);
-    const branchId = area?.branchId ?? null;
+    let branchId: string | null = null;
+    if (preferredBranchId) {
+      const areas = await this.serviceAreaRepo.listActiveByPincode(pincode);
+      const match = areas.find((a) => a.branchId === preferredBranchId);
+      branchId = match?.branchId ?? null;
+      if (!branchId) {
+        return { isServiceable: false, isHoliday: false, timeSlots: [] };
+      }
+    } else {
+      const area = await this.serviceAreaRepo.getByPincode(pincode);
+      branchId = area?.branchId ?? null;
+    }
     const branch = branchId ? await this.branchRepo.getById(branchId) : null;
     const branchName = branch?.name;
 

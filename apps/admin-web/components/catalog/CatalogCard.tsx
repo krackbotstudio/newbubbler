@@ -3,10 +3,11 @@
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
-import { useUpdateItem } from '@/hooks/useCatalog';
+import { useUpdateItem, useDeleteItem } from '@/hooks/useCatalog';
 import { toast } from 'sonner';
+import { getFriendlyErrorMessage } from '@/lib/api';
 import type { CatalogItemWithMatrix, ServiceCategory, SegmentCategory } from '@/types';
-import { Pencil } from 'lucide-react';
+import { Pencil, Trash2 } from 'lucide-react';
 import { CatalogItemIcon } from './CatalogItemIcon';
 
 function groupBySegment(
@@ -35,11 +36,20 @@ interface CatalogCardProps {
   serviceCategories: ServiceCategory[];
   segmentCategories: SegmentCategory[];
   canEdit: boolean;
+  canDelete?: boolean;
   onEdit: () => void;
 }
 
-export function CatalogCard({ item, serviceCategories, segmentCategories, canEdit, onEdit }: CatalogCardProps) {
+export function CatalogCard({
+  item,
+  serviceCategories,
+  segmentCategories,
+  canEdit,
+  canDelete = false,
+  onEdit,
+}: CatalogCardProps) {
   const updateItem = useUpdateItem(item.id);
+  const deleteItem = useDeleteItem();
   const bySegment = groupBySegment(item.segmentPrices, serviceCategories, segmentCategories);
   const segments = Array.from(bySegment.keys()).sort();
 
@@ -49,9 +59,24 @@ export function CatalogCard({ item, serviceCategories, segmentCategories, canEdi
       { active: checked },
       {
         onSuccess: () => toast.success(checked ? 'Item enabled' : 'Item disabled'),
-        onError: (err) => toast.error((err as Error).message),
+        onError: (err) => toast.error(getFriendlyErrorMessage(err)),
       },
     );
+  };
+
+  const handleDelete = () => {
+    if (!canDelete) return;
+    if (
+      !confirm(
+        `Delete “${item.name}” from the catalog? This cannot be undone. Items linked to existing orders cannot be deleted.`,
+      )
+    ) {
+      return;
+    }
+    deleteItem.mutate(item.id, {
+      onSuccess: () => toast.success('Item deleted'),
+      onError: (err) => toast.error(getFriendlyErrorMessage(err)),
+    });
   };
 
   return (
@@ -81,6 +106,18 @@ export function CatalogCard({ item, serviceCategories, segmentCategories, canEdi
           {canEdit && (
             <Button variant="ghost" size="sm" onClick={onEdit} title="Edit item">
               <Pencil className="h-4 w-4" />
+            </Button>
+          )}
+          {canDelete && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleDelete}
+              disabled={deleteItem.isPending}
+              title="Delete item"
+              className="text-destructive hover:text-destructive"
+            >
+              <Trash2 className="h-4 w-4" />
             </Button>
           )}
         </div>

@@ -3,9 +3,11 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
@@ -17,22 +19,39 @@ import {
 } from '@/hooks/useCatalog';
 import { toast } from 'sonner';
 import { getFriendlyErrorMessage } from '@/lib/api';
+import type { Role } from '@/lib/auth';
 import type { ServiceCategory, SegmentCategory } from '@/types';
 import { Pencil, Trash2 } from 'lucide-react';
+
+function canMutateTaxonomyRow(role: Role, viewerBranchId: string | null | undefined, rowBranchId: string): boolean {
+  if (role === 'ADMIN') return true;
+  return !!viewerBranchId && rowBranchId === viewerBranchId;
+}
 
 interface ManageServicesSegmentsModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Current catalog taxonomy branch id (matrix scope). Used with commonTaxonomyBranchId for help text only. */
+  taxonomyBranchId?: string;
+  /** Default-branch id: segment/service rows on this branch are org-wide “common”. */
+  commonTaxonomyBranchId?: string;
+  role: Role;
+  /** Branch head’s assigned branch; common rows use a different id and are view-only for OPS. */
+  viewerBranchId?: string | null;
   segmentCategories: SegmentCategory[];
   serviceCategories: ServiceCategory[];
 }
 
 function SegmentRow({
   segment,
+  commonTaxonomyBranchId,
+  canMutate,
   onUpdated,
   onDeleted,
 }: {
   segment: SegmentCategory;
+  commonTaxonomyBranchId?: string;
+  canMutate: boolean;
   onUpdated: () => void;
   onDeleted: () => void;
 }) {
@@ -91,14 +110,36 @@ function SegmentRow({
         </>
       ) : (
         <>
-          <span className="flex-1 font-medium">{segment.label}</span>
-          <span className="text-muted-foreground text-sm">{segment.code}</span>
-          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => setEditing(true)} title="Edit">
-            <Pencil className="h-4 w-4" />
-          </Button>
-          <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive hover:text-destructive" onClick={handleDelete} disabled={deleteSegment.isPending} title="Delete">
-            <Trash2 className="h-4 w-4" />
-          </Button>
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+            <span className="font-medium">{segment.label}</span>
+            {commonTaxonomyBranchId && segment.branchId === commonTaxonomyBranchId ? (
+              <Badge variant="secondary" className="shrink-0 font-normal">
+                Common
+              </Badge>
+            ) : null}
+          </div>
+          <span className="text-muted-foreground shrink-0 text-sm">{segment.code}</span>
+          {canMutate ? (
+            <>
+              <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => setEditing(true)} title="Edit">
+                <Pencil className="h-4 w-4" />
+              </Button>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-8 w-8 shrink-0 text-destructive hover:text-destructive"
+                onClick={handleDelete}
+                disabled={deleteSegment.isPending}
+                title="Delete"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </>
+          ) : (
+            <span className="text-muted-foreground shrink-0 text-xs" title="Only admins or this branch's own categories can be edited">
+              View only
+            </span>
+          )}
         </>
       )}
     </div>
@@ -107,10 +148,14 @@ function SegmentRow({
 
 function ServiceRow({
   service,
+  commonTaxonomyBranchId,
+  canMutate,
   onUpdated,
   onDeleted,
 }: {
   service: ServiceCategory;
+  commonTaxonomyBranchId?: string;
+  canMutate: boolean;
   onUpdated: () => void;
   onDeleted: () => void;
 }) {
@@ -169,14 +214,36 @@ function ServiceRow({
         </>
       ) : (
         <>
-          <span className="flex-1 font-medium">{service.label}</span>
-          <span className="text-muted-foreground text-sm">{service.code}</span>
-          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => setEditing(true)} title="Edit">
-            <Pencil className="h-4 w-4" />
-          </Button>
-          <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive hover:text-destructive" onClick={handleDelete} disabled={deleteService.isPending} title="Delete">
-            <Trash2 className="h-4 w-4" />
-          </Button>
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+            <span className="font-medium">{service.label}</span>
+            {commonTaxonomyBranchId && service.branchId === commonTaxonomyBranchId ? (
+              <Badge variant="secondary" className="shrink-0 font-normal">
+                Common
+              </Badge>
+            ) : null}
+          </div>
+          <span className="text-muted-foreground shrink-0 text-sm">{service.code}</span>
+          {canMutate ? (
+            <>
+              <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => setEditing(true)} title="Edit">
+                <Pencil className="h-4 w-4" />
+              </Button>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-8 w-8 shrink-0 text-destructive hover:text-destructive"
+                onClick={handleDelete}
+                disabled={deleteService.isPending}
+                title="Delete"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </>
+          ) : (
+            <span className="text-muted-foreground shrink-0 text-xs" title="Only admins or this branch's own categories can be edited">
+              View only
+            </span>
+          )}
         </>
       )}
     </div>
@@ -186,14 +253,33 @@ function ServiceRow({
 export function ManageServicesSegmentsModal({
   open,
   onOpenChange,
+  taxonomyBranchId,
+  commonTaxonomyBranchId,
+  role,
+  viewerBranchId,
   segmentCategories,
   serviceCategories,
 }: ManageServicesSegmentsModalProps) {
+  const mergedCommonView =
+    !!commonTaxonomyBranchId &&
+    !!taxonomyBranchId?.trim() &&
+    taxonomyBranchId.trim() !== commonTaxonomyBranchId;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[85vh] max-w-lg overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Manage Services & Segments</DialogTitle>
+          {mergedCommonView ? (
+            <DialogDescription>
+              <span className="text-muted-foreground">Common</span> is shared from the main branch; other rows are
+              only for this branch.
+            </DialogDescription>
+          ) : commonTaxonomyBranchId ? (
+            <DialogDescription>
+              <span className="text-muted-foreground">Common</span> marks taxonomy on the main branch (all branches).
+            </DialogDescription>
+          ) : null}
         </DialogHeader>
         <div className="space-y-6">
           <div>
@@ -206,6 +292,8 @@ export function ManageServicesSegmentsModal({
                   <SegmentRow
                     key={seg.id}
                     segment={seg}
+                    commonTaxonomyBranchId={commonTaxonomyBranchId}
+                    canMutate={canMutateTaxonomyRow(role, viewerBranchId, seg.branchId)}
                     onUpdated={() => {}}
                     onDeleted={() => {}}
                   />
@@ -223,6 +311,8 @@ export function ManageServicesSegmentsModal({
                   <ServiceRow
                     key={svc.id}
                     service={svc}
+                    commonTaxonomyBranchId={commonTaxonomyBranchId}
+                    canMutate={canMutateTaxonomyRow(role, viewerBranchId, svc.branchId)}
                     onUpdated={() => {}}
                     onDeleted={() => {}}
                   />

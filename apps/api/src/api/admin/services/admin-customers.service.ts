@@ -78,6 +78,24 @@ export class AdminCustomersService {
     return searchCustomersByPhone(phone, { customersRepo: this.customersRepo }, branchId);
   }
 
+  /** Phone search with order/subscription counts (same row shape as list). */
+  async searchByPhoneWithCounts(phone: string, branchId?: string | null) {
+    const customers = await searchCustomersByPhone(phone, { customersRepo: this.customersRepo }, branchId);
+    if (customers.length === 0) return [];
+    const userIds = customers.map((c) => c.id);
+    const [orderCounts, subCounts] = await Promise.all([
+      this.ordersRepo.getOrderCountsByUserIds(userIds),
+      this.subscriptionsRepo.getSubscriptionCountsByUserIds(userIds),
+    ]);
+    return customers.map((c) => ({
+      ...c,
+      pastOrdersCount: orderCounts[c.id]?.past ?? 0,
+      activeOrdersCount: orderCounts[c.id]?.active ?? 0,
+      activeSubscriptionsCount: subCounts[c.id]?.active ?? 0,
+      inactiveSubscriptionsCount: subCounts[c.id]?.inactive ?? 0,
+    }));
+  }
+
   /** List customers with order and subscription counts for admin list view. */
   async listWithCounts(limit: number, cursor?: string | null, search?: string | null, branchId?: string | null) {
     const { data, nextCursor } = await this.customersRepo.list(limit, cursor ?? null, search ?? null, branchId ?? null);

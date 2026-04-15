@@ -5,6 +5,7 @@ type PrismaLike = Pick<PrismaClient, 'serviceCategory'>;
 
 function toRecord(row: {
   id: string;
+  branchId: string;
   code: string;
   label: string;
   isActive: boolean;
@@ -12,6 +13,7 @@ function toRecord(row: {
 }): ServiceCategoryRecord {
   return {
     id: row.id,
+    branchId: row.branchId,
     code: row.code,
     label: row.label,
     isActive: row.isActive,
@@ -22,9 +24,14 @@ function toRecord(row: {
 export class PrismaServiceCategoryRepo implements ServiceCategoryRepo {
   constructor(private readonly prisma: PrismaLike) {}
 
-  async create(code: string, label: string, isActive = true): Promise<ServiceCategoryRecord> {
+  async create(
+    branchId: string,
+    code: string,
+    label: string,
+    isActive = true,
+  ): Promise<ServiceCategoryRecord> {
     const row = await this.prisma.serviceCategory.create({
-      data: { code, label, isActive },
+      data: { branchId, code, label, isActive },
     });
     return toRecord(row);
   }
@@ -36,9 +43,9 @@ export class PrismaServiceCategoryRepo implements ServiceCategoryRepo {
     return row ? toRecord(row) : null;
   }
 
-  async getByCode(code: string): Promise<ServiceCategoryRecord | null> {
+  async getByBranchIdAndCode(branchId: string, code: string): Promise<ServiceCategoryRecord | null> {
     const row = await this.prisma.serviceCategory.findUnique({
-      where: { code },
+      where: { branchId_code: { branchId, code } },
     });
     return row ? toRecord(row) : null;
   }
@@ -57,6 +64,14 @@ export class PrismaServiceCategoryRepo implements ServiceCategoryRepo {
 
   async listAll(): Promise<ServiceCategoryRecord[]> {
     const rows = await this.prisma.serviceCategory.findMany({
+      orderBy: [{ branchId: 'asc' }, { code: 'asc' }],
+    });
+    return rows.map(toRecord);
+  }
+
+  async listByBranchId(branchId: string): Promise<ServiceCategoryRecord[]> {
+    const rows = await this.prisma.serviceCategory.findMany({
+      where: { branchId },
       orderBy: { code: 'asc' },
     });
     return rows.map(toRecord);
@@ -65,7 +80,7 @@ export class PrismaServiceCategoryRepo implements ServiceCategoryRepo {
   async listActive(): Promise<ServiceCategoryRecord[]> {
     const rows = await this.prisma.serviceCategory.findMany({
       where: { isActive: true },
-      orderBy: { code: 'asc' },
+      orderBy: [{ branchId: 'asc' }, { code: 'asc' }],
     });
     return rows.map(toRecord);
   }

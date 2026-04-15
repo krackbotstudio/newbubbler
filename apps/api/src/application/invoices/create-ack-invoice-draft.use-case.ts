@@ -3,13 +3,12 @@ import { assertCanIssueAcknowledgementInvoice } from './issue-ack-invoice.use-ca
 import type { OrdersRepo, InvoicesRepo, BrandingRepo, BranchRepo, ServiceAreaRepo, SubscriptionPlansRepo } from '../ports';
 import type { CreateDraftInput } from '../ports';
 import { calculateInvoiceTotals } from './calculate-invoice-totals';
-import { getBrandingSnapshotForOrder } from './create-final-invoice-draft.use-case';
+import {
+  formatAckInvoiceCode,
+  getBrandingSnapshotForOrder,
+  getBranchInvoicePrefixForOrder,
+} from './create-final-invoice-draft.use-case';
 import type { InvoiceItemType } from '@shared/enums';
-
-/** Acknowledgement invoice code: ACK - {order number} so business can relate to order. */
-function ackInvoiceCode(orderId: string): string {
-  return `ACK - ${orderId}`;
-}
 
 export interface CreateAckInvoiceDraftInput {
   orderId: string;
@@ -203,7 +202,11 @@ export async function createAckInvoiceDraft(
     return { invoiceId: updated.id, subtotal: updated.subtotal, tax: updated.tax, total: updated.total };
   }
 
-  const code = ackInvoiceCode(input.orderId);
+  const invoicePrefix = await getBranchInvoicePrefixForOrder(order, {
+    branchRepo: deps.branchRepo,
+    serviceAreaRepo: deps.serviceAreaRepo,
+  });
+  const code = formatAckInvoiceCode(order.id, invoicePrefix);
 
   const createInput: CreateDraftInput = {
     orderId: input.orderId,

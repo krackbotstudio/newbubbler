@@ -1,5 +1,9 @@
 import { Controller, Get, Patch, Param, Body, Query, Req, UseGuards } from '@nestjs/common';
 import { Role } from '@shared/enums';
+
+function phoneDigitCount(phone: string): number {
+  return (phone || '').replace(/\D/g, '').length;
+}
 import { AGENT_ROLE } from '../../common/agent-role';
 import { JwtAuthGuard } from '../../common/jwt-auth.guard';
 import { Roles } from '../../common/roles.decorator';
@@ -24,6 +28,10 @@ export class AdminCustomersController {
   ) {
     const limit = Math.min(Math.max(parseInt(limitStr ?? '20', 10) || 20, 1), 100);
     const user = req.user;
+    /** Branch heads must use phone search only; never return a bulk list. */
+    if (user.role === Role.OPS) {
+      return { data: [], nextCursor: null };
+    }
     const branchId = user.role === AGENT_ROLE && user.branchId ? user.branchId : null;
     return this.adminCustomersService.listWithCounts(limit, cursor ?? null, search?.trim() || null, branchId);
   }
@@ -31,8 +39,12 @@ export class AdminCustomersController {
   @Get('search')
   async search(@Query('phone') phone: string, @Req() req: { user: AuthUser }) {
     const u = req.user;
-    const branchId = u.role === AGENT_ROLE && u.branchId ? u.branchId : null;
-    return this.adminCustomersService.searchByPhone(phone || '', branchId);
+    if (u.role === Role.OPS && phoneDigitCount(phone) < 10) {
+      return [];
+    }
+    const branchId =
+      (u.role === AGENT_ROLE || u.role === Role.OPS) && u.branchId ? u.branchId : null;
+    return this.adminCustomersService.searchByPhoneWithCounts(phone || '', branchId);
   }
 
   @Get(':userId/payments')

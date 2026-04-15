@@ -25,11 +25,11 @@ export function useCreateServiceArea() {
   });
 }
 
-export function usePatchServiceArea(pincode: string) {
+export function usePatchServiceArea(id: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: PatchServiceAreaBody) =>
-      api.patch<ServiceArea>(`/admin/service-areas/${encodeURIComponent(pincode)}`, body).then((r) => r.data),
+      api.patch<ServiceArea>(`/admin/service-areas/${encodeURIComponent(id)}`, body).then((r) => r.data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['admin', 'service-areas'] });
     },
@@ -39,8 +39,7 @@ export function usePatchServiceArea(pincode: string) {
 export function useDeleteServiceArea() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (pincode: string) =>
-      api.delete(`/admin/service-areas/${encodeURIComponent(pincode)}`),
+    mutationFn: (id: string) => api.delete(`/admin/service-areas/${encodeURIComponent(id)}`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['admin', 'service-areas'] });
     },

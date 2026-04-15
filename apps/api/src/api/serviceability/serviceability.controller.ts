@@ -6,6 +6,11 @@ import { ServiceabilityQueryDto } from './dto/serviceability-query.dto';
 export class ServiceabilityController {
   constructor(private readonly serviceabilityService: ServiceabilityService) {}
 
+  @Get('branches')
+  async branches(@Query('pincode') pincode: string) {
+    return this.serviceabilityService.listBranchesForPincode(pincode ?? '');
+  }
+
   @Get()
   async check(@Query() query: ServiceabilityQueryDto) {
     const result = await this.serviceabilityService.check(query.pincode);

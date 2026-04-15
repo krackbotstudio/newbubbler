@@ -46,6 +46,7 @@ import {
   updateAddress,
   deleteAddress,
   getSlotAvailability,
+  getBranchesForPincode,
   createOrder,
   listOrders,
   getOrder,
@@ -81,7 +82,7 @@ import { parseLatLngFromMapsUrl, reverseGeocodeAddress } from './src/googlePlace
 type Step = 'phone' | 'otp' | 'profile' | 'done';
 type HomeScreen = 'home' | 'subscriptions' | 'subscriptionDetail' | 'addresses' | 'addAddress' | 'areaRequestSent' | 'bookPickup' | 'myOrders' | 'orderDetail' | 'profile';
 type OrderFilter = 'all' | 'walk_in' | 'individual' | 'subscription';
-type BookingStep = 'services' | 'address' | 'date' | 'time' | 'confirm';
+type BookingStep = 'services' | 'address' | 'branch' | 'date' | 'time' | 'confirm';
 
 const SERVICE_ICON_SOURCE: Record<ServiceTypeId, any> = {
   WASH_FOLD: washAndFoldIcon,
@@ -192,6 +193,11 @@ export default function App() {
     branchName?: string;
   } | null>(null);
   const [slotAvailabilityLoading, setSlotAvailabilityLoading] = useState(false);
+  const [bookingBranchesLoading, setBookingBranchesLoading] = useState(false);
+  const [bookingBranches, setBookingBranches] = useState<
+    Array<{ id: string; name: string; logoUrl: string | null; updatedAt: string | null }>
+  >([]);
+  const [bookingSelectedBranchId, setBookingSelectedBranchId] = useState<string | null>(null);
   const [bookingSuccessOrderId, setBookingSuccessOrderId] = useState<string | null>(null);
   const [orders, setOrdersList] = useState<OrderSummary[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
@@ -1281,7 +1287,37 @@ export default function App() {
     setBookingDate('');
     setBookingTimeSlot('');
     setSlotAvailability(null);
-    setBookingStep('date');
+    setBookingBranches([]);
+    const subId = bookingSubscriptionId;
+    if (subId) {
+      const sub = meData?.activeSubscriptions?.find((s) => s.id === subId);
+      setBookingSelectedBranchId(sub?.branchId ?? null);
+      setBookingStep('date');
+      return;
+    }
+    void (async () => {
+      setBookingBranchesLoading(true);
+      setError(null);
+      try {
+        const { branches } = await getBranchesForPincode(addr.pincode);
+        setBookingBranches(branches);
+        if (branches.length === 0) {
+          setError('No branch is available for this pincode. Try another address or contact support.');
+          return;
+        }
+        if (branches.length === 1) {
+          setBookingSelectedBranchId(branches[0].id);
+          setBookingStep('date');
+        } else {
+          setBookingSelectedBranchId(null);
+          setBookingStep('branch');
+        }
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Could not load branches for this area.');
+      } finally {
+        setBookingBranchesLoading(false);
+      }
+    })();
   };
 
   const handleBookingDateSelect = async (dateStr: string) => {
@@ -1295,7 +1331,7 @@ export default function App() {
     setSlotAvailabilityLoading(true);
     setSlotAvailability(null);
     try {
-      const avail = await getSlotAvailability(address.pincode, dateStr);
+      const avail = await getSlotAvailability(address.pincode, dateStr, bookingSelectedBranchId);
       if (avail.isHoliday) {
         setSlotAvailability({ isHoliday: true, timeSlots: [], branchName: avail.branchName });
       } else {
@@ -1314,10 +1350,10 @@ export default function App() {
     }
   };
 
-  const loadWebHolidayDates = useCallback(async (monthDate: Date, pincode: string) => {
+  const loadWebHolidayDates = useCallback(async (monthDate: Date, pincode: string, branchForSlots?: string | null) => {
     const year = monthDate.getFullYear();
     const month = monthDate.getMonth();
-    const cacheKey = `${pincode}:${year}-${month + 1}`;
+    const cacheKey = `${pincode}:${branchForSlots ?? ''}:${year}-${month + 1}`;
     const cached = webHolidayCacheRef.current[cacheKey];
     if (cached) {
       setWebHolidayDates((prev) => ({ ...prev, ...cached }));
@@ -1332,7 +1368,7 @@ export default function App() {
       const results = await Promise.all(
         keys.map(async (dateKey) => {
           try {
-            const avail = await getSlotAvailability(pincode, dateKey);
+            const avail = await getSlotAvailability(pincode, dateKey, branchForSlots);
             return avail.isHoliday ? dateKey : null;
           } catch {
             return null;
@@ -1372,6 +1408,7 @@ export default function App() {
         orderType: isSubscriptionBooking ? 'SUBSCRIPTION' : 'INDIVIDUAL',
         subscriptionId: bookingSubscriptionId ?? undefined,
         selectedServices: selectedServiceIds,
+        branchId: isSubscriptionBooking ? undefined : bookingSelectedBranchId ?? undefined,
       });
       setBookingSuccessOrderId(orderId);
       setHomeScreen('bookPickup');
@@ -1382,6 +1419,8 @@ export default function App() {
       setBookingDate('');
       setBookingTimeSlot('');
       setSlotAvailability(null);
+      setBookingBranches([]);
+      setBookingSelectedBranchId(null);
       bookingFromSubscriptionRef.current = false;
       setBookingSubscriptionId(null);
       setBookingSubscriptionValidFrom(null);
@@ -1989,6 +2028,12 @@ export default function App() {
                     setError('Please select at least one service.');
                     return;
                   }
+                  bookingFromSubscriptionRef.current = false;
+                  setBookingSubscriptionId(null);
+                  setBookingSubscriptionValidFrom(null);
+                  setBookingSubscriptionValidTill(null);
+                  setBookingSelectedBranchId(null);
+                  setBookingBranches([]);
                   setBookingStep('address');
                 }}
                 disabled={selectedServiceIds.length === 0}
@@ -2020,6 +2065,7 @@ export default function App() {
                         setError(null);
                         bookingFromSubscriptionRef.current = true;
                         setBookingSubscriptionId(sub.id);
+                        setBookingSelectedBranchId((sub as ActiveSubscriptionItem).branchId ?? null);
                         setBookingSubscriptionValidFrom(sub.validityStartDate?.slice(0, 10) ?? null);
                         setBookingSubscriptionValidTill(sub.validTill?.slice(0, 10) ?? null);
                         setBookingAddressId(subAddressId);
@@ -2071,10 +2117,23 @@ export default function App() {
                     : 'Choose a saved address for pickup, or add one.'}
               </Text>
               {error && <Text style={styles.error}>{error}</Text>}
+              {bookingBranchesLoading ? (
+                <Text style={[styles.muted, { marginBottom: 8 }]}>Finding branches for your pincode…</Text>
+              ) : null}
               {subscriptionAddressLocked && bookingAddressId && !savedAddresses.find((a) => a.id === bookingAddressId) ? (
                 <View style={[styles.addressCard, { marginBottom: 12 }]}>
                   <Text style={styles.muted}>This subscription is tied to an address that is no longer in your list. Pickup and bills will still be for that address. Tap Continue to select date & time.</Text>
-                  <TouchableOpacity style={[styles.button, { marginTop: 12 }]} onPress={() => { setError(null); setBookingStep('date'); }}>
+                  <TouchableOpacity
+                    style={[styles.button, { marginTop: 12 }]}
+                    onPress={() => {
+                      setError(null);
+                      if (bookingSubscriptionId) {
+                        const sub = meData?.activeSubscriptions?.find((s) => s.id === bookingSubscriptionId);
+                        setBookingSelectedBranchId(sub?.branchId ?? null);
+                      }
+                      setBookingStep('date');
+                    }}
+                  >
                     <Text style={styles.buttonText}>Continue → Date</Text>
                   </TouchableOpacity>
                 </View>
@@ -2090,6 +2149,10 @@ export default function App() {
                       onPress={() => {
                         if (subscriptionAddressLocked && a.id === bookingAddressId) {
                           setError(null);
+                          if (bookingSubscriptionId) {
+                            const sub = meData?.activeSubscriptions?.find((s) => s.id === bookingSubscriptionId);
+                            setBookingSelectedBranchId(sub?.branchId ?? null);
+                          }
                           setBookingStep('date');
                         } else if (!subscriptionAddressLocked) {
                           handleBookingAddressSelect(a);
@@ -2153,6 +2216,10 @@ export default function App() {
                   style={[styles.button, styles.buttonPrimary, { marginTop: 16 }]}
                   onPress={() => {
                     setError(null);
+                    if (bookingSubscriptionId) {
+                      const sub = meData?.activeSubscriptions?.find((s) => s.id === bookingSubscriptionId);
+                      setBookingSelectedBranchId(sub?.branchId ?? null);
+                    }
                     setBookingStep('date');
                   }}
                 >
@@ -2202,6 +2269,60 @@ export default function App() {
             </View>
           </ScrollView>
         );
+      } else if (bookingStep === 'branch') {
+        content = (
+          <ScrollView style={styles.scroll} contentContainerStyle={[styles.scrollContent, styles.scrollContentNoTopPadding]}>
+            <View style={styles.card}>
+              <Text style={styles.title}>Select branch</Text>
+              <Text style={styles.subtitle}>
+                More than one branch serves your address pincode. Choose the branch you want for this pickup.
+              </Text>
+              {error && <Text style={styles.error}>{error}</Text>}
+              {bookingBranches.map((b) => {
+                const rawLogoUri = brandingLogoFullUrl(b.logoUrl?.trim() ? b.logoUrl : null);
+                const logoUri =
+                  rawLogoUri && b.updatedAt
+                    ? `${rawLogoUri}${rawLogoUri.includes('?') ? '&' : '?'}v=${encodeURIComponent(b.updatedAt)}`
+                    : rawLogoUri;
+                const initial = (b.name?.trim()?.[0] ?? '?').toUpperCase();
+                return (
+                  <TouchableOpacity
+                    key={b.id}
+                    style={[styles.addressCard, styles.branchPickerRow]}
+                    onPress={() => {
+                      setError(null);
+                      setBookingSelectedBranchId(b.id);
+                      setBookingStep('date');
+                    }}
+                    activeOpacity={0.85}
+                  >
+                    {logoUri ? (
+                      <Image source={{ uri: logoUri }} style={styles.branchPickerLogo} resizeMode="contain" />
+                    ) : (
+                      <View style={styles.branchPickerLogoInitial}>
+                        <Text style={styles.branchPickerLogoInitialText}>{initial}</Text>
+                      </View>
+                    )}
+                    <Text style={[styles.addressLabel, styles.branchPickerName]} numberOfLines={2}>
+                      {b.name}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+              <TouchableOpacity
+                style={styles.textButton}
+                onPress={() => {
+                  setError(null);
+                  setBookingStep('address');
+                  setBookingBranches([]);
+                  setBookingSelectedBranchId(null);
+                }}
+              >
+                <Text style={styles.textButtonText}>Back</Text>
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        );
       } else if (bookingStep === 'date') {
         const today = new Date();
         const todayDateOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
@@ -2244,7 +2365,7 @@ export default function App() {
                     setWebCalendarMonth(monthSeed);
                     setWebDatePickerVisible(true);
                     const address = bookingAddress ?? (bookingAddressId ? savedAddresses.find((a) => a.id === bookingAddressId) : null);
-                    if (address?.pincode) void loadWebHolidayDates(monthSeed, address.pincode);
+                    if (address?.pincode) void loadWebHolidayDates(monthSeed, address.pincode, bookingSelectedBranchId);
                   }}
                 >
                   <Text style={bookingDate ? styles.datePickerButtonText : styles.datePickerPlaceholder}>
@@ -2262,7 +2383,7 @@ export default function App() {
                             if (prevLast < minDate) return;
                             setWebCalendarMonth(prev);
                             const address = bookingAddress ?? (bookingAddressId ? savedAddresses.find((a) => a.id === bookingAddressId) : null);
-                            if (address?.pincode) void loadWebHolidayDates(prev, address.pincode);
+                            if (address?.pincode) void loadWebHolidayDates(prev, address.pincode, bookingSelectedBranchId);
                           }}
                           style={styles.webCalendarNavBtn}
                         >
@@ -2277,7 +2398,7 @@ export default function App() {
                             if (maxDate && next > new Date(maxDate.getFullYear(), maxDate.getMonth(), 1)) return;
                             setWebCalendarMonth(next);
                             const address = bookingAddress ?? (bookingAddressId ? savedAddresses.find((a) => a.id === bookingAddressId) : null);
-                            if (address?.pincode) void loadWebHolidayDates(next, address.pincode);
+                            if (address?.pincode) void loadWebHolidayDates(next, address.pincode, bookingSelectedBranchId);
                           }}
                           style={styles.webCalendarNavBtn}
                         >
@@ -2352,7 +2473,19 @@ export default function App() {
               >
                 <Text style={styles.buttonText}>{slotAvailabilityLoading ? 'Checking…' : 'Next: Choose time'}</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.textButton} onPress={() => { setBookingStep('address'); setBookingDate(''); setSlotAvailability(null); setWebDatePickerVisible(false); }}>
+              <TouchableOpacity
+                style={styles.textButton}
+                onPress={() => {
+                  setBookingStep(bookingBranches.length > 1 && !bookingSubscriptionId ? 'branch' : 'address');
+                  setBookingDate('');
+                  setSlotAvailability(null);
+                  setWebDatePickerVisible(false);
+                  if (!bookingSubscriptionId) {
+                    setBookingSelectedBranchId(null);
+                    if (bookingBranches.length <= 1) setBookingBranches([]);
+                  }
+                }}
+              >
                 <Text style={styles.textButtonText}>Back</Text>
               </TouchableOpacity>
             </View>
@@ -2422,6 +2555,9 @@ export default function App() {
         const confirmServicesLabel = isSub
           ? 'Booking with subscription'
           : selectedServiceIds.map((id) => SERVICE_TYPES.find((s) => s.id === id)?.label ?? id).join(', ');
+        const confirmBranchLabel =
+          slotAvailability?.branchName ??
+          (bookingSelectedBranchId ? bookingBranches.find((b) => b.id === bookingSelectedBranchId)?.name : null);
         content = (
           <ScrollView style={styles.scroll} contentContainerStyle={[styles.scrollContent, styles.scrollContentNoTopPadding, styles.confirmScrollContent]} showsVerticalScrollIndicator={false}>
             <View style={styles.card}>
@@ -2430,6 +2566,12 @@ export default function App() {
                 <Text style={styles.confirmSummaryLabel}>Address</Text>
                 <Text style={styles.confirmSummaryValue}>{confirmAddressMain}</Text>
                 <Text style={styles.confirmSummarySubValue}>{confirmAddressLine || '—'}</Text>
+                {confirmBranchLabel ? (
+                  <View style={[styles.confirmMetaRow, { marginTop: 8 }]}>
+                    <Text style={styles.confirmSummaryLabelInline}>Branch</Text>
+                    <Text style={styles.confirmSummaryHighlight}>{confirmBranchLabel}</Text>
+                  </View>
+                ) : null}
 
                 <View style={styles.confirmMetaRow}>
                   <Text style={styles.confirmSummaryLabelInline}>Date</Text>
@@ -5251,6 +5393,38 @@ const styles = StyleSheet.create({
     backgroundColor: colors.elevation2,
     borderRadius: 8,
     marginBottom: 10,
+  },
+  branchPickerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  branchPickerLogo: {
+    width: 48,
+    height: 48,
+    borderRadius: 10,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  branchPickerLogoInitial: {
+    width: 48,
+    height: 48,
+    borderRadius: 10,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  branchPickerLogoInitialText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.primaryDark,
+  },
+  branchPickerName: {
+    flex: 1,
+    marginBottom: 0,
   },
   activePlanTile: {
     paddingVertical: 20,

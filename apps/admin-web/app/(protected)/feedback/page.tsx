@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,6 +20,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { getStoredUser, isBranchFilterLocked } from '@/lib/auth';
 import { LockedBranchSelect } from '@/components/shared/LockedBranchSelect';
 import { getApiError } from '@/lib/api';
+import { normalizeDateRangeDraft } from '@/lib/normalize-applied-date-range';
+import { DateRangeFilterWithApply } from '@/components/shared/DateRangeFilterWithApply';
 
 const STATUS_OPTIONS: FeedbackStatus[] = ['NEW', 'REVIEWED', 'RESOLVED'];
 const TYPE_OPTIONS: FeedbackType[] = ['ORDER', 'GENERAL'];
@@ -28,8 +30,10 @@ export default function FeedbackPage() {
   const [type, setType] = useState<string>('');
   const [status, setStatus] = useState<string>('');
   const [rating, setRating] = useState<string>('');
-  const [dateFrom, setDateFrom] = useState<string>('');
-  const [dateTo, setDateTo] = useState<string>('');
+  const [dateFromDraft, setDateFromDraft] = useState('');
+  const [dateToDraft, setDateToDraft] = useState('');
+  const [appliedDateFrom, setAppliedDateFrom] = useState('');
+  const [appliedDateTo, setAppliedDateTo] = useState('');
   const [cursor, setCursor] = useState<string | undefined>(undefined);
 
   const user = useMemo(() => getStoredUser(), []);
@@ -43,8 +47,8 @@ export default function FeedbackPage() {
     type: type || undefined,
     status: (status || undefined) as FeedbackStatus | undefined,
     rating: rating ? parseInt(rating, 10) : undefined,
-    dateFrom: dateFrom || undefined,
-    dateTo: dateTo || undefined,
+    dateFrom: appliedDateFrom || undefined,
+    dateTo: appliedDateTo || undefined,
     branchId: effectiveBranchId ?? undefined,
     limit: 20,
     cursor,
@@ -55,10 +59,19 @@ export default function FeedbackPage() {
   const { data: ratingStats, isLoading: statsLoading } = useFeedbackRatingStats({
     type: statsType,
     status: (status || undefined) as FeedbackStatus | undefined,
-    dateFrom: dateFrom || undefined,
-    dateTo: dateTo || undefined,
+    dateFrom: appliedDateFrom || undefined,
+    dateTo: appliedDateTo || undefined,
     branchId: effectiveBranchId ?? undefined,
   });
+
+  const handleApplyDateRange = useCallback(() => {
+    const n = normalizeDateRangeDraft(dateFromDraft, dateToDraft);
+    setDateFromDraft(n.dateFrom);
+    setDateToDraft(n.dateTo);
+    setAppliedDateFrom(n.dateFrom);
+    setAppliedDateTo(n.dateTo);
+    setCursor(undefined);
+  }, [dateFromDraft, dateToDraft]);
 
   const handleLoadMore = () => {
     if (data?.nextCursor) setCursor(data.nextCursor);
@@ -147,28 +160,14 @@ export default function FeedbackPage() {
               }}
             />
           </div>
-          <div className="space-y-1">
-            <label className="text-xs text-muted-foreground">Date from</label>
-            <Input
-              type="date"
-              value={dateFrom}
-              onChange={(e) => {
-                setDateFrom(e.target.value);
-                setCursor(undefined);
-              }}
-            />
-          </div>
-          <div className="space-y-1">
-            <label className="text-xs text-muted-foreground">Date to</label>
-            <Input
-              type="date"
-              value={dateTo}
-              onChange={(e) => {
-                setDateTo(e.target.value);
-                setCursor(undefined);
-              }}
-            />
-          </div>
+          <DateRangeFilterWithApply
+            draftFrom={dateFromDraft}
+            draftTo={dateToDraft}
+            onDraftFromChange={setDateFromDraft}
+            onDraftToChange={setDateToDraft}
+            onApply={handleApplyDateRange}
+            blockLabels={false}
+          />
         </CardContent>
       </Card>
       <Card>

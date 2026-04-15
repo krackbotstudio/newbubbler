@@ -7,6 +7,9 @@ export interface BranchRecord {
   gstNumber: string | null;
   panNumber: string | null;
   footerNote: string | null;
+  invoicePrefix: string | null;
+  itemTagBrandName: string | null;
+  termsAndConditions: string | null;
   logoUrl: string | null;
   upiId: string | null;
   upiPayeeName: string | null;
@@ -26,6 +29,9 @@ export interface BranchRepo {
     gstNumber?: string | null;
     panNumber?: string | null;
     footerNote?: string | null;
+    invoicePrefix?: string | null;
+    itemTagBrandName?: string | null;
+    termsAndConditions?: string | null;
     logoUrl?: string | null;
     upiId?: string | null;
     upiPayeeName?: string | null;

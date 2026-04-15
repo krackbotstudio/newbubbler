@@ -52,7 +52,6 @@ export function AnalyticsFilterBar({
   dateRangeError,
 }: AnalyticsFilterBarProps) {
   const isCustom = preset === 'CUSTOM';
-  const isDateRangeInvalid = !!dateRangeError;
 
   return (
     <div className="flex flex-wrap items-end gap-4 rounded-lg border bg-card p-4">
@@ -97,11 +96,7 @@ export function AnalyticsFilterBar({
             {dateRangeError ? (
               <p className="text-sm text-destructive self-center">{dateRangeError}</p>
             ) : null}
-            <Button
-              size="sm"
-              onClick={onApplyCustomRange}
-              disabled={isLoading || isDateRangeInvalid}
-            >
+            <Button size="sm" onClick={onApplyCustomRange} disabled={isLoading}>
               Apply
             </Button>
           </>

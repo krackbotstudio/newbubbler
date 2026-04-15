@@ -29,7 +29,7 @@ export interface CreateCustomerInput {
 }
 
 export interface CustomersRepo {
-  /** When branchId is set, only customers with an order in that branch. */
+  /** Substring match on phone (admin search / branch head). Does not filter by branch or orders — same discovery scope as walk-in. */
   findByPhone(phoneLike: string, branchId?: string | null): Promise<CustomerRecord[]>;
   /** Exact match by phone (for walk-in lookup). Returns null if not found or not CUSTOMER. */
   getByPhone(phone: string): Promise<CustomerRecord | null>;

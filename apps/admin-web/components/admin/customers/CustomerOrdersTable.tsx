@@ -119,8 +119,12 @@ export function CustomerOrdersTable({ userId, role, userBranchId }: CustomerOrde
     invoiceModal?.type === 'FINAL' && hasSubscription && (invoice?.items?.length ?? 0) > 0 ? 0 : undefined;
 
   const mergedInvoiceBranding = useMemo(
-    () => mergeInvoiceDisplayBranding(invoice?.brandingSnapshotJson, branding ?? undefined),
-    [invoice, branding],
+    () =>
+      mergeInvoiceDisplayBranding(invoice?.brandingSnapshotJson, branding ?? undefined, {
+        branchLogoUrl: orderSummary?.branch?.logoUrl ?? null,
+        branchUpdatedAt: orderSummary?.branch?.updatedAt ?? null,
+      }),
+    [invoice, branding, orderSummary?.branch?.logoUrl, orderSummary?.branch?.updatedAt],
   );
   const brandingForPrintView = mergedInvoiceBranding
     ? {
@@ -134,7 +138,7 @@ export function CustomerOrdersTable({ userId, role, userBranchId }: CustomerOrde
         termsAndConditions: mergedInvoiceBranding.termsAndConditions,
       }
     : null;
-  const invoiceLogoCacheBuster = branding?.updatedAt ?? mergedInvoiceBranding?.logoUrlCacheBuster ?? undefined;
+  const invoiceLogoCacheBuster = mergedInvoiceBranding?.logoUrlCacheBuster ?? branding?.updatedAt ?? undefined;
 
   const printStyleId = 'customer-invoice-print-style';
   const handlePrint = useCallback(() => {

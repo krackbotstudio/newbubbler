@@ -94,6 +94,8 @@ export async function generateAndStoreInvoicePdf(
   const items = invoice.items ?? [];
   // Subscription invoices use the branch that serves the subscription address (pincode); fallback to main branch
   let branding: InvoicePdfBrandingSnapshot;
+  /** When true, do not substitute global terms — branch terms (even empty) are authoritative for this PDF. */
+  let branchTermsAuthoritative = false;
   if (invoice.subscriptionId && deps.branchRepo) {
     let branchIdForBranding: string | null = null;
     if (deps.subscriptionsRepo) {
@@ -124,10 +126,11 @@ export async function generateAndStoreInvoicePdf(
           termsAndConditions: branchSnapshot.termsAndConditions ?? null,
         }
       : brandingFromSnapshot(invoice.brandingSnapshotJson);
+    branchTermsAuthoritative = !!branchSnapshot;
   } else {
     branding = brandingFromSnapshot(invoice.brandingSnapshotJson);
   }
-  if (!branding.termsAndConditions?.trim()) {
+  if (!branding.termsAndConditions?.trim() && !branchTermsAuthoritative) {
     const currentBranding = await deps.brandingRepo.get();
     if (currentBranding?.termsAndConditions?.trim()) {
       branding.termsAndConditions = currentBranding.termsAndConditions;

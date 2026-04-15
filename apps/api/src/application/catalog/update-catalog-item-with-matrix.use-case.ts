@@ -25,6 +25,8 @@ export interface UpdateCatalogItemWithMatrixInput {
   active?: boolean;
   icon?: string | null;
   segmentPrices: SegmentPriceInput[];
+  /** Used to pick the correct MEN segment row when syncing legacy LaundryItemPrice. */
+  itemBranchIds?: string[];
 }
 
 export interface UpdateCatalogItemWithMatrixDeps {
@@ -63,7 +65,10 @@ export async function updateCatalogItemWithMatrix(
   const segmentPrices = await deps.itemSegmentServicePriceRepo.replaceForItem(input.itemId, matrixRows);
 
   // Backward compat: sync segment with code 'MEN' to LaundryItemPrice for existing ServiceType enum
-  const menSegment = await deps.segmentCategoryRepo.getByCode('MEN');
+  const menSegment = await deps.segmentCategoryRepo.findFirstByCodeInBranches(
+    'MEN',
+    input.itemBranchIds ?? [],
+  );
   if (menSegment) {
     const menRows = matrixRows.filter((r) => r.segmentCategoryId === menSegment.id);
     for (const row of menRows) {

@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { Role } from '@shared/enums';
 import {
   createAdminUser,
   type CreateAdminUserInput,
@@ -43,7 +44,32 @@ export class AdminUsersService {
     return listAdminUsers(filters, this.deps);
   }
 
-  async create(input: CreateAdminUserInput) {
+  async create(input: CreateAdminUserInput, actor?: AuthUser) {
+    if (actor?.role === Role.OPS) {
+      if (input.role === Role.ADMIN || input.role === Role.BILLING) {
+        throw new AppError('FORBIDDEN', 'Branch heads cannot create platform admin users');
+      }
+      if (input.role !== Role.OPS && input.role !== Role.AGENT) {
+        throw new AppError('FEEDBACK_INVALID', 'Branch heads can only create Branch Head or Agent accounts');
+      }
+      const bid = actor.branchId;
+      if (!bid || input.branchId !== bid) {
+        throw new AppError('BRANCH_REQUIRED', 'New staff must belong to your branch');
+      }
+      if (input.role === Role.OPS) {
+        const n = await this.adminUsersRepo.countByBranchAndRole(bid, 'OPS');
+        if (n >= 2) {
+          throw new AppError('QUOTA', 'This branch already has the maximum of 2 branch head accounts');
+        }
+      }
+      if (input.role === Role.AGENT) {
+        const n = await this.adminUsersRepo.countByBranchAndRole(bid, 'AGENT');
+        if (n >= 2) {
+          throw new AppError('QUOTA', 'This branch already has the maximum of 2 agent accounts');
+        }
+      }
+    }
+
     if (!CREATABLE_STAFF_ROLES.includes(input.role)) {
       throw new AppError('FEEDBACK_INVALID', 'Only Admin, Branch Head, and Agent roles are allowed');
     }

@@ -129,6 +129,12 @@ async function main() {
     },
   });
 
+  await prisma.operatingHours.upsert({
+    where: { branchId: defaultBranch.id },
+    create: { branchId: defaultBranch.id, startTime: '09:00', endTime: '18:00' },
+    update: { startTime: '09:00', endTime: '18:00' },
+  });
+
   // --- D) ServiceArea -------------------------------------------------------
   const pincode = '500081';
   const serviceArea = await prisma.serviceArea.upsert({
@@ -274,7 +280,8 @@ async function main() {
     });
   }
 
-  // --- SegmentCategory (default segments) ---
+  // --- SegmentCategory (default segments, scoped to default branch) ---
+  const taxonomyBranchId = defaultBranch.id;
   const segmentCategoryLabels: Record<string, string> = {
     MEN: 'Men',
     WOMEN: 'Women',
@@ -283,9 +290,10 @@ async function main() {
   };
   for (const code of ['MEN', 'WOMEN', 'KIDS', 'HOME_LINEN']) {
     await prisma.segmentCategory.upsert({
-      where: { code },
+      where: { branchId_code: { branchId: taxonomyBranchId, code } },
       update: { label: segmentCategoryLabels[code] ?? code, isActive: true },
       create: {
+        branchId: taxonomyBranchId,
         code,
         label: segmentCategoryLabels[code] ?? code,
         isActive: true,
@@ -305,9 +313,10 @@ async function main() {
   const serviceTypeValues = Object.values(ServiceType) as string[];
   for (const code of serviceTypeValues) {
     await prisma.serviceCategory.upsert({
-      where: { code },
+      where: { branchId_code: { branchId: taxonomyBranchId, code } },
       update: { label: serviceCategoryLabels[code] ?? code, isActive: true },
       create: {
+        branchId: taxonomyBranchId,
         code,
         label: serviceCategoryLabels[code] ?? code,
         isActive: true,
@@ -315,10 +324,14 @@ async function main() {
     });
   }
   // Backfill ItemSegmentServicePrice from LaundryItemPrice (default segment MEN)
-  const menSegment = await prisma.segmentCategory.findUnique({ where: { code: 'MEN' } });
+  const menSegment = await prisma.segmentCategory.findUnique({
+    where: { branchId_code: { branchId: taxonomyBranchId, code: 'MEN' } },
+  });
   if (menSegment) {
     const allPrices = await prisma.laundryItemPrice.findMany();
-    const categories = await prisma.serviceCategory.findMany();
+    const categories = await prisma.serviceCategory.findMany({
+      where: { branchId: taxonomyBranchId },
+    });
     const categoryByCode = new Map(categories.map((c) => [c.code, c]));
     for (const p of allPrices) {
       const cat = categoryByCode.get(p.serviceType);

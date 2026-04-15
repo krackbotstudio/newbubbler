@@ -31,28 +31,17 @@ function toRecord(row: {
 export class PrismaCustomersRepo implements CustomersRepo {
   constructor(private readonly prisma: PrismaLike) {}
 
-  async findByPhone(phoneLike: string, branchId?: string | null): Promise<CustomerRecord[]> {
-    const db = this.prisma as unknown as PrismaClient;
-    let ordersInBranch: Prisma.OrderListRelationFilter | undefined;
-    if (branchId != null && branchId !== '') {
-      const areas = await db.serviceArea.findMany({
-        where: { branchId, active: true },
-        select: { pincode: true },
-      });
-      const pincodes = [...new Set(areas.map((a) => a.pincode))];
-      const orderMatch: Prisma.OrderWhereInput =
-        pincodes.length > 0
-          ? {
-              OR: [{ branchId }, { branchId: null, pincode: { in: pincodes } }],
-            }
-          : { branchId };
-      ordersInBranch = { some: orderMatch };
-    }
+  /**
+   * Phone substring search for admin customer lookup (e.g. branch head).
+   * Intentionally does **not** require prior orders in a branch — same idea as walk-in `getByPhone`,
+   * so existing customers show up even before their first branch order.
+   * (`branchId` is kept for API compatibility; list() still scopes bulk lists by branch when needed.)
+   */
+  async findByPhone(phoneLike: string, _branchId?: string | null): Promise<CustomerRecord[]> {
     const rows = await this.prisma.user.findMany({
       where: {
         role: 'CUSTOMER',
         phone: { contains: phoneLike, mode: 'insensitive' as const },
-        ...(ordersInBranch ? { orders: ordersInBranch } : {}),
       },
       orderBy: { createdAt: 'desc' },
     });

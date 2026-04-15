@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsBoolean } from 'class-validator';
+import { IsString, IsOptional, IsBoolean, MaxLength } from 'class-validator';
 
 export class UpdateBranchDto {
   @IsOptional()
@@ -28,6 +28,23 @@ export class UpdateBranchDto {
   @IsOptional()
   @IsString()
   footerNote?: string | null;
+
+  /** Used in ACK / Final invoice codes when set (normalized to alphanumeric + _ - in generated codes). */
+  @IsOptional()
+  @IsString()
+  @MaxLength(24)
+  invoicePrefix?: string | null;
+
+  /** Short brand text on printed item tags for this branch. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  itemTagBrandName?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200000)
+  termsAndConditions?: string | null;
 
   @IsOptional()
   @IsString()

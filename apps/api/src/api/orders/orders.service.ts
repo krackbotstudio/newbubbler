@@ -84,6 +84,7 @@ export class OrdersService {
     timeWindow: string;
     estimatedWeightKg?: number;
     subscriptionId?: string;
+    branchId?: string;
   }): Promise<{ orderId: string; orderType?: string }> {
     const orderType =
       dto.orderType === 'SUBSCRIPTION' ? OrderType.SUBSCRIPTION
@@ -120,6 +121,7 @@ export class OrdersService {
         timeWindow: dto.timeWindow,
         estimatedWeightKg: dto.estimatedWeightKg ?? null,
         subscriptionId: dto.subscriptionId ?? null,
+        branchId: dto.branchId?.trim() || null,
       },
       {
         ordersRepo: this.ordersRepo,

@@ -1,7 +1,8 @@
 import type { PrismaClient } from '@prisma/client';
+import { AppError } from '../../../application/errors';
 import type { LaundryItemsRepo, LaundryItemRecord } from '../../../application/ports';
 
-type PrismaLike = Pick<PrismaClient, 'laundryItem'>;
+type PrismaLike = Pick<PrismaClient, 'laundryItem' | 'orderItem'>;
 
 function toRecord(row: {
   id: string;
@@ -65,5 +66,19 @@ export class PrismaLaundryItemsRepo implements LaundryItemsRepo {
       orderBy: { name: 'asc' },
     });
     return rows.map(toRecord);
+  }
+
+  async delete(id: string): Promise<void> {
+    const orderRefs = await this.prisma.orderItem.count({
+      where: { laundryItemId: id },
+    });
+    if (orderRefs > 0) {
+      throw new AppError(
+        'CATALOG_ITEM_IN_USE',
+        'This catalog item cannot be deleted because it is referenced by existing orders.',
+        { id },
+      );
+    }
+    await this.prisma.laundryItem.delete({ where: { id } });
   }
 }

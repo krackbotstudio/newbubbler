@@ -12,13 +12,20 @@ function nonempty(s: string | null | undefined): boolean {
   return typeof s === 'string' && s.trim().length > 0;
 }
 
+export type MergeInvoiceDisplayBrandingOptions = {
+  /** When snapshot has no logo, prefer this branch asset before global admin branding. */
+  branchLogoUrl?: string | null;
+  branchUpdatedAt?: string | null;
+};
+
 /**
- * Merge invoice snapshot with live branding. Branch snapshots often omit `logoUrl`; fall back to global
- * branding so the logo still loads in print/dialog views.
+ * Merge invoice snapshot with live branding. If the snapshot omits `logoUrl`, the branch logo (when
+ * provided) is used before global admin branding so invoices match the order’s branch.
  */
 export function mergeInvoiceDisplayBranding(
   snapshot: InvoiceBrandingSnapshot | null | undefined,
   live: LiveBrandingForInvoiceMerge | null | undefined,
+  options?: MergeInvoiceDisplayBrandingOptions | null,
 ): {
   businessName?: string | null;
   logoUrl?: string | null;
@@ -37,11 +44,14 @@ export function mergeInvoiceDisplayBranding(
   if (!snap && !l) return null;
 
   const logoFromSnap = snap != null && nonempty(snap.logoUrl);
+  const logoFromBranch = nonempty(options?.branchLogoUrl);
   const logoUrl = logoFromSnap
     ? snap!.logoUrl!.trim()
-    : nonempty(l?.logoUrl)
-      ? l!.logoUrl!.trim()
-      : null;
+    : logoFromBranch
+      ? options!.branchLogoUrl!.trim()
+      : nonempty(l?.logoUrl)
+        ? l!.logoUrl!.trim()
+        : null;
 
   const snapTerms = snap?.termsAndConditions?.trim();
   const termsAndConditions = snapTerms ? snap!.termsAndConditions : l?.termsAndConditions ?? null;
@@ -55,6 +65,10 @@ export function mergeInvoiceDisplayBranding(
     panNumber: nonempty(snap?.panNumber) ? snap!.panNumber!.trim() : l?.panNumber ?? null,
     gstNumber: nonempty(snap?.gstNumber) ? snap!.gstNumber!.trim() : l?.gstNumber ?? null,
     termsAndConditions: termsAndConditions ?? null,
-    logoUrlCacheBuster: logoFromSnap ? null : (l?.updatedAt ?? null),
+    logoUrlCacheBuster: logoFromSnap
+      ? null
+      : logoFromBranch
+        ? (options?.branchUpdatedAt ?? null)
+        : (l?.updatedAt ?? null),
   };
 }

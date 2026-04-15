@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
-import { getStoredUser, isBranchScopedStaff } from '@/lib/auth';
+import { getStoredUser, isBranchScopedStaff, canBranchHeadEditCatalogItem, canDeleteCatalogItem } from '@/lib/auth';
 import { RoleGate } from '@/components/shared/RoleGate';
 import { ErrorDisplay } from '@/components/shared/ErrorDisplay';
 import { Button } from '@/components/ui/button';
@@ -32,9 +32,22 @@ export default function CatalogPage() {
   );
   const [itemSearch, setItemSearch] = useState('');
 
-  const { data, isLoading, error } = useCatalogItemsWithMatrix();
   const { data: branches = [] } = useBranches();
+  const defaultBranchId = useMemo(
+    () => branches.find((b) => b.isDefault)?.id ?? branches[0]?.id ?? '',
+    [branches],
+  );
+  const matrixBranchQueryId =
+    isBranchHead && user?.branchId
+      ? user.branchId
+      : selectedBranchIds[0]?.trim()
+        ? selectedBranchIds[0]
+        : undefined;
+
+  const { data, isLoading, error } = useCatalogItemsWithMatrix(matrixBranchQueryId);
   const selectedBranchId = selectedBranchIds[0] ?? '';
+  const taxonomyBranchId =
+    isBranchHead && user?.branchId ? user.branchId : (selectedBranchId || defaultBranchId);
 
   useEffect(() => {
     if (isBranchHead && user?.branchId) {
@@ -162,7 +175,7 @@ export default function CatalogPage() {
                 ))}
               </select>
             )}
-            <RoleGate role={role} gate="catalogEdit">
+            <RoleGate role={role} branchId={user?.branchId ?? null} gate="catalogEdit">
               <Button variant="outline" size="sm" onClick={() => setManageOpen(true)}>
                 <Settings2 className="mr-2 h-4 w-4" />
                 Manage Services &amp; Segments
@@ -202,7 +215,8 @@ export default function CatalogPage() {
               item={item}
               serviceCategories={serviceCategories}
               segmentCategories={segmentCategories}
-              canEdit={role === 'ADMIN'}
+              canEdit={canBranchHeadEditCatalogItem(role, user?.branchId, item.branchIds)}
+              canDelete={canDeleteCatalogItem(role, user?.branchId, item.branchIds)}
               onEdit={() => handleEditClick(item)}
             />
           ))}
@@ -219,6 +233,10 @@ export default function CatalogPage() {
       <ManageServicesSegmentsModal
         open={manageOpen}
         onOpenChange={setManageOpen}
+        taxonomyBranchId={taxonomyBranchId || undefined}
+        commonTaxonomyBranchId={defaultBranchId || undefined}
+        role={role}
+        viewerBranchId={isBranchHead ? user?.branchId ?? null : null}
         segmentCategories={segmentCategories}
         serviceCategories={serviceCategories}
       />
@@ -226,6 +244,8 @@ export default function CatalogPage() {
         item={editItem}
         serviceCategories={serviceCategories}
         segmentCategories={segmentCategories}
+        taxonomyBranchId={taxonomyBranchId}
+        branchHeadBranchId={isBranchHead ? user?.branchId ?? null : null}
         open={editItemOpen}
         onOpenChange={setEditItemOpen}
       />

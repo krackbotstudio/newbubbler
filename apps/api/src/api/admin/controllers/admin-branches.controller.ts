@@ -5,11 +5,13 @@ import {
   Patch,
   Delete,
   Param,
+  Query,
   Body,
   UseGuards,
   UseInterceptors,
   UploadedFile,
   BadRequestException,
+  Req,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
@@ -19,7 +21,7 @@ import { Role } from '@shared/enums';
 import { AGENT_ROLE } from '../../common/agent-role';
 import { JwtAuthGuard } from '../../common/jwt-auth.guard';
 import { Roles } from '../../common/roles.decorator';
-import { RolesGuard } from '../../common/roles.guard';
+import { RolesGuard, type AuthUser } from '../../common/roles.guard';
 import { AdminBranchesService } from '../services/admin-branches.service';
 import { CreateBranchDto } from '../dto/create-branch.dto';
 import { UpdateBranchDto } from '../dto/update-branch.dto';
@@ -85,20 +87,40 @@ function branchBrandingMulterOptions(kind: 'logo' | 'upi-qr') {
 
 @Controller('admin/branches')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.ADMIN, Role.BILLING, Role.OPS, AGENT_ROLE)
 export class AdminBranchesController {
   constructor(private readonly adminBranchesService: AdminBranchesService) {}
 
   @Get()
   @Roles(Role.ADMIN, Role.BILLING, Role.OPS, AGENT_ROLE)
-  async list() {
-    return this.adminBranchesService.list();
+  async list(@Req() req: { user: AuthUser }) {
+    return this.adminBranchesService.list(req.user);
+  }
+
+  /** Must stay above @Get(':id') so "field-uniqueness" is not parsed as an id. */
+  @Get('field-uniqueness')
+  @Roles(Role.ADMIN, Role.BILLING, Role.OPS, AGENT_ROLE)
+  async fieldUniqueness(
+    @Req() req: { user: AuthUser },
+    @Query('excludeBranchId') excludeBranchId?: string,
+    @Query('name') name?: string,
+    @Query('invoicePrefix') invoicePrefix?: string,
+    @Query('itemTagBrandName') itemTagBrandName?: string,
+  ) {
+    return this.adminBranchesService.checkFieldUniqueness(
+      {
+        excludeBranchId: excludeBranchId?.trim() || undefined,
+        name: name ?? undefined,
+        invoicePrefix: invoicePrefix ?? undefined,
+        itemTagBrandName: itemTagBrandName ?? undefined,
+      },
+      req.user,
+    );
   }
 
   @Get(':id')
   @Roles(Role.ADMIN, Role.BILLING, Role.OPS, AGENT_ROLE)
-  async getById(@Param('id') id: string) {
-    return this.adminBranchesService.getById(id);
+  async getById(@Param('id') id: string, @Req() req: { user: AuthUser }) {
+    return this.adminBranchesService.getById(id, req.user);
   }
 
   @Post()
@@ -112,6 +134,9 @@ export class AdminBranchesController {
       gstNumber: dto.gstNumber ?? null,
       panNumber: dto.panNumber ?? null,
       footerNote: dto.footerNote ?? null,
+      invoicePrefix: dto.invoicePrefix ?? null,
+      itemTagBrandName: dto.itemTagBrandName ?? null,
+      termsAndConditions: dto.termsAndConditions ?? null,
       upiId: dto.upiId ?? null,
       upiPayeeName: dto.upiPayeeName ?? null,
       upiLink: dto.upiLink ?? null,
@@ -120,21 +145,32 @@ export class AdminBranchesController {
   }
 
   @Patch(':id')
-  @Roles(Role.ADMIN, Role.BILLING)
-  async update(@Param('id') id: string, @Body() dto: UpdateBranchDto) {
-    return this.adminBranchesService.update(id, {
-      name: dto.name,
-      address: dto.address,
-      phone: dto.phone,
-      email: dto.email,
-      gstNumber: dto.gstNumber,
-      panNumber: dto.panNumber,
-      footerNote: dto.footerNote,
-      upiId: dto.upiId,
-      upiPayeeName: dto.upiPayeeName,
-      upiLink: dto.upiLink,
-      isDefault: dto.isDefault,
-    });
+  @Roles(Role.ADMIN, Role.BILLING, Role.OPS)
+  async update(
+    @Param('id') id: string,
+    @Body() dto: UpdateBranchDto,
+    @Req() req: { user: AuthUser },
+  ) {
+    return this.adminBranchesService.update(
+      id,
+      {
+        name: dto.name,
+        address: dto.address,
+        phone: dto.phone,
+        email: dto.email,
+        gstNumber: dto.gstNumber,
+        panNumber: dto.panNumber,
+        footerNote: dto.footerNote,
+        invoicePrefix: dto.invoicePrefix,
+        itemTagBrandName: dto.itemTagBrandName,
+        termsAndConditions: dto.termsAndConditions,
+        upiId: dto.upiId,
+        upiPayeeName: dto.upiPayeeName,
+        upiLink: dto.upiLink,
+        isDefault: dto.isDefault,
+      },
+      req.user,
+    );
   }
 
   @Delete(':id')
@@ -145,28 +181,30 @@ export class AdminBranchesController {
   }
 
   @Post(':id/logo')
-  @Roles(Role.ADMIN, Role.BILLING)
+  @Roles(Role.ADMIN, Role.BILLING, Role.OPS)
   @UseInterceptors(FileInterceptor('file', branchBrandingMulterOptions('logo')))
   async uploadLogo(
     @Param('id') id: string,
     @UploadedFile() file: MulterUploadFile,
+    @Req() req: { user: AuthUser },
   ) {
     if (!file?.filename) {
       throw new BadRequestException('File is required');
     }
-    return this.adminBranchesService.uploadLogo(id, file.filename);
+    return this.adminBranchesService.uploadLogo(id, file.filename, req.user);
   }
 
   @Post(':id/upi-qr')
-  @Roles(Role.ADMIN, Role.BILLING)
+  @Roles(Role.ADMIN, Role.BILLING, Role.OPS)
   @UseInterceptors(FileInterceptor('file', branchBrandingMulterOptions('upi-qr')))
   async uploadUpiQr(
     @Param('id') id: string,
     @UploadedFile() file: MulterUploadFile,
+    @Req() req: { user: AuthUser },
   ) {
     if (!file?.filename) {
       throw new BadRequestException('File is required');
     }
-    return this.adminBranchesService.uploadUpiQr(id, file.filename);
+    return this.adminBranchesService.uploadUpiQr(id, file.filename, req.user);
   }
 }

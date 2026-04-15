@@ -66,6 +66,10 @@ interface EditItemModalProps {
   item: CatalogItemWithMatrix | null;
   serviceCategories: ServiceCategory[];
   segmentCategories: SegmentCategory[];
+  /** Branch whose segment/service taxonomy is used when creating new categories from this dialog. */
+  taxonomyBranchId: string;
+  /** When set (branch head), branch assignment is limited to this branch; server merges with other branches. */
+  branchHeadBranchId?: string | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
@@ -74,6 +78,8 @@ export function EditItemModal({
   item,
   serviceCategories,
   segmentCategories,
+  taxonomyBranchId,
+  branchHeadBranchId = null,
   open,
   onOpenChange,
 }: EditItemModalProps) {
@@ -94,6 +100,10 @@ export function EditItemModal({
   const createSegment = useCreateSegmentCategory();
   const uploadCatalogIcon = useUploadCatalogIcon();
   const { data: branches = [] } = useBranches();
+  const myBranchLabel = useMemo(() => {
+    if (!branchHeadBranchId) return '';
+    return branches.find((b) => b.id === branchHeadBranchId)?.name ?? branchHeadBranchId;
+  }, [branchHeadBranchId, branches]);
 
   const categories = useMemo(
     () => mergeUniqueById(serviceCategories, localCategories),
@@ -178,8 +188,12 @@ export function EditItemModal({
     }
     setError(null);
     const segmentPrices = buildSegmentPrices();
+    const branchIdsForSave =
+      branchHeadBranchId != null && branchHeadBranchId !== ''
+        ? [...new Set([...branchIds.filter((id) => id !== branchHeadBranchId), branchHeadBranchId])]
+        : branchIds;
     updateMatrix.mutate(
-      { name: name.trim(), active, icon: icon || null, branchIds, segmentPrices },
+      { name: name.trim(), active, icon: icon || null, branchIds: branchIdsForSave, segmentPrices },
       {
         onSuccess: () => {
           toast.success('Item updated');
@@ -199,15 +213,19 @@ export function EditItemModal({
       toast.error('Enter a name for the service');
       return;
     }
+    if (!taxonomyBranchId.trim()) {
+      toast.error('Select a catalog branch (or add a branch) before creating services.');
+      return;
+    }
     const code = name.toUpperCase().replace(/\s+/g, '_');
     const label = name;
     createCategory.mutate(
-      { code, label },
+      { code, label, branchId: taxonomyBranchId.trim() },
       {
         onSuccess: (data) => {
           setLocalCategories((prev) => {
             if (prev.some((c) => c.id === data.id)) return prev;
-            return [...prev, { ...data, createdAt: new Date().toISOString() }];
+            return [...prev, { ...data, createdAt: new Date().toISOString() } as ServiceCategory];
           });
           setNewServiceName('');
           toast.success('Service category added');
@@ -225,15 +243,19 @@ export function EditItemModal({
       toast.error('Enter a name for the segment');
       return;
     }
+    if (!taxonomyBranchId.trim()) {
+      toast.error('Select a catalog branch (or add a branch) before creating segments.');
+      return;
+    }
     const code = name.toUpperCase().replace(/\s+/g, '_');
     const label = name;
     createSegment.mutate(
-      { code, label },
+      { code, label, branchId: taxonomyBranchId.trim() },
       {
         onSuccess: (data) => {
           setLocalSegments((prev) => {
             if (prev.some((s) => s.id === data.id)) return prev;
-            return [...prev, { ...data, createdAt: new Date().toISOString() }];
+            return [...prev, { ...data, createdAt: new Date().toISOString() } as SegmentCategory];
           });
           setNewSegmentName('');
           toast.success('Segment added');
@@ -278,52 +300,60 @@ export function EditItemModal({
             </div>
 
             <div className="grid gap-2">
-              <label className="text-sm font-medium">Branches</label>
-              <div className="flex flex-wrap items-center gap-3">
-                <label className="flex cursor-pointer items-center gap-2">
-                  <input
-                    type="radio"
-                    name="branch-mode"
-                    checked={branchIds.length === 0}
-                    onChange={() => setBranchIds([])}
-                    className="h-4 w-4"
-                  />
-                  <span className="text-sm">Served in all branches</span>
-                </label>
-                <label className="flex cursor-pointer items-center gap-2">
-                  <input
-                    type="radio"
-                    name="branch-mode"
-                    checked={branchIds.length > 0}
-                    onChange={() => setBranchIds(branches.length > 0 ? [branches[0].id] : [])}
-                    className="h-4 w-4"
-                  />
-                  <span className="text-sm">Specific branches only</span>
-                </label>
-              </div>
-              {branchIds.length > 0 && (
-                <div className="flex flex-wrap gap-2 rounded-md border p-2">
-                  {branches.map((b) => (
-                    <label key={b.id} className="flex cursor-pointer items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        checked={branchIds.includes(b.id)}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setBranchIds((prev) => [...prev, b.id]);
-                          } else {
-                            setBranchIds((prev) => prev.filter((id) => id !== b.id));
-                          }
-                        }}
-                        className="h-4 w-4 rounded border-input"
-                      />
-                      {b.name}
-                    </label>
-                  ))}
-                  {branches.length === 0 && (
-                    <span className="text-muted-foreground text-sm">No branches. Add branches in Branding.</span>
-                  )}
+              <label className="text-sm font-medium">{branchHeadBranchId ? 'Branch' : 'Branches'}</label>
+              {branchHeadBranchId ? (
+                <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm text-foreground">
+                  {myBranchLabel || branchHeadBranchId}
                 </div>
+              ) : (
+                <>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <label className="flex cursor-pointer items-center gap-2">
+                      <input
+                        type="radio"
+                        name="branch-mode"
+                        checked={branchIds.length === 0}
+                        onChange={() => setBranchIds([])}
+                        className="h-4 w-4"
+                      />
+                      <span className="text-sm">Served in all branches</span>
+                    </label>
+                    <label className="flex cursor-pointer items-center gap-2">
+                      <input
+                        type="radio"
+                        name="branch-mode"
+                        checked={branchIds.length > 0}
+                        onChange={() => setBranchIds(branches.length > 0 ? [branches[0].id] : [])}
+                        className="h-4 w-4"
+                      />
+                      <span className="text-sm">Specific branches only</span>
+                    </label>
+                  </div>
+                  {branchIds.length > 0 && (
+                    <div className="flex flex-wrap gap-2 rounded-md border p-2">
+                      {branches.map((b) => (
+                        <label key={b.id} className="flex cursor-pointer items-center gap-2 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={branchIds.includes(b.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setBranchIds((prev) => [...prev, b.id]);
+                              } else {
+                                setBranchIds((prev) => prev.filter((id) => id !== b.id));
+                              }
+                            }}
+                            className="h-4 w-4 rounded border-input"
+                          />
+                          {b.name}
+                        </label>
+                      ))}
+                      {branches.length === 0 && (
+                        <span className="text-muted-foreground text-sm">No branches. Add branches in Branding.</span>
+                      )}
+                    </div>
+                  )}
+                </>
               )}
             </div>
 

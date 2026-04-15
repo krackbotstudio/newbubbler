@@ -28,6 +28,8 @@ export interface MeResponse {
     maxPickups: number;
     kgLimit: number | null;
     itemsLimit: number | null;
+    /** Branch tied to this subscription (pickup slots and orders). */
+    branchId: string | null;
     /** True when this subscription already has an order that is not yet delivered/cancelled. */
     hasActiveOrder: boolean;
   }>;
@@ -97,6 +99,7 @@ export class MeService {
           planId: s.planId,
           planName: s.planName,
           planDescription: plan?.description ?? null,
+          branchId: s.branchId ?? null,
           addressId: s.addressId ?? null,
           addressLabel: s.addressLabel ?? null,
           validityStartDate: s.validityStartDate.toISOString(),

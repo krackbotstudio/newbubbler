@@ -19,9 +19,9 @@ function fetchCustomersList(limit: number, cursor?: string | null, search?: stri
   return api.get<CustomersListResponse>('/admin/customers', { params }).then((r) => r.data);
 }
 
-function fetchCustomersByPhone(phone: string): Promise<CustomerRecord[]> {
+function fetchCustomersByPhone(phone: string): Promise<CustomerListRow[]> {
   return api
-    .get<CustomerRecord[]>('/admin/customers/search', { params: { phone } })
+    .get<CustomerListRow[]>('/admin/customers/search', { params: { phone } })
     .then((r) => r.data);
 }
 
@@ -59,18 +59,25 @@ export function useCustomerPayments(userId: string | null, branchId?: string | n
   });
 }
 
-export function useCustomersList(limit: number, cursor?: string | null, search?: string | null) {
+export function useCustomersList(
+  limit: number,
+  cursor?: string | null,
+  search?: string | null,
+  options?: { enabled?: boolean },
+) {
   return useQuery({
     queryKey: ['admin', 'customers', 'list', limit, cursor ?? '', search ?? ''],
     queryFn: () => fetchCustomersList(limit, cursor, search),
+    enabled: options?.enabled !== false,
   });
 }
 
-export function useCustomersSearch(phone: string) {
+/** Phone-only lookup; runs when `digitsOnly` has at least 10 digits (full mobile). */
+export function useCustomersPhoneSearch(digitsOnly: string, options?: { enabled?: boolean }) {
   return useQuery({
-    queryKey: ['admin', 'customers', 'search', phone],
-    queryFn: () => fetchCustomersByPhone(phone),
-    enabled: phone.length >= 3,
+    queryKey: ['admin', 'customers', 'search', digitsOnly],
+    queryFn: () => fetchCustomersByPhone(digitsOnly),
+    enabled: (options?.enabled ?? true) && digitsOnly.length >= 10,
   });
 }
 

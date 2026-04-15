@@ -1,5 +1,5 @@
 /**
- * Vercel serverless entry for weyou-api.
+ * Vercel serverless entry for Bubbler API.
  * Registers path aliases then loads the built Nest handler.
  * Used when deploying the API as a Vercel project (root = repo root).
  */

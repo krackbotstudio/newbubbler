@@ -6,6 +6,8 @@ import * as path from 'path';
 import { Role } from '@shared/enums';
 import { AGENT_ROLE } from '../../common/agent-role';
 import type { Request } from 'express';
+import { CurrentUser } from '../../common/current-user.decorator';
+import type { AuthUser } from '../../common/roles.guard';
 import { JwtAuthGuard } from '../../common/jwt-auth.guard';
 import { Roles } from '../../common/roles.decorator';
 import { RolesGuard } from '../../common/roles.guard';
@@ -104,8 +106,11 @@ export class AdminCatalogMatrixController {
   }
 
   @Get('items')
-  async listWithMatrix() {
-    const result = await this.adminCatalogService.listItemsWithMatrix();
+  async listWithMatrix(
+    @Query('branchId') branchId: string | undefined,
+    @CurrentUser() user: AuthUser,
+  ) {
+    const result = await this.adminCatalogService.listItemsWithMatrix(user, branchId);
     return {
       items: result.items.map((item) => ({
         id: item.id,
@@ -128,6 +133,7 @@ export class AdminCatalogMatrixController {
       })),
       serviceCategories: result.serviceCategories.map((c) => ({
         id: c.id,
+        branchId: c.branchId,
         code: c.code,
         label: c.label,
         isActive: c.isActive,
@@ -135,6 +141,7 @@ export class AdminCatalogMatrixController {
       })),
       segmentCategories: result.segmentCategories.map((c) => ({
         id: c.id,
+        branchId: c.branchId,
         code: c.code,
         label: c.label,
         isActive: c.isActive,
@@ -145,19 +152,27 @@ export class AdminCatalogMatrixController {
 
   @Put('items/:id')
   @Roles(Role.ADMIN, Role.OPS)
-  async updateItemWithMatrix(@Param('id') id: string, @Body() dto: UpdateItemWithMatrixDto) {
-    const result = await this.adminCatalogService.updateItemWithMatrix(id, {
-      name: dto.name,
-      active: dto.active,
-      icon: dto.icon ?? null,
-      branchIds: dto.branchIds,
-      segmentPrices: dto.segmentPrices.map((p) => ({
-        segmentCategoryId: p.segmentCategoryId,
-        serviceCategoryId: p.serviceCategoryId,
-        priceRupees: p.priceRupees,
-        isActive: p.isActive ?? true,
-      })),
-    });
+  async updateItemWithMatrix(
+    @Param('id') id: string,
+    @Body() dto: UpdateItemWithMatrixDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    const result = await this.adminCatalogService.updateItemWithMatrix(
+      id,
+      {
+        name: dto.name,
+        active: dto.active,
+        icon: dto.icon ?? null,
+        branchIds: dto.branchIds,
+        segmentPrices: dto.segmentPrices.map((p) => ({
+          segmentCategoryId: p.segmentCategoryId,
+          serviceCategoryId: p.serviceCategoryId,
+          priceRupees: p.priceRupees,
+          isActive: p.isActive ?? true,
+        })),
+      },
+      user,
+    );
     return {
       item: {
         id: result.item.id,
@@ -182,14 +197,17 @@ export class AdminCatalogMatrixController {
 
   @Post('segments')
   @Roles(Role.ADMIN, Role.OPS)
-  async createSegmentCategory(@Body() dto: CreateSegmentCategoryDto) {
+  async createSegmentCategory(@Body() dto: CreateSegmentCategoryDto, @CurrentUser() user: AuthUser) {
     const segment = await this.adminCatalogService.createSegmentCategory(
       dto.code,
       dto.label,
       dto.isActive,
+      user,
+      dto.branchId,
     );
     return {
       id: segment.id,
+      branchId: segment.branchId,
       code: segment.code,
       label: segment.label,
       isActive: segment.isActive,
@@ -199,14 +217,17 @@ export class AdminCatalogMatrixController {
 
   @Post('service-categories')
   @Roles(Role.ADMIN, Role.OPS)
-  async createServiceCategory(@Body() dto: CreateServiceCategoryDto) {
+  async createServiceCategory(@Body() dto: CreateServiceCategoryDto, @CurrentUser() user: AuthUser) {
     const category = await this.adminCatalogService.createServiceCategory(
       dto.code,
       dto.label,
       dto.isActive,
+      user,
+      dto.branchId,
     );
     return {
       id: category.id,
+      branchId: category.branchId,
       code: category.code,
       label: category.label,
       isActive: category.isActive,
@@ -216,13 +237,22 @@ export class AdminCatalogMatrixController {
 
   @Patch('service-categories/:id')
   @Roles(Role.ADMIN, Role.OPS)
-  async updateServiceCategory(@Param('id') id: string, @Body() dto: PatchServiceCategoryDto) {
-    const category = await this.adminCatalogService.updateServiceCategory(id, {
-      label: dto.label,
-      isActive: dto.isActive,
-    });
+  async updateServiceCategory(
+    @Param('id') id: string,
+    @Body() dto: PatchServiceCategoryDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    const category = await this.adminCatalogService.updateServiceCategory(
+      id,
+      {
+        label: dto.label,
+        isActive: dto.isActive,
+      },
+      user,
+    );
     return {
       id: category.id,
+      branchId: category.branchId,
       code: category.code,
       label: category.label,
       isActive: category.isActive,
@@ -232,20 +262,29 @@ export class AdminCatalogMatrixController {
 
   @Delete('service-categories/:id')
   @Roles(Role.ADMIN, Role.OPS)
-  async deleteServiceCategory(@Param('id') id: string) {
-    await this.adminCatalogService.deleteServiceCategory(id);
+  async deleteServiceCategory(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    await this.adminCatalogService.deleteServiceCategory(id, user);
     return { success: true };
   }
 
   @Patch('segments/:id')
   @Roles(Role.ADMIN, Role.OPS)
-  async updateSegmentCategory(@Param('id') id: string, @Body() dto: PatchSegmentCategoryDto) {
-    const segment = await this.adminCatalogService.updateSegmentCategory(id, {
-      label: dto.label,
-      isActive: dto.isActive,
-    });
+  async updateSegmentCategory(
+    @Param('id') id: string,
+    @Body() dto: PatchSegmentCategoryDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    const segment = await this.adminCatalogService.updateSegmentCategory(
+      id,
+      {
+        label: dto.label,
+        isActive: dto.isActive,
+      },
+      user,
+    );
     return {
       id: segment.id,
+      branchId: segment.branchId,
       code: segment.code,
       label: segment.label,
       isActive: segment.isActive,
@@ -255,8 +294,8 @@ export class AdminCatalogMatrixController {
 
   @Delete('segments/:id')
   @Roles(Role.ADMIN, Role.OPS)
-  async deleteSegmentCategory(@Param('id') id: string) {
-    await this.adminCatalogService.deleteSegmentCategory(id);
+  async deleteSegmentCategory(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    await this.adminCatalogService.deleteSegmentCategory(id, user);
     return { success: true };
   }
 
@@ -273,8 +312,8 @@ export class AdminCatalogMatrixController {
 
   @Post('import')
   @Roles(Role.ADMIN, Role.OPS)
-  async importCatalog(@Body() dto: ImportCatalogDto) {
-    return this.adminCatalogService.importCatalog(dto.content);
+  async importCatalog(@Body() dto: ImportCatalogDto, @CurrentUser() user: AuthUser) {
+    return this.adminCatalogService.importCatalog(dto.content, user, dto.branchId);
   }
 
   @Get('import/sample')

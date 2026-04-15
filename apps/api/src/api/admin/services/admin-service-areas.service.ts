@@ -21,11 +21,15 @@ export class AdminServiceAreasService {
     });
   }
 
-  async update(pincode: string, patch: UpdateServiceAreaPatch) {
-    return this.serviceAreaRepo.update(pincode, patch);
+  async getById(id: string) {
+    return this.serviceAreaRepo.getById(id);
   }
 
-  async remove(pincode: string) {
-    return this.serviceAreaRepo.remove(pincode);
+  async update(id: string, patch: UpdateServiceAreaPatch) {
+    return this.serviceAreaRepo.update(id, patch);
+  }
+
+  async remove(id: string) {
+    return this.serviceAreaRepo.remove(id);
   }
 }

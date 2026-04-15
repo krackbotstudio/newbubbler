@@ -2,6 +2,7 @@ import type { ServiceType } from './order';
 
 export interface SegmentCategory {
   id: string;
+  branchId: string;
   code: string;
   label: string;
   isActive: boolean;
@@ -32,6 +33,7 @@ export interface LaundryItemPrice {
 
 export interface ServiceCategory {
   id: string;
+  branchId: string;
   code: string;
   label: string;
   isActive: boolean;

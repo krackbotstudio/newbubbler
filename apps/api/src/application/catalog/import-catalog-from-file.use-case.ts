@@ -29,6 +29,8 @@ export interface ImportCatalogFromFileDeps {
   serviceCategoryRepo: ServiceCategoryRepo;
   segmentCategoryRepo: SegmentCategoryRepo;
   itemSegmentServicePriceRepo: ItemSegmentServicePriceRepo;
+  /** Categories created or resolved during import are scoped to this branch. */
+  taxonomyBranchId: string;
 }
 
 function parseCsvToRows(csv: string): string[][] {
@@ -94,6 +96,7 @@ export async function importCatalogFromFile(
   const categoryByCode = new Map<string, ServiceCategoryRecord>();
   const segmentByCode = new Map<string, SegmentCategoryRecord>();
   const updatedItemNames = new Set<string>();
+  const taxonomyBranchId = deps.taxonomyBranchId;
 
   for (let i = 0; i < dataRows.length; i++) {
     const rowIndex = i + (rows.length - dataRows.length) + 1;
@@ -125,22 +128,32 @@ export async function importCatalogFromFile(
 
     let segmentCat = segmentByCode.get(row.segmentCode);
     if (!segmentCat) {
-      const existing = await deps.segmentCategoryRepo.getByCode(row.segmentCode);
+      const existing = await deps.segmentCategoryRepo.getByBranchIdAndCode(taxonomyBranchId, row.segmentCode);
       if (existing) {
         segmentCat = existing;
       } else {
-        segmentCat = await deps.segmentCategoryRepo.create(row.segmentCode, row.segmentCode.replace(/_/g, ' '), true);
+        segmentCat = await deps.segmentCategoryRepo.create(
+          taxonomyBranchId,
+          row.segmentCode,
+          row.segmentCode.replace(/_/g, ' '),
+          true,
+        );
       }
       segmentByCode.set(row.segmentCode, segmentCat);
     }
 
     let category = categoryByCode.get(row.serviceCategoryCode);
     if (!category) {
-      let existing = await deps.serviceCategoryRepo.getByCode(row.serviceCategoryCode);
+      let existing = await deps.serviceCategoryRepo.getByBranchIdAndCode(taxonomyBranchId, row.serviceCategoryCode);
       if (existing) {
         category = existing;
       } else {
-        category = await deps.serviceCategoryRepo.create(row.serviceCategoryCode, row.serviceCategoryCode.replace(/_/g, ' '), true);
+        category = await deps.serviceCategoryRepo.create(
+          taxonomyBranchId,
+          row.serviceCategoryCode,
+          row.serviceCategoryCode.replace(/_/g, ' '),
+          true,
+        );
         result.createdCategories++;
       }
       categoryByCode.set(row.serviceCategoryCode, category);

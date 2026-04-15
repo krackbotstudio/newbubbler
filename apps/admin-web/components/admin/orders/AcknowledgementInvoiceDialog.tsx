@@ -14,7 +14,7 @@ import { getApiOrigin } from '@/lib/api';
 import { mergeInvoiceDisplayBranding } from '@/lib/invoice-display-branding';
 import { formatMoney } from '@/lib/format';
 import { getOrderStatusLabel } from '@/components/shared/StatusBadge';
-import { CUSTOMER_PWA_URL } from '@/lib/customer-app-url';
+import { CUSTOMER_APP_URL } from '@/lib/customer-app-url';
 import { useIssuedInvoiceShareActions } from '@/hooks/useIssuedInvoiceShareActions';
 import type { OrderAdminSummary } from '@/types';
 import type { BrandingSettings } from '@/types/branding';
@@ -52,7 +52,10 @@ export function AcknowledgementInvoiceDialog({
       : `${getApiOrigin()}${ackInvoice.pdfUrl}`
     : null;
 
-  const merged = mergeInvoiceDisplayBranding(ackInvoice.brandingSnapshotJson, branding ?? undefined);
+  const merged = mergeInvoiceDisplayBranding(ackInvoice.brandingSnapshotJson, branding ?? undefined, {
+    branchLogoUrl: summary.branch?.logoUrl ?? null,
+    branchUpdatedAt: summary.branch?.updatedAt ?? null,
+  });
   const brandingForView = merged
     ? {
         businessName: merged.businessName,
@@ -65,7 +68,7 @@ export function AcknowledgementInvoiceDialog({
         termsAndConditions: merged.termsAndConditions,
       }
     : null;
-  const logoUrlCacheBuster = branding?.updatedAt ?? merged?.logoUrlCacheBuster ?? undefined;
+  const logoUrlCacheBuster = merged?.logoUrlCacheBuster ?? branding?.updatedAt ?? undefined;
 
   const hasSubscription = Boolean(summary.subscription && summary.subscriptionUsage);
   const subscriptionUnit =
@@ -95,7 +98,7 @@ export function AcknowledgementInvoiceDialog({
       invoiceCodeLine,
       amountLine,
       '',
-      `Open our app: ${CUSTOMER_PWA_URL}`,
+      `Open our app: ${CUSTOMER_APP_URL}`,
     ];
     return parts.join('\n');
   }, [ackInvoice.code, ackInvoice.total, orderId, summary.customer?.name, summary.order.status]);

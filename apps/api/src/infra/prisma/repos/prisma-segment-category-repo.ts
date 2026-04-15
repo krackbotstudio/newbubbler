@@ -5,6 +5,7 @@ type PrismaLike = Pick<PrismaClient, 'segmentCategory'>;
 
 function toRecord(row: {
   id: string;
+  branchId: string;
   code: string;
   label: string;
   isActive: boolean;
@@ -12,6 +13,7 @@ function toRecord(row: {
 }): SegmentCategoryRecord {
   return {
     id: row.id,
+    branchId: row.branchId,
     code: row.code,
     label: row.label,
     isActive: row.isActive,
@@ -22,9 +24,14 @@ function toRecord(row: {
 export class PrismaSegmentCategoryRepo implements SegmentCategoryRepo {
   constructor(private readonly prisma: PrismaLike) {}
 
-  async create(code: string, label: string, isActive = true): Promise<SegmentCategoryRecord> {
+  async create(
+    branchId: string,
+    code: string,
+    label: string,
+    isActive = true,
+  ): Promise<SegmentCategoryRecord> {
     const row = await this.prisma.segmentCategory.create({
-      data: { code, label, isActive },
+      data: { branchId, code, label, isActive },
     });
     return toRecord(row);
   }
@@ -36,10 +43,24 @@ export class PrismaSegmentCategoryRepo implements SegmentCategoryRepo {
     return row ? toRecord(row) : null;
   }
 
-  async getByCode(code: string): Promise<SegmentCategoryRecord | null> {
+  async getByBranchIdAndCode(branchId: string, code: string): Promise<SegmentCategoryRecord | null> {
     const row = await this.prisma.segmentCategory.findUnique({
-      where: { code },
+      where: { branchId_code: { branchId, code } },
     });
+    return row ? toRecord(row) : null;
+  }
+
+  async findFirstByCodeInBranches(code: string, branchIds: string[]): Promise<SegmentCategoryRecord | null> {
+    const where =
+      branchIds.length > 0
+        ? { code, branchId: { in: branchIds } as const }
+        : { code };
+    const rows = await this.prisma.segmentCategory.findMany({
+      where,
+      orderBy: { createdAt: 'asc' },
+      take: 1,
+    });
+    const row = rows[0];
     return row ? toRecord(row) : null;
   }
 
@@ -57,6 +78,14 @@ export class PrismaSegmentCategoryRepo implements SegmentCategoryRepo {
 
   async listAll(): Promise<SegmentCategoryRecord[]> {
     const rows = await this.prisma.segmentCategory.findMany({
+      orderBy: [{ branchId: 'asc' }, { code: 'asc' }],
+    });
+    return rows.map(toRecord);
+  }
+
+  async listByBranchId(branchId: string): Promise<SegmentCategoryRecord[]> {
+    const rows = await this.prisma.segmentCategory.findMany({
+      where: { branchId },
       orderBy: { code: 'asc' },
     });
     return rows.map(toRecord);
@@ -65,7 +94,7 @@ export class PrismaSegmentCategoryRepo implements SegmentCategoryRepo {
   async listActive(): Promise<SegmentCategoryRecord[]> {
     const rows = await this.prisma.segmentCategory.findMany({
       where: { isActive: true },
-      orderBy: { code: 'asc' },
+      orderBy: [{ branchId: 'asc' }, { code: 'asc' }],
     });
     return rows.map(toRecord);
   }

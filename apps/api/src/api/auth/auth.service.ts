@@ -97,7 +97,16 @@ export class AuthService {
   async adminLogin(params: {
     email: string;
     password: string;
-  }): Promise<{ token: string; user: { id: string; email: string; role: Role; branchId?: string | null } }> {
+  }): Promise<{
+    token: string;
+    user: {
+      id: string;
+      email: string;
+      role: Role;
+      branchId?: string | null;
+      onboardingCompletedAt?: string | null;
+    };
+  }> {
     const { email, password } = params;
     const user = await prisma.user.findFirst({
       where: {
@@ -150,6 +159,9 @@ export class AuthService {
         email: user.email!,
         role: user.role as Role,
         branchId: (user as { branchId?: string | null }).branchId ?? null,
+        onboardingCompletedAt:
+          (user as { onboardingCompletedAt?: Date | null }).onboardingCompletedAt?.toISOString() ??
+          null,
       },
     };
   }

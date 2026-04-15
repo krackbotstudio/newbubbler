@@ -29,6 +29,7 @@ export class OrdersController {
       timeWindow: dto.timeWindow,
       estimatedWeightKg: dto.estimatedWeightKg,
       subscriptionId: dto.subscriptionId,
+      branchId: dto.branchId,
     });
     return result;
   }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { z } from 'zod';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,7 +12,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { FormField } from '@/components/ui/form-field';
-import { useCreateBranch, useUpdateBranch, useUploadBranchUpiQr } from '@/hooks/useBranches';
+import { useCreateBranch, useUpdateBranch, useUploadBranchUpiQr, useBranchFieldUniquenessQuery } from '@/hooks/useBranches';
+import { BranchUniquenessUnderField } from '@/components/branding/BranchFieldUniquenessHints';
 import { toast } from 'sonner';
 import { getFriendlyErrorMessage } from '@/lib/api';
 import type { Branch } from '@/types';
@@ -25,6 +26,8 @@ const schema = z.object({
   email: z.string().nullable(),
   gstNumber: z.string().nullable(),
   panNumber: z.string().nullable(),
+  invoicePrefix: z.string().max(24).nullable(),
+  itemTagBrandName: z.string().max(40).nullable(),
   upiId: z.string().nullable(),
   upiPayeeName: z.string().nullable(),
   upiLink: z.string().nullable(),
@@ -47,6 +50,8 @@ export function BranchFormModal({ branch, open, onOpenChange, mode }: BranchForm
   const [email, setEmail] = useState('');
   const [gstNumber, setGstNumber] = useState('');
   const [panNumber, setPanNumber] = useState('');
+  const [invoicePrefix, setInvoicePrefix] = useState('');
+  const [itemTagBrandName, setItemTagBrandName] = useState('');
   const [upiId, setUpiId] = useState('');
   const [upiPayeeName, setUpiPayeeName] = useState('');
   const [upiLink, setUpiLink] = useState('');
@@ -58,6 +63,18 @@ export function BranchFormModal({ branch, open, onOpenChange, mode }: BranchForm
   const updateBranch = useUpdateBranch(branch?.id ?? '');
   const uploadUpiQr = useUploadBranchUpiQr(branch?.id ?? '');
 
+  const excludeBranchId = useMemo(
+    () => (mode === 'edit' && branch?.id ? branch.id : null),
+    [mode, branch?.id],
+  );
+  const uniqueness = useBranchFieldUniquenessQuery({
+    excludeBranchId,
+    name,
+    invoicePrefix,
+    itemTagBrandName,
+    enabled: open,
+  });
+
   useEffect(() => {
     if (mode === 'edit' && branch) {
       setName(branch.name);
@@ -66,6 +83,8 @@ export function BranchFormModal({ branch, open, onOpenChange, mode }: BranchForm
       setEmail(branch.email ?? '');
       setGstNumber(branch.gstNumber ?? '');
       setPanNumber(branch.panNumber ?? '');
+      setInvoicePrefix(branch.invoicePrefix ?? '');
+      setItemTagBrandName(branch.itemTagBrandName ?? '');
       setUpiId(branch.upiId ?? '');
       setUpiPayeeName(branch.upiPayeeName ?? '');
       setUpiLink(branch.upiLink ?? '');
@@ -78,6 +97,8 @@ export function BranchFormModal({ branch, open, onOpenChange, mode }: BranchForm
       setEmail('');
       setGstNumber('');
       setPanNumber('');
+      setInvoicePrefix('');
+      setItemTagBrandName('');
       setUpiId('');
       setUpiPayeeName('');
       setUpiLink('');
@@ -96,6 +117,8 @@ export function BranchFormModal({ branch, open, onOpenChange, mode }: BranchForm
       email: email.trim() || null,
       gstNumber: gstNumber.trim() || null,
       panNumber: panNumber.trim() || null,
+      invoicePrefix: invoicePrefix.trim() || null,
+      itemTagBrandName: itemTagBrandName.trim() || null,
       upiId: upiId.trim() || null,
       upiPayeeName: upiPayeeName.trim() || null,
       upiLink: upiLink.trim() || null,
@@ -108,6 +131,21 @@ export function BranchFormModal({ branch, open, onOpenChange, mode }: BranchForm
       toast.error(msg);
       return;
     }
+    const u = uniqueness.data;
+    if (u) {
+      if (result.data.name.trim() && !u.name.available) {
+        toast.error('Choose a unique branch name (see hint below the field).');
+        return;
+      }
+      if (result.data.invoicePrefix?.trim() && !u.invoicePrefix.available) {
+        toast.error('Choose a unique invoice prefix not used by another branch.');
+        return;
+      }
+      if (result.data.itemTagBrandName?.trim() && !u.itemTagBrandName.available) {
+        toast.error('Choose a unique short brand on item tag not used by another branch.');
+        return;
+      }
+    }
     const body = {
       name: result.data.name,
       address: result.data.address,
@@ -115,6 +153,8 @@ export function BranchFormModal({ branch, open, onOpenChange, mode }: BranchForm
       email: result.data.email,
       gstNumber: result.data.gstNumber,
       panNumber: result.data.panNumber,
+      invoicePrefix: result.data.invoicePrefix,
+      itemTagBrandName: result.data.itemTagBrandName,
       upiId: result.data.upiId,
       upiPayeeName: result.data.upiPayeeName,
       upiLink: result.data.upiLink,
@@ -150,6 +190,11 @@ export function BranchFormModal({ branch, open, onOpenChange, mode }: BranchForm
     }
   };
 
+  const hasUniquenessConflict =
+    !!uniqueness.data &&
+    ((Boolean(name.trim()) && !uniqueness.data.name.available) ||
+      (Boolean(invoicePrefix.trim()) && !uniqueness.data.invoicePrefix.available) ||
+      (Boolean(itemTagBrandName.trim()) && !uniqueness.data.itemTagBrandName.available));
   const isPending = createBranch.isPending || updateBranch.isPending || uploadUpiQr.isPending;
 
   return (
@@ -166,6 +211,14 @@ export function BranchFormModal({ branch, open, onOpenChange, mode }: BranchForm
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Branch name"
+              />
+              <BranchUniquenessUnderField
+                slot={uniqueness.data?.name}
+                isEmpty={!name.trim()}
+                availableLabel="Available — no other branch uses this name (case-insensitive)."
+                takenTemplate={(other) =>
+                  `This name matches "${other}". Each branch must have a distinct name (case-insensitive).`
+                }
               />
             </FormField>
             <FormField label="Address" htmlFor="branch-address">
@@ -207,6 +260,42 @@ export function BranchFormModal({ branch, open, onOpenChange, mode }: BranchForm
                 value={panNumber}
                 onChange={(e) => setPanNumber(e.target.value)}
                 placeholder="e.g. ABCDU9603R"
+              />
+            </FormField>
+            <FormField label="Invoice prefix (optional)" htmlFor="branch-inv-prefix">
+              <Input
+                id="branch-inv-prefix"
+                value={invoicePrefix}
+                onChange={(e) => setInvoicePrefix(e.target.value)}
+                placeholder="Used in ACK / Final invoice codes"
+                maxLength={24}
+              />
+              <BranchUniquenessUnderField
+                slot={uniqueness.data?.invoicePrefix}
+                isEmpty={!invoicePrefix.trim()}
+                optionalEmptyHelp="Optional. If set, it must be unique across all branches (case-insensitive) so invoice codes do not clash."
+                availableLabel="Available — this prefix is not used by another branch (case-insensitive)."
+                takenTemplate={(other) =>
+                  `This prefix is already used by "${other}". Use a different prefix for each branch.`
+                }
+              />
+            </FormField>
+            <FormField label="Short brand on item tag (optional)" htmlFor="branch-tag-brand">
+              <Input
+                id="branch-tag-brand"
+                value={itemTagBrandName}
+                onChange={(e) => setItemTagBrandName(e.target.value)}
+                placeholder="Printed on garment tags"
+                maxLength={40}
+              />
+              <BranchUniquenessUnderField
+                slot={uniqueness.data?.itemTagBrandName}
+                isEmpty={!itemTagBrandName.trim()}
+                optionalEmptyHelp="Optional. If set, it must be unique across branches (case-insensitive) so printed tags stay distinct."
+                availableLabel="Available — this tag line is not used by another branch (case-insensitive)."
+                takenTemplate={(other) =>
+                  `This tag line is already used by "${other}". Use a different short brand for each branch.`
+                }
               />
             </FormField>
             <FormField label="Payment UPI ID (optional)" htmlFor="branch-upi">
@@ -274,7 +363,7 @@ export function BranchFormModal({ branch, open, onOpenChange, mode }: BranchForm
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={isPending}>
+            <Button type="submit" disabled={isPending || hasUniquenessConflict}>
               {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : mode === 'add' ? 'Add' : 'Save'}
             </Button>
           </DialogFooter>

@@ -27,6 +27,8 @@ import type { AdminOrderListRow } from '@/types';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import { getFriendlyErrorMessage } from '@/lib/api';
+import { normalizeDateRangeDraft } from '@/lib/normalize-applied-date-range';
+import { DateRangeFilterWithApply } from '@/components/shared/DateRangeFilterWithApply';
 
 export default function OrdersPage() {
   const router = useRouter();
@@ -38,8 +40,10 @@ export default function OrdersPage() {
   const [searchInput, setSearchInput] = useState('');
   const debouncedSearch = useDebounce(searchInput.trim(), 400);
   const [branchId, setBranchId] = useState<string>('');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+  const [dateFromDraft, setDateFromDraft] = useState('');
+  const [dateToDraft, setDateToDraft] = useState('');
+  const [appliedDateFrom, setAppliedDateFrom] = useState('');
+  const [appliedDateTo, setAppliedDateTo] = useState('');
   const [cursor, setCursor] = useState<string | undefined>(undefined);
   const [deleteDialogOrder, setDeleteDialogOrder] = useState<AdminOrderListRow | null>(null);
   const limit = 20;
@@ -53,13 +57,22 @@ export default function OrdersPage() {
   const filters = {
     search: debouncedSearch || undefined,
     branchId: effectiveBranchId || undefined,
-    dateFrom: dateFrom || undefined,
-    dateTo: dateTo || undefined,
+    dateFrom: appliedDateFrom || undefined,
+    dateTo: appliedDateTo || undefined,
     limit,
     cursor,
   };
 
   const { data, isLoading, isFetching, error } = useOrders(filters);
+
+  const handleApplyDateRange = useCallback(() => {
+    const n = normalizeDateRangeDraft(dateFromDraft, dateToDraft);
+    setDateFromDraft(n.dateFrom);
+    setDateToDraft(n.dateTo);
+    setAppliedDateFrom(n.dateFrom);
+    setAppliedDateTo(n.dateTo);
+    setCursor(undefined);
+  }, [dateFromDraft, dateToDraft]);
 
   const handleNext = useCallback(() => {
     if (data?.nextCursor) setCursor(data.nextCursor);
@@ -92,7 +105,8 @@ export default function OrdersPage() {
       <Card>
         <CardContent className="pt-4">
           <p className="text-xs text-muted-foreground mb-3">
-            Date filter: leave empty for all dates. With a range, orders are shown if initiated, picked up, or delivered on any day in that range.
+            Date filter: choose dates in any order, then click Apply. Leave both empty and Apply for all dates. With a
+            range, orders are shown if initiated, picked up, or delivered on any day in that range.
           </p>
           <div className="flex flex-wrap items-end gap-4 mb-4">
             <div className="space-y-1.5 min-w-0 flex-1 basis-[min(100%,280px)]">
@@ -107,28 +121,13 @@ export default function OrdersPage() {
                 className="min-w-0 w-full max-w-md"
               />
             </div>
-            <div className="space-y-1.5 min-w-0">
-              <label className="text-xs text-muted-foreground block">Date from</label>
-              <Input
-                type="date"
-                value={dateFrom}
-                onChange={(e) => {
-                  setDateFrom(e.target.value);
-                  setCursor(undefined);
-                }}
-              />
-            </div>
-            <div className="space-y-1.5 min-w-0">
-              <label className="text-xs text-muted-foreground block">Date to</label>
-              <Input
-                type="date"
-                value={dateTo}
-                onChange={(e) => {
-                  setDateTo(e.target.value);
-                  setCursor(undefined);
-                }}
-              />
-            </div>
+            <DateRangeFilterWithApply
+              draftFrom={dateFromDraft}
+              draftTo={dateToDraft}
+              onDraftFromChange={setDateFromDraft}
+              onDraftToChange={setDateToDraft}
+              onApply={handleApplyDateRange}
+            />
             <div className="space-y-1.5 ml-auto min-w-0">
               <label className="text-xs text-muted-foreground block">Branch</label>
               {branchLocked ? (

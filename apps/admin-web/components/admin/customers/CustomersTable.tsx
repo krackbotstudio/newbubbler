@@ -26,9 +26,19 @@ export interface CustomersTableProps {
   data: CustomerListRow[];
   isLoading: boolean;
   onRowClick: (userId: string) => void;
+  /** Hide subscription count columns (e.g. branch head / no subscription workflow). */
+  hideSubscriptionColumns?: boolean;
+  /** Override default empty copy when there are no rows. */
+  emptyDescription?: string;
 }
 
-export function CustomersTable({ data, isLoading, onRowClick }: CustomersTableProps) {
+export function CustomersTable({
+  data,
+  isLoading,
+  onRowClick,
+  hideSubscriptionColumns = false,
+  emptyDescription,
+}: CustomersTableProps) {
   const handleView = (e: React.MouseEvent, userId: string) => {
     e.stopPropagation();
     onRowClick(userId);
@@ -48,7 +58,9 @@ export function CustomersTable({ data, isLoading, onRowClick }: CustomersTablePr
     return (
       <EmptyState
         title="No customers found"
-        description="Try a different search or clear the filter."
+        description={
+          emptyDescription ?? 'Try a different search or clear the filter.'
+        }
       />
     );
   }
@@ -64,8 +76,12 @@ export function CustomersTable({ data, isLoading, onRowClick }: CustomersTablePr
           <TableHead className="text-right">Past orders</TableHead>
           <TableHead className="text-right">Active orders</TableHead>
           <TableHead className="text-right">Total orders</TableHead>
-          <TableHead className="text-right">Active subscriptions</TableHead>
-          <TableHead className="text-right">Inactive subscriptions</TableHead>
+          {!hideSubscriptionColumns ? (
+            <>
+              <TableHead className="text-right">Active subscriptions</TableHead>
+              <TableHead className="text-right">Inactive subscriptions</TableHead>
+            </>
+          ) : null}
           <TableHead>Created</TableHead>
           <TableHead className="w-[100px]"></TableHead>
         </TableRow>
@@ -85,8 +101,12 @@ export function CustomersTable({ data, isLoading, onRowClick }: CustomersTablePr
             <TableCell className="text-right">
               {(row.pastOrdersCount ?? 0) + (row.activeOrdersCount ?? 0)}
             </TableCell>
-            <TableCell className="text-right">{row.activeSubscriptionsCount ?? 0}</TableCell>
-            <TableCell className="text-right">{row.inactiveSubscriptionsCount ?? 0}</TableCell>
+            {!hideSubscriptionColumns ? (
+              <>
+                <TableCell className="text-right">{row.activeSubscriptionsCount ?? 0}</TableCell>
+                <TableCell className="text-right">{row.inactiveSubscriptionsCount ?? 0}</TableCell>
+              </>
+            ) : null}
             <TableCell>{formatDate(row.createdAt)}</TableCell>
             <TableCell onClick={(e) => e.stopPropagation()}>
               <Button variant="ghost" size="sm" onClick={(e) => handleView(e, row.id)} title="Open profile">

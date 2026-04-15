@@ -10,6 +10,8 @@ export interface AuthUser {
   role: Role;
   /** Set for Branch Head (OPS) and Agent (AGENT); walk-in and list APIs are scoped to this branch. */
   branchId?: string | null;
+  /** ISO timestamp; null/undefined means branch onboarding not finished (OPS only). */
+  onboardingCompletedAt?: string | null;
 }
 
 /** Branch Head or Agent: assigned a single branch for data access. */
@@ -59,8 +61,36 @@ export function logout(): void {
   window.location.href = '/login';
 }
 
-export function canAccessCatalogEdit(role: Role): boolean {
-  return role === 'ADMIN';
+/** Laundry catalog mutations (items, matrix, segments). Branch heads need an assigned branch. */
+export function canAccessCatalogEdit(role: Role, branchId?: string | null): boolean {
+  if (role === 'ADMIN') return true;
+  if (role === 'OPS' && branchId) return true;
+  return false;
+}
+
+/** Card-level toggles and edit: branch heads only for items explicitly assigned to their branch. */
+export function canBranchHeadEditCatalogItem(
+  role: Role,
+  branchId: string | null | undefined,
+  itemBranchIds: string[] | undefined,
+): boolean {
+  if (role === 'ADMIN') return true;
+  const ids = itemBranchIds ?? [];
+  if (role !== 'OPS' || !branchId) return false;
+  if (ids.length === 0) return false;
+  return ids.includes(branchId);
+}
+
+/** Delete: admins (when they can edit); branch heads only if the item is exclusive to their branch. */
+export function canDeleteCatalogItem(
+  role: Role,
+  branchId: string | null | undefined,
+  itemBranchIds: string[] | undefined,
+): boolean {
+  if (!canBranchHeadEditCatalogItem(role, branchId, itemBranchIds)) return false;
+  if (role === 'ADMIN') return true;
+  const ids = itemBranchIds ?? [];
+  return ids.length === 1 && ids[0] === branchId;
 }
 
 export function canAccessPaymentEdit(role: Role): boolean {
@@ -72,7 +102,7 @@ export function canAccessOrders(role: Role): boolean {
 }
 
 export function canAccessBrandingEdit(role: Role): boolean {
-  return role === 'ADMIN' || role === 'BILLING';
+  return role === 'ADMIN' || role === 'BILLING' || role === 'OPS';
 }
 
 export function canAccessCustomersEdit(role: Role): boolean {

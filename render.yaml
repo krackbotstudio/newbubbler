@@ -1,4 +1,4 @@
-# Render Blueprint: deploy WeYou API as a Docker web service.
+# Render Blueprint: deploy Bubbler API as a Docker web service.
 # Use "New" -> "Blueprint" in Render and connect this repo, or create a Web Service manually and set:
 # - Environment: Docker
 # - Dockerfile Path: apps/api/Dockerfile
@@ -6,11 +6,11 @@
 
 services:
   - type: web
-    name: weyou-api
+    name: bubbler-api
     runtime: docker
     dockerfilePath: apps/api/Dockerfile
     disks:
-      - name: weyou-api-storage
+      - name: bubbler-api-storage
         mountPath: /var/data
         sizeGB: 10
     # Root Directory must be empty so build context is repo root (where package.json lives)

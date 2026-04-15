@@ -47,5 +47,10 @@ export class CreateOrderDto {
   @IsOptional()
   @IsString()
   subscriptionId?: string;
+
+  /** Individual orders: branch that serves the address pincode (required when multiple branches serve the same pincode). */
+  @IsOptional()
+  @IsString()
+  branchId?: string;
 }
 

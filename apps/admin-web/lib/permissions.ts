@@ -12,7 +12,7 @@ export const ROLE_PERMISSIONS: Record<
 > = {
   ADMIN: { allow: ['*'] },
   BILLING: { allow: ['*'] },
-  OPS: { denyRoutes: ['/analytics', '/branding', '/admin-users'] },
+  OPS: { denyRoutes: ['/analytics', '/admin-users'] },
   AGENT: {
     allow: ['/dashboard', '/orders', '/feedback'],
     navHide: ['/orders', '/customers'],

@@ -13,6 +13,8 @@ export interface AdminUsersFilters {
   role?: string;
   active?: boolean;
   search?: string;
+  /** When set, only users assigned to this branch (for branch head list). */
+  branchId?: string;
   limit: number;
   cursor?: string;
 }
@@ -47,5 +49,7 @@ export interface AdminUsersRepo {
   setPasswordHash(id: string, passwordHash: string): Promise<void>;
 
   deleteUser(id: string): Promise<void>;
+
+  countByBranchAndRole(branchId: string, role: string): Promise<number>;
 }
 

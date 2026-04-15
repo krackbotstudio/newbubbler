@@ -3,7 +3,7 @@
 import { useRouter, usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { getToken, getStoredUser, type AuthUser } from '@/lib/auth';
+import { getToken, getStoredUser, setStoredUser, type AuthUser } from '@/lib/auth';
 import {
   isOpsDeniedRoute,
   OPS_DEFAULT_REDIRECT,
@@ -14,7 +14,7 @@ import { Sidebar } from './Sidebar';
 import { Button } from '@/components/ui/button';
 import { Menu } from 'lucide-react';
 import { useBranding } from '@/hooks/useBranding';
-import { getApiOrigin } from '@/lib/api';
+import { api, getApiOrigin } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
 export function ProtectedLayout({ children }: { children: React.ReactNode }) {
@@ -39,13 +39,54 @@ export function ProtectedLayout({ children }: { children: React.ReactNode }) {
       router.replace('/login');
       return;
     }
-    setUser(stored);
-    setChecking(false);
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await api.get<{
+          id: string;
+          email: string | null;
+          role: AuthUser['role'];
+          branchId: string | null;
+          onboardingCompletedAt: string | null;
+        }>('/auth/admin/profile');
+        if (cancelled) return;
+        const merged: AuthUser = {
+          id: data.id,
+          email: data.email ?? undefined,
+          role: data.role,
+          branchId: data.branchId,
+          onboardingCompletedAt: data.onboardingCompletedAt,
+        };
+        setStoredUser(merged);
+        setUser(merged);
+      } catch {
+        if (!cancelled) {
+          setUser(stored);
+        }
+      } finally {
+        if (!cancelled) setChecking(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [router]);
 
   useEffect(() => {
     if (!user) return;
     if (user.role === 'OPS') {
+      const onboardingIncomplete =
+        user.onboardingCompletedAt == null || user.onboardingCompletedAt === '';
+      if (onboardingIncomplete && pathname !== '/onboarding') {
+        router.replace('/onboarding');
+        return;
+      }
+      if (!onboardingIncomplete && pathname === '/onboarding') {
+        router.replace('/dashboard');
+        return;
+      }
       if (isOpsDeniedRoute(pathname ?? '')) {
         toast.error('No access');
         router.replace(OPS_DEFAULT_REDIRECT);
@@ -74,38 +115,47 @@ export function ProtectedLayout({ children }: { children: React.ReactNode }) {
     return null;
   }
 
+  const opsOnboardingIncomplete =
+    user.role === 'OPS' &&
+    (user.onboardingCompletedAt == null || user.onboardingCompletedAt === '');
+  const showSidebar = !opsOnboardingIncomplete;
+
   return (
     <div className="flex min-h-screen flex-col">
       <div className="flex flex-1 min-h-0">
-        <Sidebar
-          user={user}
-          collapsed={sidebarCollapsed}
-          onToggleCollapse={() => setSidebarCollapsed((c) => !c)}
-          mobileOpen={mobileMenuOpen}
-          onCloseMobile={() => setMobileMenuOpen(false)}
-        />
+        {showSidebar ? (
+          <Sidebar
+            user={user}
+            collapsed={sidebarCollapsed}
+            onToggleCollapse={() => setSidebarCollapsed((c) => !c)}
+            mobileOpen={mobileMenuOpen}
+            onCloseMobile={() => setMobileMenuOpen(false)}
+          />
+        ) : null}
         <div
           className={cn(
             'flex flex-1 flex-col min-w-0 transition-[padding] duration-200 ease-in-out',
-            sidebarCollapsed ? 'md:pl-14' : 'md:pl-56',
+            showSidebar && (sidebarCollapsed ? 'md:pl-14' : 'md:pl-56'),
           )}
         >
-          <div className="sticky top-0 z-30 flex md:hidden items-center gap-2 border-b bg-background px-4 py-2">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="shrink-0"
-              onClick={() => setMobileMenuOpen(true)}
-              aria-label="Open menu"
-            >
-              <Menu className="h-5 w-5" />
-            </Button>
-            {logoUrl ? (
-              <img src={logoUrl} alt="Logo" className="h-7 w-auto max-w-[120px] object-contain object-left" />
-            ) : (
-              <span className="font-semibold text-sm truncate">Laundry Admin</span>
-            )}
-          </div>
+          {showSidebar ? (
+            <div className="sticky top-0 z-30 flex md:hidden items-center gap-2 border-b bg-background px-4 py-2">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="shrink-0"
+                onClick={() => setMobileMenuOpen(true)}
+                aria-label="Open menu"
+              >
+                <Menu className="h-5 w-5" />
+              </Button>
+              {logoUrl ? (
+                <img src={logoUrl} alt="Logo" className="h-7 w-auto max-w-[120px] object-contain object-left" />
+              ) : (
+                <span className="font-semibold text-sm truncate">Laundry Admin</span>
+              )}
+            </div>
+          ) : null}
           <main className="flex-1 overflow-auto p-4 sm:p-6 min-h-0">{children}</main>
         </div>
       </div>

@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@prisma/client';
+import { Prisma, type PrismaClient } from '@prisma/client';
 import {
   OrderStatus as PrismaOrderStatus,
   PaymentStatus as PrismaPaymentStatus,
@@ -103,10 +103,56 @@ function branchCodeFromName(name: string): string {
   return raw.padEnd(3, 'X');
 }
 
-/** Order number format: BRANCH3 + DDMMYYYY + 0001.. + ON|WI (that day, that branch). */
-function buildOrderNumber(branch3: string, dateKeyDdMmYyyy: string, seq: number, orderSource: string | null): string {
+const BRANCH_ID_DISC_LEN = 6;
+
+/** Hex slice from branch UUID — keeps order ids unique when two branches share the same 3-letter name code. */
+function branchIdDiscriminator(branchId: string | null): string {
+  if (!branchId) return ''.padStart(BRANCH_ID_DISC_LEN, '0');
+  const clean = branchId.replace(/-/g, '');
+  const tail = clean.slice(-BRANCH_ID_DISC_LEN).toUpperCase();
+  return tail.replace(/[^0-9A-F]/g, '0').padStart(BRANCH_ID_DISC_LEN, '0').slice(-BRANCH_ID_DISC_LEN);
+}
+
+/** Order number: BRANCH3 + BRANCHDISC(hex) + DDMMYYYY + SEQ4 + ON|WI — per branch, per India calendar day. */
+function buildOrderNumber(
+  branch3: string,
+  branchDisc: string,
+  dateKeyDdMmYyyy: string,
+  seq: number,
+  orderSource: string | null,
+): string {
   const suffix = orderSource === 'WALK_IN' ? 'WI' : 'ON';
-  return `${branch3}${dateKeyDdMmYyyy}${String(seq).padStart(4, '0')}${suffix}`;
+  return `${branch3}${branchDisc}${dateKeyDdMmYyyy}${String(seq).padStart(4, '0')}${suffix}`;
+}
+
+const ORDER_ID_SEQ_LEN = 4;
+
+/** Next sequence for this branch/day and id layout (handles deletes and avoids count+1 races). */
+async function nextOrderSequenceForDay(
+  tx: Pick<PrismaClient, 'order'>,
+  branchId: string | null,
+  dayStart: Date,
+  dayEnd: Date,
+  idPrefixWithoutSeq: string,
+  suffix: string,
+): Promise<number> {
+  const rows = await tx.order.findMany({
+    where: {
+      ...(branchId === null ? { branchId: null } : { branchId }),
+      createdAt: { gte: dayStart, lt: dayEnd },
+      id: { startsWith: idPrefixWithoutSeq },
+    },
+    select: { id: true },
+  });
+  let maxSeq = 0;
+  const needLen = idPrefixWithoutSeq.length + ORDER_ID_SEQ_LEN + suffix.length;
+  for (const { id } of rows) {
+    if (id.length !== needLen || !id.endsWith(suffix)) continue;
+    const seqPart = id.slice(idPrefixWithoutSeq.length, idPrefixWithoutSeq.length + ORDER_ID_SEQ_LEN);
+    const n = parseInt(seqPart, 10);
+    if (Number.isFinite(n) && n > maxSeq) maxSeq = n;
+  }
+  return maxSeq + 1;
 }
 
 export class PrismaOrdersRepo implements OrdersRepo {
@@ -140,14 +186,11 @@ export class PrismaOrdersRepo implements OrdersRepo {
         }
       }
 
-      const count = await tx.order.count({
-        where: {
-          branchId: effectiveBranchId,
-          createdAt: { gte: dayStart, lt: dayEnd },
-        },
-      });
-      const seq = count + 1;
-      const id = buildOrderNumber(branch3, ddMmYyyy, seq, data.orderSource ?? null);
+      const branchDisc = branchIdDiscriminator(effectiveBranchId);
+      const suffix = data.orderSource === 'WALK_IN' ? 'WI' : 'ON';
+      const idPrefix = `${branch3}${branchDisc}${ddMmYyyy}`;
+      const seq = await nextOrderSequenceForDay(tx, effectiveBranchId, dayStart, dayEnd, idPrefix, suffix);
+      const id = buildOrderNumber(branch3, branchDisc, ddMmYyyy, seq, data.orderSource ?? null);
 
       return tx.order.create({
         data: {
@@ -171,9 +214,14 @@ export class PrismaOrdersRepo implements OrdersRepo {
       });
     };
 
+    const prismaFull = this.prisma as PrismaClient;
     const order =
-      typeof (this.prisma as { $transaction?: unknown }).$transaction === 'function'
-        ? await (this.prisma as PrismaClient).$transaction((tx) => run(tx))
+      typeof prismaFull.$transaction === 'function'
+        ? await prismaFull.$transaction((tx) => run(tx), {
+            isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+            maxWait: 5000,
+            timeout: 10000,
+          })
         : await run(this.prisma);
     return toOrderRecord(order);
   }
@@ -558,7 +606,19 @@ export class PrismaOrdersRepo implements OrdersRepo {
     const address = order.address;
     const orderWithSnapshot = order as { addressLabel?: string | null; addressLine?: string | null };
     const pincode = order.pincode || address?.pincode;
-    let branchForSummary: { id: string; name: string; address: string; phone: string | null; gstNumber: string | null; panNumber: string | null; footerNote: string | null } | null = order.branch
+    let branchForSummary: {
+      id: string;
+      name: string;
+      address: string;
+      phone: string | null;
+      gstNumber: string | null;
+      panNumber: string | null;
+      footerNote: string | null;
+      invoicePrefix: string | null;
+      itemTagBrandName: string | null;
+      logoUrl: string | null;
+      updatedAt: Date;
+    } | null = order.branch
       ? {
           id: order.branch.id,
           name: order.branch.name,
@@ -567,6 +627,10 @@ export class PrismaOrdersRepo implements OrdersRepo {
           gstNumber: order.branch.gstNumber ?? null,
           panNumber: order.branch.panNumber ?? null,
           footerNote: order.branch.footerNote ?? null,
+          invoicePrefix: order.branch.invoicePrefix ?? null,
+          itemTagBrandName: order.branch.itemTagBrandName ?? null,
+          logoUrl: order.branch.logoUrl ?? null,
+          updatedAt: order.branch.updatedAt,
         }
       : null;
     if (!branchForSummary && pincode) {
@@ -583,6 +647,10 @@ export class PrismaOrdersRepo implements OrdersRepo {
           gstNumber: serviceArea.branch.gstNumber ?? null,
           panNumber: serviceArea.branch.panNumber ?? null,
           footerNote: serviceArea.branch.footerNote ?? null,
+          invoicePrefix: serviceArea.branch.invoicePrefix ?? null,
+          itemTagBrandName: serviceArea.branch.itemTagBrandName ?? null,
+          logoUrl: serviceArea.branch.logoUrl ?? null,
+          updatedAt: serviceArea.branch.updatedAt,
         };
       }
     }

@@ -2,6 +2,7 @@ import { AppError } from '../errors';
 import type { SegmentCategoryRepo, SegmentCategoryRecord } from '../ports';
 
 export interface CreateSegmentCategoryInput {
+  branchId: string;
   code: string;
   label: string;
   isActive?: boolean;
@@ -21,9 +22,16 @@ export async function createSegmentCategory(
   if (!CODE_REGEX.test(code)) {
     throw new AppError('INVALID_CODE', 'Segment category code must be uppercase letters, numbers, and underscores');
   }
-  const existing = await deps.segmentCategoryRepo.getByCode(code);
-  if (existing) {
-    throw new AppError('SEGMENT_CATEGORY_EXISTS', 'A segment category with this code already exists', { code });
+  const branchId = input.branchId.trim();
+  if (!branchId) {
+    throw new AppError('BRANCH_REQUIRED', 'branchId is required');
   }
-  return deps.segmentCategoryRepo.create(code, input.label.trim() || code, input.isActive ?? true);
+  const existing = await deps.segmentCategoryRepo.getByBranchIdAndCode(branchId, code);
+  if (existing) {
+    throw new AppError('SEGMENT_CATEGORY_EXISTS', 'A segment category with this code already exists for this branch', {
+      code,
+      branchId,
+    });
+  }
+  return deps.segmentCategoryRepo.create(branchId, code, input.label.trim() || code, input.isActive ?? true);
 }

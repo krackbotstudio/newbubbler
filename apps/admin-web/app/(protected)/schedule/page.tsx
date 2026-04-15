@@ -37,6 +37,9 @@ export default function SchedulePage() {
   const user = typeof window !== 'undefined' ? getStoredUser() : null;
   const isAdmin = user?.role === 'ADMIN';
   const isBranchHead = user && isBranchScopedStaff(user.role) && !!user.branchId;
+  /** Branch heads (OPS) may set hours and branch-only holidays for their branch; agents do not (route is OPS/ADMIN). */
+  const isOpsBranchHead = user?.role === 'OPS' && !!user.branchId;
+  const canManageBranchSchedule = isAdmin || isOpsBranchHead;
 
   const { data: branches = [] } = useBranches();
   const [selectedBranchId, setSelectedBranchId] = useState<string>(() =>
@@ -178,6 +181,12 @@ export default function SchedulePage() {
     loadHolidays();
   }, [branchIdForApi]);
 
+  useEffect(() => {
+    if (isOpsBranchHead) {
+      setHolidayScopeCommon(false);
+    }
+  }, [isOpsBranchHead]);
+
   const handleSaveHours = async (e: React.FormEvent) => {
     e.preventDefault();
     setHoursSaving(true);
@@ -211,7 +220,9 @@ export default function SchedulePage() {
       date: holidayDate,
       label: holidayLabel || undefined,
     };
-    if (holidayScopeCommon) {
+    if (isOpsBranchHead && user?.branchId) {
+      body.branchId = user.branchId;
+    } else if (holidayScopeCommon) {
       body.branchId = null;
     } else if (selectedBranchId) {
       body.branchId = selectedBranchId;
@@ -222,7 +233,9 @@ export default function SchedulePage() {
       setHolidayLabel('');
       setHolidaysError(null);
       loadHolidays();
-      toast.success(holidayScopeCommon ? 'Common holiday added (all branches).' : 'Branch holiday added.');
+      toast.success(
+        isOpsBranchHead ? 'Branch holiday added.' : holidayScopeCommon ? 'Common holiday added (all branches).' : 'Branch holiday added.',
+      );
     } catch (err) {
       setHolidaysError(err);
       toast.error(getFriendlyErrorMessage(err));
@@ -263,7 +276,9 @@ export default function SchedulePage() {
       date: editDate,
       label: editLabel || undefined,
     };
-    if (editScopeCommon) {
+    if (isOpsBranchHead && user?.branchId) {
+      body.branchId = user.branchId;
+    } else if (editScopeCommon) {
       body.branchId = null;
     } else if (selectedBranchId) {
       body.branchId = selectedBranchId;
@@ -309,7 +324,9 @@ export default function SchedulePage() {
         <CardHeader>
           <CardTitle>Branch-wise timings</CardTitle>
           <CardDescription>
-            Daily operating hours for the selected branch (read-only).
+            {canManageBranchSchedule
+              ? 'Daily operating hours for the selected branch. Use the form below to update start and end times.'
+              : 'Daily operating hours for the selected branch (view only).'}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -352,12 +369,13 @@ export default function SchedulePage() {
         </CardContent>
       </Card>
 
-      {isAdmin && (
+      {canManageBranchSchedule && (
         <Card>
           <CardHeader>
             <CardTitle>Edit operating hours</CardTitle>
             <CardDescription>
-              Daily open/close for this branch. Time windows (e.g. 10:00–12:00) must fall within this range. Admins only.
+              Daily open/close for this branch. Pickup time windows must fall within this range.
+              {isAdmin ? ' Admins can edit any branch.' : ' You can edit only your branch.'}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -407,7 +425,7 @@ export default function SchedulePage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {isAdmin && (
+          {canManageBranchSchedule && (
             <form onSubmit={handleAddHoliday} className="flex flex-wrap items-end gap-3">
               <div className="space-y-1">
                 <label className="text-sm font-medium">Date</label>
@@ -427,7 +445,7 @@ export default function SchedulePage() {
                   placeholder="e.g. Diwali"
                 />
               </div>
-              {branches.length > 0 && (
+              {branches.length > 0 && isAdmin && (
                 <div className="flex items-center gap-2">
                   <label className="flex items-center gap-2 text-sm cursor-pointer">
                     <input
@@ -448,6 +466,11 @@ export default function SchedulePage() {
                     This branch only
                   </label>
                 </div>
+              )}
+              {isOpsBranchHead && (
+                <p className="text-xs text-muted-foreground w-full sm:w-auto">
+                  Holiday applies to <span className="font-medium text-foreground">your branch only</span>.
+                </p>
               )}
               <Button type="submit" disabled={addingHoliday}>
                 {addingHoliday ? 'Adding…' : 'Add holiday'}
@@ -516,7 +539,7 @@ export default function SchedulePage() {
                             ({branches.find((b) => b.id === h.branchId)?.name ?? 'Branch'})
                           </span>
                         </span>
-                        {isAdmin && (
+                        {(isAdmin || (isOpsBranchHead && user?.branchId === h.branchId)) && (
                           <span className="flex gap-1">
                             <Button type="button" variant="ghost" size="sm" onClick={() => openEditHoliday(h)}>
                               Edit
@@ -567,7 +590,7 @@ export default function SchedulePage() {
                   placeholder="e.g. Diwali"
                 />
               </div>
-              {branches.length > 0 && (
+              {branches.length > 0 && isAdmin && (
                 <div className="flex items-center gap-4">
                   <label className="flex items-center gap-2 text-sm cursor-pointer">
                     <input
@@ -592,6 +615,11 @@ export default function SchedulePage() {
                     <span className="text-xs text-muted-foreground">Select a branch in the dropdown above to set branch-only.</span>
                   )}
                 </div>
+              )}
+              {isOpsBranchHead && editingHoliday?.branchId != null && (
+                <p className="text-xs text-muted-foreground">
+                  Saving keeps this holiday on <span className="font-medium text-foreground">your branch</span> only.
+                </p>
               )}
             </div>
             <DialogFooter>

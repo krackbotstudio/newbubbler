@@ -460,8 +460,15 @@ export class PrismaInvoicesRepo implements InvoicesRepo {
         where: { pincode: { in: pincodesToResolve }, active: true },
         include: { branch: true },
       });
+      const byPincode = new Map<string, typeof serviceAreas>();
       for (const sa of serviceAreas) {
-        pincodeToBranchName.set(sa.pincode, sa.branch?.name ?? null);
+        const list = byPincode.get(sa.pincode) ?? [];
+        list.push(sa);
+        byPincode.set(sa.pincode, list);
+      }
+      for (const [pin, list] of byPincode) {
+        const sorted = [...list].sort((a, b) => Number(b.branch.isDefault) - Number(a.branch.isDefault));
+        pincodeToBranchName.set(pin, sorted[0]?.branch?.name ?? null);
       }
     }
 

@@ -94,6 +94,7 @@ export class PrismaSubscriptionsRepo implements SubscriptionsRepo {
         id: sub.id,
         planId: sub.planId,
         planName: sub.plan.name,
+        branchId: sub.branchId ?? null,
         addressId: sub.addressId ?? null,
         addressLabel: (sub as { addressLabel?: string | null }).addressLabel ?? null,
         validityStartDate: sub.validityStartDate,

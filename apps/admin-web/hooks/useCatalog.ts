@@ -11,7 +11,7 @@ import type {
   ImportCatalogResult,
 } from '@/types';
 
-const CATALOG_MATRIX_KEY = ['admin', 'catalog', 'matrix'];
+const CATALOG_MATRIX_KEY_PREFIX = ['admin', 'catalog', 'matrix'] as const;
 
 function fetchItems(withPrices = false): Promise<LaundryItem[]> {
   const url = withPrices ? '/admin/items?withPrices=true' : '/admin/items';
@@ -40,7 +40,7 @@ export function useCreateItem() {
       api.post<LaundryItem>('/admin/items', body).then((r) => r.data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['admin', 'items'] });
-      qc.invalidateQueries({ queryKey: CATALOG_MATRIX_KEY });
+      qc.invalidateQueries({ queryKey: CATALOG_MATRIX_KEY_PREFIX, exact: false });
     },
   });
 }
@@ -52,7 +52,18 @@ export function useUpdateItem(itemId: string) {
       api.patch<LaundryItem>(`/admin/items/${itemId}`, body).then((r) => r.data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['admin', 'items'] });
-      qc.invalidateQueries({ queryKey: CATALOG_MATRIX_KEY });
+      qc.invalidateQueries({ queryKey: CATALOG_MATRIX_KEY_PREFIX, exact: false });
+    },
+  });
+}
+
+export function useDeleteItem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (itemId: string) => api.delete(`/admin/items/${encodeURIComponent(itemId)}`).then(() => undefined),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin', 'items'] });
+      qc.invalidateQueries({ queryKey: CATALOG_MATRIX_KEY_PREFIX, exact: false });
     },
   });
 }
@@ -68,15 +79,18 @@ export function usePutItemPrices(itemId: string) {
   });
 }
 
-export function useCatalogItemsWithMatrix() {
+export function useCatalogItemsWithMatrix(branchId?: string) {
+  const keyBranch = branchId?.trim() || 'all';
   return useQuery({
-    queryKey: CATALOG_MATRIX_KEY,
-    queryFn: () =>
-      api.get<CatalogMatrixResponse>('/admin/catalog/items').then((r) => ({
+    queryKey: [...CATALOG_MATRIX_KEY_PREFIX, keyBranch],
+    queryFn: () => {
+      const q = branchId?.trim() ? `?branchId=${encodeURIComponent(branchId.trim())}` : '';
+      return api.get<CatalogMatrixResponse>(`/admin/catalog/items${q}`).then((r) => ({
         items: r.data.items,
         serviceCategories: r.data.serviceCategories,
         segmentCategories: r.data.segmentCategories ?? [],
-      })),
+      }));
+    },
   });
 }
 
@@ -88,7 +102,7 @@ export function useUpdateItemWithMatrix(itemId: string) {
         .put<{ item: LaundryItem; segmentPrices: unknown[] }>(`/admin/catalog/items/${itemId}`, body)
         .then((r) => r.data),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: CATALOG_MATRIX_KEY });
+      qc.invalidateQueries({ queryKey: CATALOG_MATRIX_KEY_PREFIX, exact: false });
       qc.invalidateQueries({ queryKey: ['admin', 'items'] });
     },
   });
@@ -97,10 +111,15 @@ export function useUpdateItemWithMatrix(itemId: string) {
 export function useCreateServiceCategory() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: { code: string; label: string; isActive?: boolean }) =>
-      api.post<{ id: string; code: string; label: string; isActive: boolean }>('/admin/catalog/service-categories', body).then((r) => r.data),
+    mutationFn: (body: { code: string; label: string; isActive?: boolean; branchId: string }) =>
+      api
+        .post<{ id: string; branchId: string; code: string; label: string; isActive: boolean }>(
+          '/admin/catalog/service-categories',
+          body,
+        )
+        .then((r) => r.data),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: CATALOG_MATRIX_KEY });
+      qc.invalidateQueries({ queryKey: CATALOG_MATRIX_KEY_PREFIX, exact: false });
     },
   });
 }
@@ -108,10 +127,12 @@ export function useCreateServiceCategory() {
 export function useCreateSegmentCategory() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: { code: string; label: string; isActive?: boolean }) =>
-      api.post<{ id: string; code: string; label: string; isActive: boolean }>('/admin/catalog/segments', body).then((r) => r.data),
+    mutationFn: (body: { code: string; label: string; isActive?: boolean; branchId: string }) =>
+      api
+        .post<{ id: string; branchId: string; code: string; label: string; isActive: boolean }>('/admin/catalog/segments', body)
+        .then((r) => r.data),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: CATALOG_MATRIX_KEY });
+      qc.invalidateQueries({ queryKey: CATALOG_MATRIX_KEY_PREFIX, exact: false });
     },
   });
 }
@@ -122,7 +143,7 @@ export function useUpdateServiceCategory() {
     mutationFn: ({ id, label, isActive }: { id: string; label?: string; isActive?: boolean }) =>
       api.patch<{ id: string; code: string; label: string; isActive: boolean }>(`/admin/catalog/service-categories/${id}`, { label, isActive }).then((r) => r.data),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: CATALOG_MATRIX_KEY });
+      qc.invalidateQueries({ queryKey: CATALOG_MATRIX_KEY_PREFIX, exact: false });
     },
   });
 }
@@ -133,7 +154,7 @@ export function useDeleteServiceCategory() {
     mutationFn: (id: string) =>
       api.delete(`/admin/catalog/service-categories/${id}`).then(() => undefined),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: CATALOG_MATRIX_KEY });
+      qc.invalidateQueries({ queryKey: CATALOG_MATRIX_KEY_PREFIX, exact: false });
     },
   });
 }
@@ -142,9 +163,9 @@ export function useUpdateSegmentCategory() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, label, isActive }: { id: string; label?: string; isActive?: boolean }) =>
-      api.patch<{ id: string; code: string; label: string; isActive: boolean }>(`/admin/catalog/segments/${id}`, { label, isActive }).then((r) => r.data),
+      api.patch<{ id: string; branchId: string; code: string; label: string; isActive: boolean }>(`/admin/catalog/segments/${id}`, { label, isActive }).then((r) => r.data),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: CATALOG_MATRIX_KEY });
+      qc.invalidateQueries({ queryKey: CATALOG_MATRIX_KEY_PREFIX, exact: false });
     },
   });
 }
@@ -155,7 +176,7 @@ export function useDeleteSegmentCategory() {
     mutationFn: (id: string) =>
       api.delete(`/admin/catalog/segments/${id}`).then(() => undefined),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: CATALOG_MATRIX_KEY });
+      qc.invalidateQueries({ queryKey: CATALOG_MATRIX_KEY_PREFIX, exact: false });
     },
   });
 }
@@ -163,10 +184,10 @@ export function useDeleteSegmentCategory() {
 export function useImportCatalog() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (content: string) =>
-      api.post<ImportCatalogResult>('/admin/catalog/import', { content }).then((r) => r.data),
+    mutationFn: (body: { content: string; branchId: string }) =>
+      api.post<ImportCatalogResult>('/admin/catalog/import', body).then((r) => r.data),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: CATALOG_MATRIX_KEY });
+      qc.invalidateQueries({ queryKey: CATALOG_MATRIX_KEY_PREFIX, exact: false });
       qc.invalidateQueries({ queryKey: ['admin', 'items'] });
     },
   });

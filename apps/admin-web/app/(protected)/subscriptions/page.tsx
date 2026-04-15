@@ -19,6 +19,8 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatMoney, formatDate } from '@/lib/format';
 import { ErrorDisplay } from '@/components/shared/ErrorDisplay';
+import { normalizeDateRangeDraft } from '@/lib/normalize-applied-date-range';
+import { DateRangeFilterWithApply } from '@/components/shared/DateRangeFilterWithApply';
 import { Badge } from '@/components/ui/badge';
 
 export default function SubscriptionsPage() {
@@ -30,8 +32,10 @@ export default function SubscriptionsPage() {
     isBranchHead && user?.branchId ? [user.branchId] : [],
   );
   const [customerId, setCustomerId] = useState('');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+  const [dateFromDraft, setDateFromDraft] = useState('');
+  const [dateToDraft, setDateToDraft] = useState('');
+  const [appliedDateFrom, setAppliedDateFrom] = useState('');
+  const [appliedDateTo, setAppliedDateTo] = useState('');
   const [cursor, setCursor] = useState<string | undefined>(undefined);
   const limit = 50;
 
@@ -45,13 +49,22 @@ export default function SubscriptionsPage() {
   const filters = {
     customerId: customerId.trim() || undefined,
     branchId: effectiveBranchId ?? undefined,
-    dateFrom: dateFrom || undefined,
-    dateTo: dateTo || undefined,
+    dateFrom: appliedDateFrom || undefined,
+    dateTo: appliedDateTo || undefined,
     limit,
     cursor,
   };
 
   const { data, isLoading, isFetching, error } = useSubscriptionInvoices(filters);
+
+  const handleApplyDateRange = useCallback(() => {
+    const n = normalizeDateRangeDraft(dateFromDraft, dateToDraft);
+    setDateFromDraft(n.dateFrom);
+    setDateToDraft(n.dateTo);
+    setAppliedDateFrom(n.dateFrom);
+    setAppliedDateTo(n.dateTo);
+    setCursor(undefined);
+  }, [dateFromDraft, dateToDraft]);
 
   const handleNext = useCallback(() => {
     if (data?.nextCursor) setCursor(data.nextCursor);
@@ -100,7 +113,8 @@ export default function SubscriptionsPage() {
         </CardHeader>
         <CardContent>
           <p className="text-xs text-muted-foreground mb-3">
-            Filter by branch, customer ID or issued date range. Leave empty for all.
+            Filter by branch, customer ID or issued date range. Pick dates in any order, then Apply. Leave both empty
+            and Apply for all.
           </p>
           <div className="flex flex-wrap items-end gap-4">
             <div className="space-y-1">
@@ -115,28 +129,14 @@ export default function SubscriptionsPage() {
                 className="w-64"
               />
             </div>
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Date from</label>
-              <Input
-                type="date"
-                value={dateFrom}
-                onChange={(e) => {
-                  setDateFrom(e.target.value);
-                  setCursor(undefined);
-                }}
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Date to</label>
-              <Input
-                type="date"
-                value={dateTo}
-                onChange={(e) => {
-                  setDateTo(e.target.value);
-                  setCursor(undefined);
-                }}
-              />
-            </div>
+            <DateRangeFilterWithApply
+              draftFrom={dateFromDraft}
+              draftTo={dateToDraft}
+              onDraftFromChange={setDateFromDraft}
+              onDraftToChange={setDateToDraft}
+              onApply={handleApplyDateRange}
+              blockLabels={false}
+            />
           </div>
         </CardContent>
       </Card>

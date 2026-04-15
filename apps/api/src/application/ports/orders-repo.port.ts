@@ -109,7 +109,19 @@ export interface OrderAdminSummary {
   customer: { id: string; name: string | null; phone: string | null; email: string | null };
   address: { id: string; label: string; addressLine: string; pincode: string; googleMapUrl?: string | null };
   /** Branch (from order.branchId, e.g. resolved by pincode when order was created). Includes branch id for catalog filtering and invoice info (address/phone/GST/PAN/footer note). */
-  branch: { id: string; name: string; address: string; phone?: string | null; gstNumber?: string | null; panNumber?: string | null; footerNote?: string | null } | null;
+  branch: {
+    id: string;
+    name: string;
+    address: string;
+    phone?: string | null;
+    gstNumber?: string | null;
+    panNumber?: string | null;
+    footerNote?: string | null;
+    invoicePrefix?: string | null;
+    itemTagBrandName?: string | null;
+    logoUrl?: string | null;
+    updatedAt?: Date;
+  } | null;
   orderItems: Array<{
     id: string;
     name?: string;

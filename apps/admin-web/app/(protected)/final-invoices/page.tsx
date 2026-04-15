@@ -20,6 +20,8 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatMoney, formatDate } from '@/lib/format';
 import { ErrorDisplay } from '@/components/shared/ErrorDisplay';
+import { normalizeDateRangeDraft } from '@/lib/normalize-applied-date-range';
+import { DateRangeFilterWithApply } from '@/components/shared/DateRangeFilterWithApply';
 import { Badge } from '@/components/ui/badge';
 
 export default function FinalInvoicesPage() {
@@ -37,8 +39,10 @@ export default function FinalInvoicesPage() {
   );
   const { data: customerByPhone } = useWalkInLookupCustomer(combinedPhone);
   const [branchId, setBranchId] = useState('');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+  const [dateFromDraft, setDateFromDraft] = useState('');
+  const [dateToDraft, setDateToDraft] = useState('');
+  const [appliedDateFrom, setAppliedDateFrom] = useState('');
+  const [appliedDateTo, setAppliedDateTo] = useState('');
   const [cursor, setCursor] = useState<string | undefined>(undefined);
   const limit = 50;
 
@@ -52,13 +56,22 @@ export default function FinalInvoicesPage() {
   const filters = {
     customerId: resolvedCustomerId ?? undefined,
     branchId: effectiveBranchId || undefined,
-    dateFrom: dateFrom || undefined,
-    dateTo: dateTo || undefined,
+    dateFrom: appliedDateFrom || undefined,
+    dateTo: appliedDateTo || undefined,
     limit,
     cursor,
   };
 
   const { data, isLoading, isFetching, error } = useFinalInvoices(filters);
+
+  const handleApplyDateRange = useCallback(() => {
+    const n = normalizeDateRangeDraft(dateFromDraft, dateToDraft);
+    setDateFromDraft(n.dateFrom);
+    setDateToDraft(n.dateTo);
+    setAppliedDateFrom(n.dateFrom);
+    setAppliedDateTo(n.dateTo);
+    setCursor(undefined);
+  }, [dateFromDraft, dateToDraft]);
 
   const handleNext = useCallback(() => {
     if (data?.nextCursor) setCursor(data.nextCursor);
@@ -92,7 +105,8 @@ export default function FinalInvoicesPage() {
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold">Final Invoices</h1>
       <p className="text-sm text-muted-foreground">
-        All final invoices (order and subscription) with payment collected. Includes zero-value invoices.
+        All final invoices (order and subscription) with payment collected. Includes zero-value invoices. Use date
+        filters in any order, then Apply.
       </p>
 
       <Card>
@@ -125,28 +139,14 @@ export default function FinalInvoicesPage() {
                 />
               </div>
             </div>
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Date from</label>
-              <Input
-                type="date"
-                value={dateFrom}
-                onChange={(e) => {
-                  setDateFrom(e.target.value);
-                  setCursor(undefined);
-                }}
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Date to</label>
-              <Input
-                type="date"
-                value={dateTo}
-                onChange={(e) => {
-                  setDateTo(e.target.value);
-                  setCursor(undefined);
-                }}
-              />
-            </div>
+            <DateRangeFilterWithApply
+              draftFrom={dateFromDraft}
+              draftTo={dateToDraft}
+              onDraftFromChange={setDateFromDraft}
+              onDraftToChange={setDateToDraft}
+              onApply={handleApplyDateRange}
+              blockLabels={false}
+            />
             <div className="space-y-1 ml-auto">
               <label className="text-xs text-muted-foreground">Branch name</label>
               {isBranchHead ? (

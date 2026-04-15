@@ -12,6 +12,9 @@ function toRecord(row: {
   gstNumber: string | null;
   panNumber: string | null;
   footerNote: string | null;
+  invoicePrefix: string | null;
+  itemTagBrandName: string | null;
+  termsAndConditions: string | null;
   logoUrl: string | null;
   upiId: string | null;
   upiPayeeName: string | null;
@@ -30,6 +33,9 @@ function toRecord(row: {
     gstNumber: row.gstNumber,
     panNumber: row.panNumber,
     footerNote: row.footerNote,
+    invoicePrefix: row.invoicePrefix,
+    itemTagBrandName: row.itemTagBrandName,
+    termsAndConditions: row.termsAndConditions,
     logoUrl: row.logoUrl,
     upiId: row.upiId,
     upiPayeeName: row.upiPayeeName,
@@ -54,6 +60,9 @@ export class PrismaBranchRepo implements BranchRepo {
         gstNumber: data.gstNumber ?? undefined,
         panNumber: data.panNumber ?? undefined,
         footerNote: data.footerNote ?? undefined,
+        invoicePrefix: data.invoicePrefix ?? undefined,
+        itemTagBrandName: data.itemTagBrandName ?? undefined,
+        termsAndConditions: data.termsAndConditions ?? undefined,
         logoUrl: data.logoUrl ?? undefined,
         upiId: data.upiId ?? undefined,
         upiPayeeName: data.upiPayeeName ?? undefined,
@@ -93,6 +102,9 @@ export class PrismaBranchRepo implements BranchRepo {
         ...(data.gstNumber !== undefined && { gstNumber: data.gstNumber }),
         ...(data.panNumber !== undefined && { panNumber: data.panNumber }),
         ...(data.footerNote !== undefined && { footerNote: data.footerNote }),
+        ...(data.invoicePrefix !== undefined && { invoicePrefix: data.invoicePrefix }),
+        ...(data.itemTagBrandName !== undefined && { itemTagBrandName: data.itemTagBrandName }),
+        ...(data.termsAndConditions !== undefined && { termsAndConditions: data.termsAndConditions }),
         ...(data.logoUrl !== undefined && { logoUrl: data.logoUrl }),
         ...(data.upiId !== undefined && { upiId: data.upiId }),
         ...(data.upiPayeeName !== undefined && { upiPayeeName: data.upiPayeeName }),

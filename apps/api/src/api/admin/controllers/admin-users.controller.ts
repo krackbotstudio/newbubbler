@@ -25,31 +25,39 @@ export class AdminUsersController {
   constructor(private readonly adminUsersService: AdminUsersService) {}
 
   @Get()
-  @Roles(Role.ADMIN)
-  async list(@Query() query: ListAdminUsersQueryDto) {
+  @Roles(Role.ADMIN, Role.OPS)
+  async list(@Query() query: ListAdminUsersQueryDto, @Req() req: { user: AuthUser }) {
     const limit = query.limit ? Number(query.limit) : 20;
     const active =
       query.active === 'true' ? true : query.active === 'false' ? false : undefined;
+
+    const user = req.user as AuthUser;
+    const branchId =
+      user.role === Role.OPS ? (user.branchId ?? undefined) : (query.branchId ?? undefined);
 
     return this.adminUsersService.list({
       role: query.role,
       active,
       search: query.search,
+      branchId,
       limit,
       cursor: query.cursor,
     });
   }
 
   @Post()
-  @Roles(Role.ADMIN)
-  async create(@Body() dto: CreateAdminUserDto) {
-    return this.adminUsersService.create({
-      name: dto.name ?? null,
-      email: dto.email,
-      role: dto.role,
-      branchId: dto.branchId ?? null,
-      isActive: dto.isActive ?? true,
-    });
+  @Roles(Role.ADMIN, Role.OPS)
+  async create(@Body() dto: CreateAdminUserDto, @Req() req: { user: AuthUser }) {
+    return this.adminUsersService.create(
+      {
+        name: dto.name ?? null,
+        email: dto.email,
+        role: dto.role,
+        branchId: dto.branchId ?? null,
+        isActive: dto.isActive ?? true,
+      },
+      req.user,
+    );
   }
 
   @Patch(':id')

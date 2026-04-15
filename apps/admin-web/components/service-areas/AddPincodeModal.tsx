@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { z } from 'zod';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -27,14 +27,25 @@ type AddPincodeFormValues = z.infer<typeof addPincodeSchema>;
 interface AddPincodeModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Branch head: fixed branch for new pincodes (no branch picker). */
+  lockedBranchId?: string | null;
 }
 
-export function AddPincodeModal({ open, onOpenChange }: AddPincodeModalProps) {
+export function AddPincodeModal({ open, onOpenChange, lockedBranchId = null }: AddPincodeModalProps) {
   const [pincodeInput, setPincodeInput] = useState('');
   const [branchId, setBranchId] = useState('');
   const [active, setActive] = useState(true);
   const createArea = useCreateServiceArea();
   const { data: branches = [] } = useBranches();
+
+  useEffect(() => {
+    if (!open) return;
+    if (lockedBranchId) {
+      setBranchId(lockedBranchId);
+    } else {
+      setBranchId('');
+    }
+  }, [open, lockedBranchId]);
 
   const parsePincodes = (input: string) => {
     const tokens = input
@@ -77,11 +88,7 @@ export function AddPincodeModal({ open, onOpenChange }: AddPincodeModalProps) {
         successCount += 1;
       } catch (err) {
         const apiErr = getApiError(err);
-        if (apiErr.code === 'PINCODE_ALREADY_IN_OTHER_BRANCH') {
-          failed.push(`${pin} (already in another branch)`);
-        } else {
-          failed.push(`${pin} (${apiErr.message})`);
-        }
+        failed.push(`${pin} (${apiErr.message})`);
       }
     }
 
@@ -117,20 +124,26 @@ export function AddPincodeModal({ open, onOpenChange }: AddPincodeModalProps) {
               <label htmlFor="add-branch" className="text-sm font-medium">
                 Branch
               </label>
-              <select
-                id="add-branch"
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                value={branchId}
-                onChange={(e) => setBranchId(e.target.value)}
-                required
-              >
-                <option value="">Select branch…</option>
-                {branches.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name}
-                  </option>
-                ))}
-              </select>
+              {lockedBranchId ? (
+                <p id="add-branch" className="text-sm rounded-md border border-input bg-muted/40 px-3 py-2">
+                  {branches.find((b) => b.id === lockedBranchId)?.name ?? lockedBranchId}
+                </p>
+              ) : (
+                <select
+                  id="add-branch"
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  value={branchId}
+                  onChange={(e) => setBranchId(e.target.value)}
+                  required
+                >
+                  <option value="">Select branch…</option>
+                  {branches.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
             <div className="grid gap-2">
               <label htmlFor="add-pincode" className="text-sm font-medium">

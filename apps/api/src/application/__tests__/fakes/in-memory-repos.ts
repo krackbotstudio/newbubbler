@@ -229,7 +229,9 @@ export function createFakeSubscriptionsRepo(
     id: sub.id,
     planId: sub.planId,
     planName: 'Test Plan',
+    branchId: sub.branchId ?? null,
     addressId: sub.addressId ?? null,
+    addressLabel: null,
     validityStartDate: sub.validityStartDate,
     validTill: sub.expiryDate,
     remainingPickups: sub.remainingPickups,
@@ -430,43 +432,75 @@ const DEFAULT_FAKE_BRANCH_ID = 'branch-1';
 export function createFakeServiceAreaRepo(
   serviceablePincodes: Set<string> = new Set(),
 ): ServiceAreaRepo {
-  const pincodes = Array.from(serviceablePincodes);
-  const toRecord = (pincode: string, branchId: string = DEFAULT_FAKE_BRANCH_ID, active = true): ServiceAreaRecord => ({
-    id: `area-${pincode}`,
+  const areas: ServiceAreaRecord[] = Array.from(serviceablePincodes).map((pincode) => ({
+    id: `area-${pincode}-${DEFAULT_FAKE_BRANCH_ID}`,
     pincode,
-    branchId,
-    active,
+    branchId: DEFAULT_FAKE_BRANCH_ID,
+    active: true,
     createdAt: new Date(),
     updatedAt: new Date(),
-  });
+  }));
+
+  const clone = (a: ServiceAreaRecord): ServiceAreaRecord => ({ ...a });
+
   return {
     async isServiceable(pincode: string): Promise<boolean> {
-      return serviceablePincodes.has(pincode);
+      return areas.some((a) => a.pincode === pincode && a.active);
     },
     async listAll(): Promise<ServiceAreaRecord[]> {
-      return pincodes.map((p) => toRecord(p));
+      return areas.map(clone);
     },
     async listByBranchId(branchId: string): Promise<ServiceAreaRecord[]> {
-      return pincodes.map((p) => toRecord(p, branchId));
+      return areas.filter((a) => a.branchId === branchId).map(clone);
+    },
+    async listActiveByPincode(pincode: string): Promise<ServiceAreaRecord[]> {
+      return areas.filter((a) => a.pincode === pincode && a.active).map(clone);
     },
     async getByPincode(pincode: string): Promise<ServiceAreaRecord | null> {
-      if (!serviceablePincodes.has(pincode)) return null;
-      return toRecord(pincode);
+      const list = areas.filter((a) => a.pincode === pincode && a.active);
+      const row = list[0];
+      return row ? clone(row) : null;
+    },
+    async getById(id: string): Promise<ServiceAreaRecord | null> {
+      const row = areas.find((a) => a.id === id);
+      return row ? clone(row) : null;
     },
     async upsert(pincode: string, branchId: string, active: boolean): Promise<ServiceAreaRecord> {
-      serviceablePincodes.add(pincode);
-      return toRecord(pincode, branchId, active);
+      let row = areas.find((a) => a.pincode === pincode && a.branchId === branchId);
+      if (row) {
+        row.active = active;
+        row.updatedAt = new Date();
+        return clone(row);
+      }
+      row = {
+        id: `area-${uuid()}`,
+        pincode,
+        branchId,
+        active,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      areas.push(row);
+      return clone(row);
     },
-    async setActive(pincode: string, active: boolean): Promise<ServiceAreaRecord> {
-      if (!serviceablePincodes.has(pincode)) serviceablePincodes.add(pincode);
-      return toRecord(pincode, DEFAULT_FAKE_BRANCH_ID, active);
+    async setActive(id: string, active: boolean): Promise<ServiceAreaRecord> {
+      const row = areas.find((a) => a.id === id);
+      if (!row) throw new Error('Service area not found');
+      row.active = active;
+      row.updatedAt = new Date();
+      return clone(row);
     },
-    async update(pincode: string, patch: { branchId?: string; active?: boolean }): Promise<ServiceAreaRecord> {
-      if (!serviceablePincodes.has(pincode)) serviceablePincodes.add(pincode);
-      return toRecord(pincode, patch.branchId ?? DEFAULT_FAKE_BRANCH_ID, patch.active ?? true);
+    async update(id: string, patch: { branchId?: string; active?: boolean }): Promise<ServiceAreaRecord> {
+      const row = areas.find((a) => a.id === id);
+      if (!row) throw new Error('Service area not found');
+      if (patch.branchId !== undefined) row.branchId = patch.branchId;
+      if (patch.active !== undefined) row.active = patch.active;
+      row.updatedAt = new Date();
+      return clone(row);
     },
-    async remove(pincode: string): Promise<void> {
-      serviceablePincodes.delete(pincode);
+    async remove(id: string): Promise<void> {
+      const ix = areas.findIndex((a) => a.id === id);
+      if (ix >= 0) areas.splice(ix, 1);
     },
   };
 }

@@ -9,8 +9,8 @@ const FAVICON_FETCH_TIMEOUT_MS = 5000;
 
 export async function generateMetadata(): Promise<Metadata> {
   const base: Metadata = {
-    title: 'Laundry Admin',
-    description: 'Enterprise admin for Laundry platform',
+    title: 'Bubbler Admin',
+    description: 'Bubbler — laundry platform admin',
   };
   if (!API_ORIGIN) return base;
   try {

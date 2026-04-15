@@ -19,6 +19,7 @@ import { getFriendlyErrorMessage } from '@/lib/api';
 import type { UpdateBrandingBody, Branch } from '@/types';
 import { Loader2, Pencil, Trash2, Plus } from 'lucide-react';
 import { BranchFormModal } from '@/components/branding/BranchFormModal';
+import { OpsBranchBrandingView } from '@/components/branding/OpsBranchBrandingView';
 
 const businessFormSchema = z.object({
   businessName: z.string().min(1, 'Business name is required'),
@@ -250,6 +251,10 @@ export default function BrandingPage() {
         <ErrorDisplay error={error} className="mt-2" />
       </div>
     );
+  }
+
+  if (role === 'OPS' && user?.branchId) {
+    return <OpsBranchBrandingView branchId={user.branchId} />;
   }
 
   return (

@@ -17,6 +17,10 @@ model User {
   role          Role
   /** For Branch Head (OPS) and Agent (AGENT): assigned branch; required when role is OPS or AGENT. */
   branchId      String?
+  /** Supabase Auth user id (`sub` claim) when the account was created via email OTP signup. */
+  supabaseAuthId String?       @unique
+  /** Set when branch onboarding (logo, pincodes, etc.) is finished; null means show onboarding wizard. */
+  onboardingCompletedAt DateTime?
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
   name          String?
@@ -51,12 +55,14 @@ model Address {
 
 model ServiceArea {
   id        String   @id @default(uuid())
-  pincode   String   @unique
+  pincode   String
   branchId  String
   active    Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   branch    Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@unique([pincode, branchId])
   @@index([branchId])
 }
 
@@ -124,6 +130,12 @@ model Branch {
   gstNumber      String?
   panNumber      String?
   footerNote     String?
+  /** Optional segment for ACK / Final invoice codes (e.g. branch code); normalized when generating invoice numbers. */
+  invoicePrefix  String?
+  /** Short brand line on printed item tags for this branch’s orders (falls back to branch name / global branding). */
+  itemTagBrandName String?
+  /** Branch-specific terms shown on invoices for this branch (PDF / snapshot). */
+  termsAndConditions String? @db.Text
   logoUrl        String?
   upiId          String?
   upiPayeeName   String?
@@ -138,6 +150,8 @@ model Branch {
   subscriptions   Subscription[]
   serviceAreas    ServiceArea[]
   branchHeads     User[]
+  serviceCategories ServiceCategory[]
+  segmentCategories SegmentCategory[]
 }
 
 model LaundryItem {
@@ -169,20 +183,30 @@ model LaundryItemBranch {
 
 model ServiceCategory {
   id                    String                   @id @default(uuid())
-  code                  String                   @unique
+  branchId              String
+  code                  String
   label                 String
   isActive              Boolean                  @default(true)
   createdAt             DateTime                 @default(now())
+  branch                Branch                   @relation(fields: [branchId], references: [id], onDelete: Restrict)
   segmentServicePrices  ItemSegmentServicePrice[]
+
+  @@unique([branchId, code])
+  @@index([branchId])
 }
 
 model SegmentCategory {
   id                    String                   @id @default(uuid())
-  code                  String                   @unique
+  branchId              String
+  code                  String
   label                 String
   isActive              Boolean                  @default(true)
   createdAt             DateTime                 @default(now())
+  branch                Branch                   @relation(fields: [branchId], references: [id], onDelete: Restrict)
   segmentServicePrices  ItemSegmentServicePrice[]
+
+  @@unique([branchId, code])
+  @@index([branchId])
 }
 
 model ItemSegmentServicePrice {

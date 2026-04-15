@@ -27,6 +27,8 @@ import type { AdminOrderListRow, OrderStatus } from '@/types';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import { getFriendlyErrorMessage } from '@/lib/api';
+import { normalizeDateRangeDraft } from '@/lib/normalize-applied-date-range';
+import { DateRangeFilterWithApply } from '@/components/shared/DateRangeFilterWithApply';
 
 const STATUS_OPTIONS: OrderStatus[] = [
   'BOOKING_CONFIRMED',
@@ -46,8 +48,10 @@ export default function WalkInOrdersPage() {
   const isAdmin = user?.role === 'ADMIN';
   const [status, setStatus] = useState<OrderStatus | ''>('');
   const [branchId, setBranchId] = useState<string>('');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+  const [dateFromDraft, setDateFromDraft] = useState('');
+  const [dateToDraft, setDateToDraft] = useState('');
+  const [appliedDateFrom, setAppliedDateFrom] = useState('');
+  const [appliedDateTo, setAppliedDateTo] = useState('');
   const [cursor, setCursor] = useState<string | undefined>(undefined);
   const [deleteDialogOrder, setDeleteDialogOrder] = useState<AdminOrderListRow | null>(null);
   const limit = 20;
@@ -62,13 +66,22 @@ export default function WalkInOrdersPage() {
     orderSource: 'WALK_IN' as const,
     status: status || undefined,
     branchId: effectiveBranchId || undefined,
-    dateFrom: dateFrom || undefined,
-    dateTo: dateTo || undefined,
+    dateFrom: appliedDateFrom || undefined,
+    dateTo: appliedDateTo || undefined,
     limit,
     cursor,
   };
 
   const { data, isLoading, isFetching, error } = useOrders(filters);
+
+  const handleApplyDateRange = useCallback(() => {
+    const n = normalizeDateRangeDraft(dateFromDraft, dateToDraft);
+    setDateFromDraft(n.dateFrom);
+    setDateToDraft(n.dateTo);
+    setAppliedDateFrom(n.dateFrom);
+    setAppliedDateTo(n.dateTo);
+    setCursor(undefined);
+  }, [dateFromDraft, dateToDraft]);
 
   const handleNext = useCallback(() => {
     if (data?.nextCursor) setCursor(data.nextCursor);
@@ -147,28 +160,14 @@ export default function WalkInOrdersPage() {
                 </select>
               )}
             </div>
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Date from</label>
-              <Input
-                type="date"
-                value={dateFrom}
-                onChange={(e) => {
-                  setDateFrom(e.target.value);
-                  setCursor(undefined);
-                }}
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Date to</label>
-              <Input
-                type="date"
-                value={dateTo}
-                onChange={(e) => {
-                  setDateTo(e.target.value);
-                  setCursor(undefined);
-                }}
-              />
-            </div>
+            <DateRangeFilterWithApply
+              draftFrom={dateFromDraft}
+              draftTo={dateToDraft}
+              onDraftFromChange={setDateFromDraft}
+              onDraftToChange={setDateToDraft}
+              onApply={handleApplyDateRange}
+              blockLabels={false}
+            />
           </div>
 
           {isLoading ? (

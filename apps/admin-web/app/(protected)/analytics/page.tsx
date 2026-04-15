@@ -19,6 +19,7 @@ import { toast } from 'sonner';
 import type { AxiosError } from 'axios';
 import { getStoredUser, isBranchFilterLocked } from '@/lib/auth';
 import { LockedBranchSelect } from '@/components/shared/LockedBranchSelect';
+import { normalizeDateRangeDraft } from '@/lib/normalize-applied-date-range';
 
 const DEFAULT_PRESET: AnalyticsPreset = 'THIS_MONTH';
 
@@ -197,20 +198,21 @@ export default function AnalyticsPage() {
     }
   }, [error]);
 
+  useEffect(() => {
+    setDateRangeError(null);
+  }, [dateFrom, dateTo]);
+
   const handleApplyCustomRange = useCallback(() => {
     setDateRangeError(null);
     if (!dateFrom.trim() || !dateTo.trim()) {
       setDateRangeError('Please select both dates');
       return;
     }
-    const from = new Date(dateFrom);
-    const to = new Date(dateTo);
-    if (from > to) {
-      setDateRangeError('From date must be before or equal to To date');
-      return;
-    }
-    setAppliedDateFrom(dateFrom);
-    setAppliedDateTo(dateTo);
+    const n = normalizeDateRangeDraft(dateFrom, dateTo);
+    setDateFrom(n.dateFrom);
+    setDateTo(n.dateTo);
+    setAppliedDateFrom(n.dateFrom);
+    setAppliedDateTo(n.dateTo);
   }, [dateFrom, dateTo]);
 
   const handleResetToPreset = useCallback(() => {

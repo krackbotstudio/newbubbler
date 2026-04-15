@@ -21,4 +21,9 @@ export class ListAdminUsersQueryDto {
   @IsOptional()
   @IsString()
   cursor?: string;
+
+  /** ADMIN only: filter list to a branch (ignored for OPS; they are always scoped to their branch). */
+  @IsOptional()
+  @IsString()
+  branchId?: string;
 }
