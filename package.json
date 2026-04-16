@@ -44,7 +44,7 @@
     "smoke:test": "ts-node scripts/smoke-test.ts",
     "smoke-admin": "ts-node scripts/smoke-admin-flow.ts",
     "build:admin": "npm run build -w admin-web",
-    "vercel-build": "node scripts/spawn-with-api-env.cjs node scripts/run-prisma-cli.cjs generate --schema=apps/api/src/infra/prisma/schema.prisma && npm run build:api && npm run build:admin",
+    "build:monorepo": "node scripts/spawn-with-api-env.cjs node scripts/run-prisma-cli.cjs generate --schema=apps/api/src/infra/prisma/schema.prisma && npm run build:api && npm run build:admin",
     "build:admin:render": "npm install && cd apps/admin-web && npx next build",
     "dev:admin": "npm run dev -w admin-web",
     "dev:admin:fresh": "node -e \"const fs=require('fs'); const path=require('path'); const p=path.join('apps','admin-web','.next'); try { fs.rmSync(p, { recursive: true }); } catch (_) {}\" && npm run dev:admin",

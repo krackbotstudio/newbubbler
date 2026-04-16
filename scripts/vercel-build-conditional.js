@@ -12,5 +12,5 @@ const isAdminOnly = process.env.VERCEL_ADMIN_ONLY === '1' || process.env.VERCEL_
 if (isAdminOnly) {
   execSync('npm run build:admin', { stdio: 'inherit', cwd: path.resolve(__dirname, '..') });
 } else {
-  execSync('npm run vercel-build', { stdio: 'inherit', cwd: path.resolve(__dirname, '..') });
+  execSync('npm run build:monorepo', { stdio: 'inherit', cwd: path.resolve(__dirname, '..') });
 }
