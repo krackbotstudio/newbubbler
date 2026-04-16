@@ -3,11 +3,6 @@
   "version": 2,
   "buildCommand": "node scripts/spawn-with-api-env.cjs node scripts/run-prisma-cli.cjs generate --schema=apps/api/src/infra/prisma/schema.prisma && npm run build:api",
   "installCommand": "npm ci",
-  "functions": {
-    "api/*.js": {
-      "runtime": "nodejs20.x"
-    }
-  },
   "rewrites": [
     { "source": "/", "destination": "/api/index" },
     { "source": "/api", "destination": "/api/index" },
