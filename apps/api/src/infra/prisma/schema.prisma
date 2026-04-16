@@ -1,7 +1,9 @@
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
   // Keep Prisma Client in-repo so TS path aliases resolve correctly.
-  output   = "../generated/prisma-client"
+  output        = "../generated/prisma-client"
+  // Vercel serverless runs on Linux (often RHEL/OpenSSL 3); `native` alone matches the build image, not always the runtime.
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
 
 datasource db {
