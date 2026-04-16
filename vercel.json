@@ -4,6 +4,7 @@
   "framework": null,
   "buildCommand": "node scripts/spawn-with-api-env.cjs node scripts/run-prisma-cli.cjs generate --schema=apps/api/src/infra/prisma/schema.prisma && npm run build:api",
   "installCommand": "npm ci --include=dev",
+  "outputDirectory": "apps/api/dist",
   "rewrites": [
     { "source": "/", "destination": "/api/index" },
     { "source": "/api", "destination": "/api/index" },
