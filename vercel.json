@@ -1,6 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "version": 2,
+  "framework": null,
   "buildCommand": "node scripts/spawn-with-api-env.cjs node scripts/run-prisma-cli.cjs generate --schema=apps/api/src/infra/prisma/schema.prisma && npm run build:api",
   "installCommand": "npm ci --include=dev",
   "rewrites": [
