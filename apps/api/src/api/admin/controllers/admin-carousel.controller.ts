@@ -44,6 +44,12 @@ function resolveApiAssetsRoot(): string {
     if (!fs.existsSync(root)) fs.mkdirSync(root, { recursive: true });
     return root;
   }
+  // Vercel serverless: /var/task is read-only; /tmp is the only writable dir.
+  if (process.env.VERCEL || process.env.VERCEL_ENV) {
+    const tmp = path.join('/tmp', 'api-assets');
+    if (!fs.existsSync(tmp)) fs.mkdirSync(tmp, { recursive: true });
+    return tmp;
+  }
   const cwd = process.cwd();
   const monorepoApiRoot = path.resolve(cwd, 'apps', 'api');
   const apiRoot = fs.existsSync(path.join(monorepoApiRoot, 'src'))
