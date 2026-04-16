@@ -1,0 +1,15 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "version": 2,
+  "buildCommand": "node scripts/spawn-with-api-env.cjs node scripts/run-prisma-cli.cjs generate --schema=apps/api/src/infra/prisma/schema.prisma && npm run build:api",
+  "installCommand": "npm ci",
+  "builds": [
+    { "src": "api/health.js", "use": "@vercel/node" },
+    { "src": "api/index.js", "use": "@vercel/node" }
+  ],
+  "rewrites": [
+    { "source": "/", "destination": "/api/index" },
+    { "source": "/api", "destination": "/api/index" },
+    { "source": "/api/:path*", "destination": "/api/index/:path*" }
+  ]
+}

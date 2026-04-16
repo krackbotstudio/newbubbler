@@ -12,8 +12,8 @@ If deployment succeeds but visiting the production URL shows **404: NOT_FOUND**:
 2. **Framework Preset: Other**  
    **Settings → General → Framework Preset**: set to **Other**. If set to Next.js, Vercel may use its own build and ignore the root `vercel.json` `buildCommand` and `builds`, so the Next.js app from the monorepo might not be the one serving `/`.
 
-3. **Do not use API-only config for the main URL**  
-   If **Configuration File** is set to `vercel-api-only.json`, the project builds only the API; there is no Next.js app, so `/` returns 404. Use that only for a separate API-only project. For one URL with login and UI, leave Configuration File blank (use root `vercel.json`).
+3. **Use the right config file for what you want**  
+   The repo root **`vercel.json`** (same content as **`vercel-api-only.json`**) is **API-only**: Nest handles `/` and `/api/*` via rewrites; there is **no** Admin Next.js UI. For **one URL** with the **login + admin UI** at `/` and the API under **`/api`**, set **Configuration File** to **`vercel-combined.json`** (then redeploy).
 
 4. **Redeploy**  
    After changing any of the above, **Deployments → … → Redeploy** (or push a new commit).
@@ -24,8 +24,8 @@ If deployment succeeds but visiting the production URL shows **404: NOT_FOUND**:
 
 To have **one URL** where you can log in and use all admin screens (dashboard, orders, customers, etc.):
 
-1. **Use a single Vercel project** (e.g. `weyouapp-v-01-admin-web-1xhg`) with **Root Directory** = **empty**.
-2. **Do not set** the env var **`VERCEL_ADMIN_ONLY`** in this project (so the full build runs: Prisma + API + Next).
+1. **Use a single Vercel project** with **Root Directory** = **empty** and **Framework Preset** = **Other**.
+2. **Configuration File:** set to **`vercel-combined.json`** (Admin Next.js + API serverless). Do **not** rely on the default **`vercel.json`**, which is API-only.
 3. **Environment variables** (Settings → Environment Variables):
    - **`DATABASE_URL`** – your PostgreSQL connection string (e.g. Supabase).
    - **`JWT_SECRET`** – a secret string for JWT signing.
@@ -43,9 +43,7 @@ Then open **`https://your-project.vercel.app`** → you should see the login pag
 1. **Create one project** in Vercel and import this repo.
 2. **Root Directory:** leave **empty** (repo root). If you set it to `apps/admin-web`, the build will fail with "Missing script: prisma:generate" because that script lives in the root.
 3. **Framework Preset:** Other.
-4. The repo’s **`vercel.json`** already configures:
-   - Build: conditional (if `VERCEL_ADMIN_ONLY` is not set: Prisma + API + Next.js). Do not set `VERCEL_ADMIN_ONLY` for this project.
-   - All `/api/*` requests → Nest API (serverless). Everything else → Next.js admin.
+4. Set **Configuration File** to **`vercel-combined.json`**. That config runs **Prisma + `build:api`**, builds **admin-web** with **`@vercel/next`**, and rewrites **`/api/*`** to the Nest serverless entry. Do **not** set **`VERCEL_ADMIN_ONLY`** on this project (that flag is for a **separate** Admin-only project rooted at `apps/admin-web`; see below).
 
 **Environment variables:**
 
@@ -66,10 +64,11 @@ No CORS issues because both are on the same domain.
 
 **Best if:** You want to deploy or scale API and Admin separately.
 
-### 1. API project (e.g. `weyou-api`)
+### 1. API project (e.g. `bubbler-api`, `weyou-api`)
 
 - Import this repo, **Root Directory:** empty, **Framework:** Other.
-- In **Settings → General**, set **Configuration File** to **`vercel-api-only.json`** (so only the API is built).
+- **Configuration File:** leave **blank** (defaults to root **`vercel.json`**, API-only) **or** set **`vercel-api-only.json`** (same behavior).
+- **Build and Development → Build Command:** leave **default** from the config file. If your build logs show **`npm run vercel-build`**, an override is forcing the **admin** build; turn the override **off** so only **`build:api`** runs (otherwise you waste time and the deployed **routes** may still not match an API-only project).
 - **Env vars:** `DATABASE_URL`, `JWT_SECRET`, `NODE_ENV=production`, etc.
 - Copy the deployed URL (e.g. `https://weyou-api-xxx.vercel.app`).
 
@@ -83,7 +82,7 @@ No CORS issues because both are on the same domain.
 
 ## 404 NOT_FOUND – what it means
 
-Vercel returns **404 NOT_FOUND** when the request path does not match any resource: no static file and no serverless function at that path (and no rewrite sending the request to a function). For the **API-only** project, only paths rewritten to `/api/index` in `vercel-api-only.json` are handled (`/`, `/api`, `/api/:path*`). If you see 404, check the URL, that **Configuration File** is `vercel-api-only.json`, and that you redeployed after changing config.
+Vercel returns **404 NOT_FOUND** when the request path does not match any resource: no static file and no serverless function at that path (and no rewrite sending the request to a function). For the **API-only** project, paths are handled by root **`vercel.json`** / **`vercel-api-only.json`** (rewrites for `/`, `/api`, `/api/:path*`). If you see 404, confirm **Framework** is **Other**, **Root Directory** is empty, **Build Command** is not overriding the config, and redeploy.
 
 ### 404 on the API-only project – checklist
 
@@ -97,9 +96,9 @@ Vercel returns **404 NOT_FOUND** when the request path does not match any resour
 
 3. **API project settings (must match)**  
    - **Root Directory:** leave **empty** (repo root). **`vercel-api-only.json` expects repo root:** the `api/` folder (serverless entry) and `npm run build:api` live at the monorepo root. If Root Directory is `apps/api`, `apps/admin-web`, or `apps/customer-pwa`, installs/builds break or the URL shows **404: NOT_FOUND** for every path.  
-   - **Configuration File:** set to **`vercel-api-only.json`** (Settings → General).  
+   - **Configuration File:** leave **blank** (`vercel.json`) or **`vercel-api-only.json`**.  
    - **Framework Preset:** **Other** (so Vercel uses your config, not Next.js auto-detect).  
-   - **Build Command:** leave default from `vercel-api-only.json` unless you know you need an override. A wrong override (e.g. `npm run prisma:generate && npm run build:api` resolved from a workspace that has no `build:api`) causes a **failed deployment**; failed deploys also surface as this same Vercel 404 page.
+   - **Build Command:** leave **default** from the config (must **not** be `npm run vercel-build` for API-only). Overrides that skip `builds` / rewrites cause **404** even when the build log looks successful.
 
 4. **Redeploy after any change**  
    Change config or env → Save → **Deployments → … → Redeploy** (or push a new commit).
@@ -111,15 +110,18 @@ Vercel returns **404 NOT_FOUND** when the request path does not match any resour
 If you get **404: NOT_FOUND** when opening the deployment URL:
 
 1. **Root Directory must be empty**  
-   In Vercel: **Project → Settings → General → Root Directory**. Leave it **blank**. If it’s set to `apps/admin-web`, the root `vercel.json` is not used and `/` won’t be served by the Next app.
+   In Vercel: **Project → Settings → General → Root Directory**. Leave it **blank**. If it’s set to `apps/admin-web`, the monorepo root config is not used.
 
 2. **Framework Preset: Other**  
-   In **Settings → General → Framework Preset**, choose **Other** so Vercel uses `vercel.json` (buildCommand + builds) instead of auto-detecting Next only.
+   In **Settings → General → Framework Preset**, choose **Other** so Vercel uses your **Configuration File** (`vercel-combined.json` for Admin + API) instead of auto-detecting Next only.
 
-3. **Redeploy after changing settings**  
+3. **One URL with Admin UI**  
+   **Configuration File** must be **`vercel-combined.json`**. If it is blank, the default **`vercel.json`** is **API-only** (no Next.js admin at `/`).
+
+4. **Redeploy after changing settings**  
    Use **Deployments → … on latest → Redeploy** (or push a new commit) so the new settings apply.
 
-4. **Try /login**  
+5. **Try /login**  
    Open `https://your-project.vercel.app/login`. If that works but `/` doesn’t, the app is deployed; the root page may be cached. If `/login` also 404s, Root Directory or Framework Preset is still wrong.
 
 ### Still 404? Use two projects (recommended fix)
@@ -127,7 +129,7 @@ If you get **404: NOT_FOUND** when opening the deployment URL:
 When the single-project setup keeps returning 404, use **two Vercel projects**: one for the API (current), one for the Admin UI. The Admin project will serve the UI at `/` with no 404.
 
 **Step 1 – Keep current project as API (optional)**  
-In the **current** project (e.g. `weyouapp-v-01-admin-web-1xhg`): **Settings → General → Configuration File** set to **`vercel-api-only.json`**, then Save and Redeploy. That project will then only build and serve the API at `https://your-project.vercel.app/api`.
+In the **current** project: **Settings → General → Configuration File** leave **blank** or set **`vercel-api-only.json`**, clear any **Build Command** override, then Save and Redeploy. That project will then only build and serve the API (e.g. `https://your-project.vercel.app/api/...`).
 
 **Step 2 – Create a new project for the Admin UI**  
 1. In Vercel: **Add New Project** → import the **same** repo (`weyoudev/Weyouapp-V.01`).  
@@ -146,7 +148,7 @@ Open the **new** project's URL (e.g. `https://weyou-admin-xxx.vercel.app`). You 
 If login fails or you see “Cannot reach the API” with the two-project setup:
 
 1. **Check the API is up**  
-   Open **`https://your-api-project.vercel.app/api/health`** in a browser (use your real API project URL). You should get JSON like `{"status":"ok"}`. If you get 404 or an error, the API project is not serving correctly (confirm **Configuration File** is **`vercel-api-only.json`** and redeploy).
+   Open **`https://your-api-project.vercel.app/api/health`** in a browser (use your real API project URL). You should get JSON like `{"status":"ok","source":"api/health.js"}`. If you get 404 or an error, the API project is not serving correctly (confirm **Framework** is **Other**, **Configuration File** is blank or **`vercel-api-only.json`**, no **Build Command** override, then redeploy).
 
 2. **Set Admin env exactly**  
    In the **Admin** project: **Settings → Environment Variables** set **`NEXT_PUBLIC_API_URL`** = **`https://your-api-project.vercel.app/api`** (your API project URL + `/api`, no trailing slash). No typos, and no `/api/api`.
@@ -186,7 +188,8 @@ Use a **separate Vercel project** from the API. Recommended:
 
 ## Summary
 
-| Setup   | Root Directory   | Result |
-|--------|-------------------|--------|
-| **One project** | (empty) | One URL: app at `/`, API at `/api`. Set `NEXT_PUBLIC_API_URL=/api`. |
-| **Two projects** | (empty) for API, `apps/admin-web` for Admin | Two URLs; set admin’s `NEXT_PUBLIC_API_URL` to the API project URL + `/api`. |
+| Setup   | Root Directory   | Configuration file | Result |
+|--------|-------------------|--------------------|--------|
+| **API only** (e.g. `bubbler-api`) | (empty) | blank → `vercel.json`, or `vercel-api-only.json` | API at `/` and `/api/*`; no Admin UI. |
+| **One project** (Admin + API) | (empty) | **`vercel-combined.json`** | One URL: app at `/`, API at `/api`. Set `NEXT_PUBLIC_API_URL=/api`. |
+| **Two projects** | (empty) for API, `apps/admin-web` for Admin | blank / `vercel-api-only.json` for API | Two URLs; set admin’s `NEXT_PUBLIC_API_URL` to the API project URL + `/api`. |

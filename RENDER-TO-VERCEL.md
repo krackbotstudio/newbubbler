@@ -29,7 +29,7 @@ Two URLs: one for the API, one for the Admin UI. Both on free tier.
 2. **Project name:** e.g. `weyou-api`.
 3. **Root Directory:** leave **empty** (repo root).
 4. **Framework Preset:** **Other**.
-5. **Settings → General → Configuration File:** set to **`vercel-api-only.json`** (so only the API is built and served).
+5. **Settings → General → Configuration File:** leave **blank** (repo root **`vercel.json`** is API-only) **or** set **`vercel-api-only.json`** (same). Ensure **Build Command** is **not** overridden with `npm run vercel-build`.
 6. **Environment variables** (Settings → Environment Variables), add:
    - `DATABASE_URL` – your PostgreSQL URL (e.g. Supabase; same as on Render).
    - `JWT_SECRET` – same value you use today.
@@ -74,7 +74,7 @@ One URL: e.g. `https://weyou-app.vercel.app` for the UI and `https://weyou-app.v
 1. **Add New Project** → import this repo.
 2. **Root Directory:** leave **empty**.
 3. **Framework Preset:** **Other**.
-4. **Configuration File:** leave **blank** (use root **`vercel.json`**).
+4. **Configuration File:** set to **`vercel-combined.json`** (Admin + API on one deployment). The default **`vercel.json`** is API-only and will not serve the admin UI at `/`.
 5. **Environment variables:**
    - `DATABASE_URL`, `JWT_SECRET`, and any other API env vars.
    - `NEXT_PUBLIC_API_URL` = **`/api`** (same origin).
@@ -88,7 +88,7 @@ If you get **404** on the root or login, follow the “Fix 404 on production URL
 
 | Item | Action |
 |------|--------|
-| **API** | Deploy with **`vercel-api-only.json`**, root directory empty, add `DATABASE_URL` and `JWT_SECRET`. |
+| **API** | Root directory empty, **Configuration File** blank or **`vercel-api-only.json`**, **Framework Other**, no **`vercel-build`** override; add `DATABASE_URL` and `JWT_SECRET`. |
 | **Admin UI** | Deploy from **`apps/admin-web`** with **`NEXT_PUBLIC_API_URL`** = your API URL + `/api`. |
 | **Mobile app** | Set **`EXPO_PUBLIC_API_URL`** (in eas.json or EAS env) to your Vercel API base URL. |
 | **Render** | After verification, pause or delete Render services. |
