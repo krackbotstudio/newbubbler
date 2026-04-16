@@ -18,8 +18,15 @@ tsConfigPaths.register({
   },
 });
 
-const handlerPath = path.join(apiRoot, 'dist', 'apps', 'api', 'src', 'bootstrap', 'vercel-handler.js');
-const handlerModule = require(handlerPath);
+// Use a static require so Vercel's bundler includes this file.
+let handlerModule;
+try {
+  handlerModule = require('../apps/api/dist/apps/api/src/bootstrap/vercel-handler.js');
+} catch (_err) {
+  // Fallback for non-bundled local execution paths.
+  const handlerPath = path.join(apiRoot, 'dist', 'apps', 'api', 'src', 'bootstrap', 'vercel-handler.js');
+  handlerModule = require(handlerPath);
+}
 const handler = handlerModule.default || handlerModule;
 
 // Vercel rewrite sends /api/* to /api/index/:path — restore path so Nest sees /api/...
