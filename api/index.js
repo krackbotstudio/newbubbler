@@ -8,13 +8,18 @@ const tsConfigPaths = require('tsconfig-paths');
 
 const repoRoot = path.join(__dirname, '..');
 const apiRoot = path.join(repoRoot, 'apps', 'api');
+// At Vercel runtime, tsc output lives at apps/api/dist with rootDir=repo-root preserved:
+//   apps/api/src/**  →  apps/api/dist/apps/api/src/**
+//   packages/shared/src/**  →  apps/api/dist/packages/shared/src/**
+// So all aliases must resolve relative to the dist folder, not the source root.
+const apiDist = path.join(apiRoot, 'dist');
 
 tsConfigPaths.register({
-  baseUrl: apiRoot,
+  baseUrl: apiDist,
   paths: {
-    '@prisma/client': ['src/infra/generated/prisma-client'],
-    '@prisma/client/*': ['src/infra/generated/prisma-client/*'],
-    '@shared/*': ['../../packages/shared/src/*'],
+    '@prisma/client': ['apps/api/src/infra/generated/prisma-client'],
+    '@prisma/client/*': ['apps/api/src/infra/generated/prisma-client/*'],
+    '@shared/*': ['packages/shared/src/*'],
   },
 });
 
