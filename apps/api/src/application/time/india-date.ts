@@ -45,3 +45,14 @@ export function dateKeyToDdMmYyyy(key: string): string {
   return `${d}${m}${y}`;
 }
 
+/** DD, MM, YY (2-digit year) for human-readable order ids (India calendar day key). */
+export function dateKeyToDdMmYy(key: string): { dd: string; mm: string; yy: string } {
+  const [y, m, d] = key.split('-');
+  const yy = (y ?? '2000').slice(-2).padStart(2, '0');
+  return {
+    dd: (d ?? '01').padStart(2, '0'),
+    mm: (m ?? '01').padStart(2, '0'),
+    yy,
+  };
+}
+

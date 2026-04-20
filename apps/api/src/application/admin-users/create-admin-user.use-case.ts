@@ -6,6 +6,7 @@ export interface CreateAdminUserInput {
   email: string;
   role: Role;
   branchId?: string | null;
+  branchIds?: string[];
   isActive: boolean;
   passwordHash?: string | null;
 }

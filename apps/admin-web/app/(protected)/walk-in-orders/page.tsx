@@ -3,7 +3,7 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { getStoredUser, isBranchFilterLocked } from '@/lib/auth';
+import { getStoredUser, isBranchFilterLocked, restrictBranchesForUser } from '@/lib/auth';
 import { useDeleteOrder, useOrders } from '@/hooks/useOrders';
 import { useBranches } from '@/hooks/useBranches';
 import { OrderStatusBadge, PaymentStatusBadge } from '@/components/shared/StatusBadge';
@@ -44,8 +44,10 @@ export default function WalkInOrdersPage() {
   const user = useMemo(() => getStoredUser(), []);
   const branchLocked = !!(user && isBranchFilterLocked(user.role, user.branchId));
   const { data: branches = [] } = useBranches();
+  const branchOptions = useMemo(() => restrictBranchesForUser(branches, user), [branches, user]);
   const deleteOrder = useDeleteOrder();
   const isAdmin = user?.role === 'ADMIN';
+  const isPartialAdmin = user?.role === 'PARTIAL_ADMIN';
   const [status, setStatus] = useState<OrderStatus | ''>('');
   const [branchId, setBranchId] = useState<string>('');
   const [dateFromDraft, setDateFromDraft] = useState('');
@@ -61,6 +63,11 @@ export default function WalkInOrdersPage() {
   useEffect(() => {
     if (branchLocked && user?.branchId) setBranchId(user.branchId);
   }, [branchLocked, user?.branchId]);
+
+  useEffect(() => {
+    if (branchLocked || !isPartialAdmin || branchId) return;
+    if (branchOptions.length > 0) setBranchId(branchOptions[0].id);
+  }, [branchLocked, isPartialAdmin, branchId, branchOptions]);
 
   const filters = {
     orderSource: 'WALK_IN' as const,
@@ -151,8 +158,8 @@ export default function WalkInOrdersPage() {
                   }}
                   title="Filter by branch"
                 >
-                  <option value="">All branches</option>
-                  {branches.map((b) => (
+                  {!isPartialAdmin && <option value="">All branches</option>}
+                  {branchOptions.map((b) => (
                     <option key={b.id} value={b.id}>
                       {b.name ?? b.id}
                     </option>

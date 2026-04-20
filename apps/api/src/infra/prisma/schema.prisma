@@ -19,6 +19,8 @@ model User {
   role          Role
   /** For Branch Head (OPS) and Agent (AGENT): assigned branch; required when role is OPS or AGENT. */
   branchId      String?
+  /** For PARTIAL_ADMIN: one or more branch ids they can access/manage. */
+  branchIds     String[]       @default([])
   /** Supabase Auth user id (`sub` claim) when the account was created via email OTP signup. */
   supabaseAuthId String?       @unique
   /** Set when branch onboarding (logo, pincodes, etc.) is finished; null means show onboarding wizard. */
@@ -34,6 +36,8 @@ model User {
   feedback      Feedback[]
   orders        Order[]
   subscriptions Subscription[]
+  ownedPortals  CustomerPortal[]       @relation("CustomerPortalOwner")
+  portalMemberships CustomerPortalMember[]
   branch        Branch?        @relation(fields: [branchId], references: [id], onDelete: SetNull)
 }
 
@@ -138,6 +142,10 @@ model Branch {
   itemTagBrandName String?
   /** Branch-specific terms shown on invoices for this branch (PDF / snapshot). */
   termsAndConditions String? @db.Text
+  /** Branch-specific primary brand color (hex), used by branch staff UI and branch surfaces. */
+  primaryColor    String?
+  /** Branch-specific secondary light background color (hex), replacing default pink for branch UI. */
+  secondaryColor  String?
   logoUrl        String?
   upiId          String?
   upiPayeeName   String?
@@ -152,8 +160,53 @@ model Branch {
   subscriptions   Subscription[]
   serviceAreas    ServiceArea[]
   branchHeads     User[]
+  customerPortals CustomerPortal[]
   serviceCategories ServiceCategory[]
   segmentCategories SegmentCategory[]
+}
+
+model CustomerPortal {
+  id          String   @id @default(uuid())
+  ownerUserId String?
+  branchId    String   @unique
+  slug        String   @unique
+  brandName   String
+  logoUrl     String?
+  appIconUrl  String?
+  termsAndConditions String? @db.Text
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  owner       User?    @relation("CustomerPortalOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
+  branch      Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  carouselImages CustomerPortalCarouselImage[]
+  members       CustomerPortalMember[]
+}
+
+model CustomerPortalCarouselImage {
+  id        String   @id @default(uuid())
+  portalId  String
+  position  Int
+  imageUrl  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  portal    CustomerPortal @relation(fields: [portalId], references: [id], onDelete: Cascade)
+
+  @@unique([portalId, position])
+  @@index([portalId])
+}
+
+model CustomerPortalMember {
+  id             String   @id @default(uuid())
+  portalId       String
+  customerUserId String
+  joinedAt       DateTime @default(now())
+  portal         CustomerPortal @relation(fields: [portalId], references: [id], onDelete: Cascade)
+  customer       User     @relation(fields: [customerUserId], references: [id], onDelete: Cascade)
+
+  @@unique([portalId, customerUserId])
+  @@index([portalId])
+  @@index([customerUserId])
 }
 
 model LaundryItem {
@@ -531,6 +584,7 @@ model Feedback {
 enum Role {
   CUSTOMER
   ADMIN
+  PARTIAL_ADMIN
   OPS
   BILLING
   AGENT

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type CSSProperties } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -65,7 +65,15 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-white lg:flex-row">
+    <div
+      className="flex min-h-screen flex-col bg-white lg:flex-row"
+      style={
+        {
+          '--primary': '221 83% 43%',
+          '--ring': '221 83% 43%',
+        } as CSSProperties
+      }
+    >
       <div className="relative h-48 w-full shrink-0 overflow-hidden bg-slate-100 lg:h-auto lg:min-h-screen lg:w-1/2">
         <Image
           src="/images/login-hero.png"
@@ -117,7 +125,7 @@ export default function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 autoComplete="email"
-                className="border-slate-200 bg-sky-50/60 font-normal text-slate-900 placeholder:text-slate-400 focus-visible:ring-slate-400"
+                className="border-slate-200 bg-sky-50/60 font-normal text-slate-900 placeholder:text-slate-400 focus-visible:ring-slate-400 [&:not(:placeholder-shown)]:text-slate-800"
               />
             </div>
             <div className="space-y-2">
@@ -130,7 +138,7 @@ export default function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 autoComplete="current-password"
-                className="border-slate-200 bg-sky-50/60 font-normal text-slate-900 placeholder:text-slate-400 focus-visible:ring-slate-400"
+                className="border-slate-200 bg-sky-50/60 font-normal text-slate-900 placeholder:text-slate-400 focus-visible:ring-slate-400 [&:not(:placeholder-shown)]:text-slate-800"
               />
             </div>
             <Button

@@ -11,8 +11,9 @@ export const ROLE_PERMISSIONS: Record<
   { allow?: readonly string[]; denyRoutes?: readonly string[]; navHide?: readonly string[] }
 > = {
   ADMIN: { allow: ['*'] },
+  PARTIAL_ADMIN: { allow: ['*'] },
   BILLING: { allow: ['*'] },
-  OPS: { denyRoutes: ['/analytics', '/admin-users'] },
+  OPS: { denyRoutes: ['/admin-users'] },
   AGENT: {
     allow: ['/dashboard', '/orders', '/feedback'],
     navHide: ['/orders', '/customers'],

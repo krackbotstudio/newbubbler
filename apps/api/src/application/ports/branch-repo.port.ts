@@ -10,6 +10,8 @@ export interface BranchRecord {
   invoicePrefix: string | null;
   itemTagBrandName: string | null;
   termsAndConditions: string | null;
+  primaryColor: string | null;
+  secondaryColor: string | null;
   logoUrl: string | null;
   upiId: string | null;
   upiPayeeName: string | null;
@@ -32,6 +34,8 @@ export interface BranchRepo {
     invoicePrefix?: string | null;
     itemTagBrandName?: string | null;
     termsAndConditions?: string | null;
+    primaryColor?: string | null;
+    secondaryColor?: string | null;
     logoUrl?: string | null;
     upiId?: string | null;
     upiPayeeName?: string | null;

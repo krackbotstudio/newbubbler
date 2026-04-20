@@ -10,6 +10,8 @@ export interface Branch {
   invoicePrefix: string | null;
   itemTagBrandName: string | null;
   termsAndConditions: string | null;
+  primaryColor: string | null;
+  secondaryColor: string | null;
   logoUrl: string | null;
   upiId: string | null;
   upiPayeeName: string | null;
@@ -31,6 +33,8 @@ export interface CreateBranchBody {
   invoicePrefix?: string | null;
   itemTagBrandName?: string | null;
   termsAndConditions?: string | null;
+  primaryColor?: string | null;
+  secondaryColor?: string | null;
   upiId?: string | null;
   upiPayeeName?: string | null;
   upiLink?: string | null;
@@ -48,6 +52,8 @@ export interface UpdateBranchBody {
   invoicePrefix?: string | null;
   itemTagBrandName?: string | null;
   termsAndConditions?: string | null;
+  primaryColor?: string | null;
+  secondaryColor?: string | null;
   upiId?: string | null;
   upiPayeeName?: string | null;
   upiLink?: string | null;

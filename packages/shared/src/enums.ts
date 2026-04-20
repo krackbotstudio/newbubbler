@@ -36,6 +36,7 @@ export enum OrderType {
 export enum Role {
   CUSTOMER = 'CUSTOMER',
   ADMIN = 'ADMIN',
+  PARTIAL_ADMIN = 'PARTIAL_ADMIN',
   OPS = 'OPS',
   /** Branch-scoped staff: dashboard, orders, walk-in, customers, feedback only (admin-web). */
   AGENT = 'AGENT',

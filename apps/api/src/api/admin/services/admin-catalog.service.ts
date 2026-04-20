@@ -5,6 +5,8 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { randomUUID } from 'crypto';
+import * as path from 'path';
 import { Role } from '@shared/enums';
 import type { AuthUser } from '../../common/roles.guard';
 import { AGENT_ROLE } from '../../common/agent-role';
@@ -26,6 +28,7 @@ import type {
   ServiceCategoryRepo,
   SegmentCategoryRepo,
   ItemSegmentServicePriceRepo,
+  StorageAdapter,
 } from '../../../application/ports';
 import {
   BRANCH_REPO,
@@ -35,6 +38,7 @@ import {
   SERVICE_CATEGORY_REPO,
   SEGMENT_CATEGORY_REPO,
   ITEM_SEGMENT_SERVICE_PRICE_REPO,
+  STORAGE_ADAPTER,
 } from '../../../infra/infra.module';
 
 @Injectable()
@@ -47,7 +51,14 @@ export class AdminCatalogService {
     @Inject(SEGMENT_CATEGORY_REPO) private readonly segmentCategoryRepo: SegmentCategoryRepo,
     @Inject(ITEM_SEGMENT_SERVICE_PRICE_REPO) private readonly itemSegmentServicePriceRepo: ItemSegmentServicePriceRepo,
     @Inject(BRANCH_REPO) private readonly branchRepo: BranchRepo,
+    @Inject(STORAGE_ADAPTER) private readonly storageAdapter: StorageAdapter,
   ) {}
+  private extFromName(name: string | undefined): string {
+    const ext = path.extname(name || 'file').toLowerCase();
+    if (ext === '.png' || ext === '.jpg' || ext === '.jpeg' || ext === '.webp') return ext;
+    return '.png';
+  }
+
 
   /** Default (main) branch id — taxonomy rows on this branch are treated as org-wide “common”. */
   private async resolveDefaultBranchId(): Promise<string | undefined> {
@@ -356,8 +367,19 @@ export class AdminCatalogService {
   }
 
   /** Upload a custom icon image (PNG/JPG). Returns the URL to store on the item (icon field). */
-  async uploadCatalogIcon(fileName: string, _iconKey?: string): Promise<{ url: string }> {
-    const url = `/api/assets/catalog-icons/${fileName}`;
+  async uploadCatalogIcon(
+    file: { buffer: Buffer; originalname?: string; mimetype?: string },
+    iconKey?: string,
+  ): Promise<{ url: string }> {
+    const ext = this.extFromName(file.originalname);
+    const keyPart = (iconKey || 'default').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80) || 'default';
+    const fileName = `icon-${keyPart}-${randomUUID()}${ext}`;
+    const storagePath = `catalog-icons/${fileName}`;
+    const uploaded = await this.storageAdapter.putObject(storagePath, file.buffer, file.mimetype || 'image/png');
+    const url =
+      typeof uploaded === 'string' && uploaded.length > 0
+        ? uploaded
+        : `/api/assets/catalog-icons/${fileName}`;
     return { url };
   }
 

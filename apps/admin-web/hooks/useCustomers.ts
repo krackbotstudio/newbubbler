@@ -12,10 +12,20 @@ export interface CustomersListResponse {
   nextCursor: string | null;
 }
 
-function fetchCustomersList(limit: number, cursor?: string | null, search?: string | null): Promise<CustomersListResponse> {
-  const params: { limit: number; cursor?: string; search?: string } = { limit };
+export interface CustomersCountResponse {
+  totalCustomersCount: number;
+}
+
+function fetchCustomersList(
+  limit: number,
+  cursor?: string | null,
+  search?: string | null,
+  branchId?: string | null,
+): Promise<CustomersListResponse> {
+  const params: { limit: number; cursor?: string; search?: string; branchId?: string } = { limit };
   if (cursor) params.cursor = cursor;
   if (search && search.trim()) params.search = search.trim();
+  if (branchId && branchId.trim()) params.branchId = branchId.trim();
   return api.get<CustomersListResponse>('/admin/customers', { params }).then((r) => r.data);
 }
 
@@ -23,6 +33,12 @@ function fetchCustomersByPhone(phone: string): Promise<CustomerListRow[]> {
   return api
     .get<CustomerListRow[]>('/admin/customers/search', { params: { phone } })
     .then((r) => r.data);
+}
+
+function fetchCustomersCount(branchId?: string | null): Promise<CustomersCountResponse> {
+  const params: { branchId?: string } = {};
+  if (branchId && branchId.trim()) params.branchId = branchId.trim();
+  return api.get<CustomersCountResponse>('/admin/customers/count', { params }).then((r) => r.data);
 }
 
 function fetchCustomer(userId: string): Promise<CustomerRecord> {
@@ -63,11 +79,12 @@ export function useCustomersList(
   limit: number,
   cursor?: string | null,
   search?: string | null,
+  branchId?: string | null,
   options?: { enabled?: boolean },
 ) {
   return useQuery({
-    queryKey: ['admin', 'customers', 'list', limit, cursor ?? '', search ?? ''],
-    queryFn: () => fetchCustomersList(limit, cursor, search),
+    queryKey: ['admin', 'customers', 'list', limit, cursor ?? '', search ?? '', branchId ?? ''],
+    queryFn: () => fetchCustomersList(limit, cursor, search, branchId),
     enabled: options?.enabled !== false,
   });
 }
@@ -78,6 +95,18 @@ export function useCustomersPhoneSearch(digitsOnly: string, options?: { enabled?
     queryKey: ['admin', 'customers', 'search', digitsOnly],
     queryFn: () => fetchCustomersByPhone(digitsOnly),
     enabled: (options?.enabled ?? true) && digitsOnly.length >= 10,
+  });
+}
+
+export function useCustomersCount(
+  branchId?: string | null,
+  options?: { enabled?: boolean; refetchInterval?: number },
+) {
+  return useQuery({
+    queryKey: ['admin', 'customers', 'count', branchId ?? ''],
+    queryFn: () => fetchCustomersCount(branchId),
+    enabled: options?.enabled ?? true,
+    refetchInterval: options?.refetchInterval,
   });
 }
 

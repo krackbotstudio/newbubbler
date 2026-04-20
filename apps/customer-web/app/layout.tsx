@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { Providers } from './providers';
 import './globals.css';
+import { PortalBootstrap } from './PortalBootstrap';
 
 export const metadata: Metadata = {
   title: 'Laundry Customer',
@@ -19,7 +20,10 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <Providers>{children}</Providers>
+        <Providers>
+          <PortalBootstrap />
+          {children}
+        </Providers>
       </body>
     </html>
   );

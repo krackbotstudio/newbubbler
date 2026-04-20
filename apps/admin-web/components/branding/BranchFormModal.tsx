@@ -28,6 +28,8 @@ const schema = z.object({
   panNumber: z.string().nullable(),
   invoicePrefix: z.string().max(24).nullable(),
   itemTagBrandName: z.string().max(40).nullable(),
+  primaryColor: z.string().regex(/^#?[0-9A-Fa-f]{6}$/).nullable(),
+  secondaryColor: z.string().regex(/^#?[0-9A-Fa-f]{6}$/).nullable(),
   upiId: z.string().nullable(),
   upiPayeeName: z.string().nullable(),
   upiLink: z.string().nullable(),
@@ -52,6 +54,8 @@ export function BranchFormModal({ branch, open, onOpenChange, mode }: BranchForm
   const [panNumber, setPanNumber] = useState('');
   const [invoicePrefix, setInvoicePrefix] = useState('');
   const [itemTagBrandName, setItemTagBrandName] = useState('');
+  const [primaryColor, setPrimaryColor] = useState('#D94680');
+  const [secondaryColor, setSecondaryColor] = useState('#FCE7F3');
   const [upiId, setUpiId] = useState('');
   const [upiPayeeName, setUpiPayeeName] = useState('');
   const [upiLink, setUpiLink] = useState('');
@@ -85,6 +89,8 @@ export function BranchFormModal({ branch, open, onOpenChange, mode }: BranchForm
       setPanNumber(branch.panNumber ?? '');
       setInvoicePrefix(branch.invoicePrefix ?? '');
       setItemTagBrandName(branch.itemTagBrandName ?? '');
+      setPrimaryColor(branch.primaryColor ?? '#D94680');
+      setSecondaryColor(branch.secondaryColor ?? '#FCE7F3');
       setUpiId(branch.upiId ?? '');
       setUpiPayeeName(branch.upiPayeeName ?? '');
       setUpiLink(branch.upiLink ?? '');
@@ -99,6 +105,8 @@ export function BranchFormModal({ branch, open, onOpenChange, mode }: BranchForm
       setPanNumber('');
       setInvoicePrefix('');
       setItemTagBrandName('');
+      setPrimaryColor('#D94680');
+      setSecondaryColor('#FCE7F3');
       setUpiId('');
       setUpiPayeeName('');
       setUpiLink('');
@@ -119,6 +127,8 @@ export function BranchFormModal({ branch, open, onOpenChange, mode }: BranchForm
       panNumber: panNumber.trim() || null,
       invoicePrefix: invoicePrefix.trim() || null,
       itemTagBrandName: itemTagBrandName.trim() || null,
+      primaryColor: primaryColor.trim() || null,
+      secondaryColor: secondaryColor.trim() || null,
       upiId: upiId.trim() || null,
       upiPayeeName: upiPayeeName.trim() || null,
       upiLink: upiLink.trim() || null,
@@ -155,6 +165,8 @@ export function BranchFormModal({ branch, open, onOpenChange, mode }: BranchForm
       panNumber: result.data.panNumber,
       invoicePrefix: result.data.invoicePrefix,
       itemTagBrandName: result.data.itemTagBrandName,
+      primaryColor: result.data.primaryColor,
+      secondaryColor: result.data.secondaryColor,
       upiId: result.data.upiId,
       upiPayeeName: result.data.upiPayeeName,
       upiLink: result.data.upiLink,
@@ -298,6 +310,42 @@ export function BranchFormModal({ branch, open, onOpenChange, mode }: BranchForm
                 }
               />
             </FormField>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <FormField label="Primary color (hex)" htmlFor="branch-primary-color">
+                <div className="flex items-center gap-2">
+                  <Input
+                    id="branch-primary-color"
+                    type="color"
+                    value={primaryColor}
+                    onChange={(e) => setPrimaryColor(e.target.value)}
+                    className="h-10 w-16 p-1"
+                  />
+                  <Input
+                    value={primaryColor}
+                    onChange={(e) => setPrimaryColor(e.target.value)}
+                    placeholder="#D94680"
+                    maxLength={7}
+                  />
+                </div>
+              </FormField>
+              <FormField label="Secondary color (hex)" htmlFor="branch-secondary-color">
+                <div className="flex items-center gap-2">
+                  <Input
+                    id="branch-secondary-color"
+                    type="color"
+                    value={secondaryColor}
+                    onChange={(e) => setSecondaryColor(e.target.value)}
+                    className="h-10 w-16 p-1"
+                  />
+                  <Input
+                    value={secondaryColor}
+                    onChange={(e) => setSecondaryColor(e.target.value)}
+                    placeholder="#FCE7F3"
+                    maxLength={7}
+                  />
+                </div>
+              </FormField>
+            </div>
             <FormField label="Payment UPI ID (optional)" htmlFor="branch-upi">
               <Input
                 id="branch-upi"

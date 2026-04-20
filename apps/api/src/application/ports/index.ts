@@ -25,3 +25,4 @@ export * from './pdf-generator.port';
 export * from './analytics-repo.port';
 export * from './feedback-repo.port';
 export * from './admin-users-repo.port';
+export * from './customer-portals-repo.port';

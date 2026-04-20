@@ -1,7 +1,7 @@
 const TOKEN_KEY = 'admin_jwt';
 const USER_KEY = 'admin_user';
 
-export type Role = 'ADMIN' | 'OPS' | 'AGENT' | 'BILLING' | 'CUSTOMER';
+export type Role = 'ADMIN' | 'PARTIAL_ADMIN' | 'OPS' | 'AGENT' | 'BILLING' | 'CUSTOMER';
 
 export interface AuthUser {
   id: string;
@@ -10,8 +10,35 @@ export interface AuthUser {
   role: Role;
   /** Set for Branch Head (OPS) and Agent (AGENT); walk-in and list APIs are scoped to this branch. */
   branchId?: string | null;
+  /** Set for Partial Admin: allowed branch ids for data access. */
+  branchIds?: string[];
   /** ISO timestamp; null/undefined means branch onboarding not finished (OPS only). */
   onboardingCompletedAt?: string | null;
+}
+
+type BranchLike = { id: string };
+
+export function isPartialAdmin(role: Role | null | undefined): boolean {
+  return role === 'PARTIAL_ADMIN';
+}
+
+/** For Partial Admin, keep only assigned branches; others see all branches. */
+export function restrictBranchesForUser<T extends BranchLike>(
+  branches: T[],
+  user: AuthUser | null | undefined,
+): T[] {
+  if (!isPartialAdmin(user?.role)) return branches;
+  const allowedIds = (user?.branchIds ?? []).map((id) => id.trim()).filter(Boolean);
+  if (allowedIds.length === 0 && user?.branchId) {
+    // Backward-compat: some sessions may still carry only branchId.
+    allowedIds.push(user.branchId.trim());
+  }
+  // Safety fallback: when session branchIds are absent, trust API-side branch scoping.
+  if (allowedIds.length === 0) return branches;
+  const allowed = new Set(allowedIds);
+  const filtered = branches.filter((branch) => allowed.has(branch.id));
+  // If local storage has stale branch IDs, don't blank the UI; trust API-scoped list.
+  return filtered.length > 0 ? filtered : branches;
 }
 
 /** Branch Head or Agent: assigned a single branch for data access. */
@@ -64,6 +91,7 @@ export function logout(): void {
 /** Laundry catalog mutations (items, matrix, segments). Branch heads need an assigned branch. */
 export function canAccessCatalogEdit(role: Role, branchId?: string | null): boolean {
   if (role === 'ADMIN') return true;
+  if (role === 'PARTIAL_ADMIN') return true;
   if (role === 'OPS' && branchId) return true;
   return false;
 }
@@ -75,6 +103,7 @@ export function canBranchHeadEditCatalogItem(
   itemBranchIds: string[] | undefined,
 ): boolean {
   if (role === 'ADMIN') return true;
+  if (role === 'PARTIAL_ADMIN') return true;
   const ids = itemBranchIds ?? [];
   if (role !== 'OPS' || !branchId) return false;
   if (ids.length === 0) return false;
@@ -94,17 +123,17 @@ export function canDeleteCatalogItem(
 }
 
 export function canAccessPaymentEdit(role: Role): boolean {
-  return role === 'ADMIN' || role === 'BILLING';
+  return role === 'ADMIN' || role === 'PARTIAL_ADMIN' || role === 'BILLING';
 }
 
 export function canAccessOrders(role: Role): boolean {
-  return ['ADMIN', 'OPS', 'BILLING', 'AGENT'].includes(role);
+  return ['ADMIN', 'PARTIAL_ADMIN', 'OPS', 'BILLING', 'AGENT'].includes(role);
 }
 
 export function canAccessBrandingEdit(role: Role): boolean {
-  return role === 'ADMIN' || role === 'BILLING' || role === 'OPS';
+  return role === 'ADMIN' || role === 'PARTIAL_ADMIN' || role === 'BILLING' || role === 'OPS';
 }
 
 export function canAccessCustomersEdit(role: Role): boolean {
-  return role === 'ADMIN';
+  return role === 'ADMIN' || role === 'PARTIAL_ADMIN';
 }

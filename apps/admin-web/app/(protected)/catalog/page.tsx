@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
-import { getStoredUser, isBranchScopedStaff, canBranchHeadEditCatalogItem, canDeleteCatalogItem } from '@/lib/auth';
+import { getStoredUser, isBranchScopedStaff, canBranchHeadEditCatalogItem, canDeleteCatalogItem, restrictBranchesForUser } from '@/lib/auth';
 import { RoleGate } from '@/components/shared/RoleGate';
 import { ErrorDisplay } from '@/components/shared/ErrorDisplay';
 import { Button } from '@/components/ui/button';
@@ -22,6 +22,7 @@ export default function CatalogPage() {
   const user = getStoredUser();
   const role = user?.role ?? 'CUSTOMER';
   const isBranchHead = isBranchScopedStaff(role) && !!user?.branchId;
+  const isPartialAdmin = role === 'PARTIAL_ADMIN';
 
   const [addOpen, setAddOpen] = useState(false);
   const [manageOpen, setManageOpen] = useState(false);
@@ -33,9 +34,10 @@ export default function CatalogPage() {
   const [itemSearch, setItemSearch] = useState('');
 
   const { data: branches = [] } = useBranches();
+  const branchOptions = useMemo(() => restrictBranchesForUser(branches, user), [branches, user]);
   const defaultBranchId = useMemo(
-    () => branches.find((b) => b.isDefault)?.id ?? branches[0]?.id ?? '',
-    [branches],
+    () => branchOptions.find((b) => b.isDefault)?.id ?? branchOptions[0]?.id ?? '',
+    [branchOptions],
   );
   const matrixBranchQueryId =
     isBranchHead && user?.branchId
@@ -59,7 +61,10 @@ export default function CatalogPage() {
     if (selectedBranchIds.length > 1) {
       setSelectedBranchIds([selectedBranchIds[0]]);
     }
-  }, [isBranchHead, user?.branchId, selectedBranchIds]);
+    if (isPartialAdmin && selectedBranchIds.length === 0 && branchOptions.length > 0) {
+      setSelectedBranchIds([branchOptions[0].id]);
+    }
+  }, [isBranchHead, isPartialAdmin, user?.branchId, selectedBranchIds, branchOptions]);
 
   const allItems = data?.items ?? [];
   const branchFilteredItems = useMemo(() => {
@@ -167,8 +172,8 @@ export default function CatalogPage() {
                 onChange={(e) => setSelectedBranchIds(e.target.value ? [e.target.value] : [])}
                 title="Filter catalog by branch name"
               >
-                <option value="">All branches</option>
-                {branches.map((b) => (
+                {!isPartialAdmin && <option value="">All branches</option>}
+                {branchOptions.map((b) => (
                   <option key={b.id} value={b.id}>
                     {b.name ?? b.id}
                   </option>

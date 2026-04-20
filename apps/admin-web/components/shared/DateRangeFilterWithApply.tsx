@@ -46,7 +46,7 @@ export function DateRangeFilterWithApply({
           disabled={disabled}
         />
       </div>
-      <Button type="button" variant="secondary" size="sm" className="shrink-0" onClick={onApply} disabled={disabled}>
+      <Button type="button" variant="default" size="sm" className="shrink-0" onClick={onApply} disabled={disabled}>
         Apply
       </Button>
     </div>

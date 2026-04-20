@@ -688,6 +688,18 @@ export default function OrderDetailPage() {
   };
 
   type TimelineStage = { key: string; label: string; ts: string | null };
+  const paymentTimelineLabel =
+    paymentRecorded && summary.payment
+      ? 'Payment done'
+      : finalSubmitted
+        ? 'Payment due'
+        : 'Payment';
+  const paymentTimelineTs =
+    paymentRecorded && summary.payment
+      ? (summary.payment.createdAt ?? order.updatedAt ?? null)
+      : finalSubmitted
+        ? (finalInvoice?.issuedAt ?? null)
+        : null;
   const timelineStages: TimelineStage[] =
     order.status === 'CANCELLED'
       ? [
@@ -704,6 +716,7 @@ export default function OrderDetailPage() {
           { key: 'PICKED_UP', label: 'Picked up', ts: order.pickedUpAt ?? null },
           { key: 'OUT_FOR_DELIVERY', label: 'Out for delivery', ts: order.outForDeliveryAt ?? null },
           { key: 'DELIVERED', label: 'Delivered', ts: order.deliveredAt ?? null },
+          { key: 'PAYMENT', label: paymentTimelineLabel, ts: paymentTimelineTs },
         ];
   const currentStatusForFlow: OrderStatus =
     order.status === 'PICKUP_SCHEDULED'
@@ -836,43 +849,68 @@ export default function OrderDetailPage() {
               <CardTitle>Status</CardTitle>
               <CardDescription>Horizontal timeline with timestamps</CardDescription>
             </div>
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              {ackInvoice?.status === 'ISSUED' && (
-                <Button variant="outline" size="sm" onClick={() => setAckViewerOpen(true)}>
-                  Acknowledgement invoice
-                </Button>
-              )}
-              {finalInvoice?.status === 'ISSUED' && (
-                <Button variant="outline" size="sm" onClick={() => setFinalViewerOpen(true)}>
-                  Final invoice
-                </Button>
-              )}
-              {finalSubmitted && !paymentRecorded && (finalInvoice?.total ?? 0) > 0 && (
-                <Button
-                  variant="default"
-                  size="sm"
-                  onClick={() => {
-                    setPaymentProvider('UPI');
-                    setPaymentDialogOpen(true);
-                  }}
-                >
-                  Record payment
-                </Button>
-              )}
-              {order.status !== 'CANCELLED' && order.status !== 'DELIVERED' && ackInvoice?.status !== 'ISSUED' && (
-                <Button variant="destructive" size="sm" onClick={() => setCancelDialogOpen(true)}>
-                  Cancel order
-                </Button>
-              )}
-              {isAdmin && (
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={() => setDeleteDialogOpen(true)}
-                  disabled={deleteOrder.isPending}
-                >
-                  Delete order
-                </Button>
+            <div className="flex flex-col items-end gap-2">
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                {ackInvoice?.status === 'ISSUED' && (
+                  <Button variant="secondary" size="sm" onClick={() => setAckViewerOpen(true)}>
+                    Acknowledgement invoice
+                  </Button>
+                )}
+                {finalInvoice?.status === 'ISSUED' && (
+                  <Button variant="secondary" size="sm" onClick={() => setFinalViewerOpen(true)}>
+                    Final invoice
+                  </Button>
+                )}
+                {finalSubmitted && !paymentRecorded && (finalInvoice?.total ?? 0) > 0 && (
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={() => {
+                      setPaymentProvider('UPI');
+                      setPaymentDialogOpen(true);
+                    }}
+                  >
+                    Record payment
+                  </Button>
+                )}
+                {order.status !== 'CANCELLED' && order.status !== 'DELIVERED' && ackInvoice?.status !== 'ISSUED' && (
+                  <Button variant="destructive" size="sm" onClick={() => setCancelDialogOpen(true)}>
+                    Cancel order
+                  </Button>
+                )}
+                {isAdmin && (
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => setDeleteDialogOpen(true)}
+                    disabled={deleteOrder.isPending}
+                  >
+                    Delete order
+                  </Button>
+                )}
+              </div>
+              {finalSubmitted && (
+                <div className="rounded-md border border-border bg-muted/40 px-2.5 py-1.5 text-xs text-right min-w-[260px]">
+                  {paymentRecorded && summary.payment ? (
+                    <div className="space-y-0.5">
+                      <div className="flex items-center justify-end gap-2">
+                        <PaymentStatusBadge status={summary.payment.status} />
+                        <span className="font-medium tabular-nums">{formatMoney(summary.payment.amount)}</span>
+                        <span className="text-muted-foreground">{summary.payment.provider.replace(/_/g, ' ')}</span>
+                      </div>
+                      {summary.payment.note ? (
+                        <p className="text-muted-foreground truncate max-w-[360px]" title={summary.payment.note}>
+                          <span className="font-medium text-foreground">Comments: </span>
+                          {summary.payment.note}
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : (finalInvoice?.total ?? 0) <= 0 ? (
+                    <p className="text-muted-foreground">No payment due (₹0 final invoice).</p>
+                  ) : (
+                    <p className="text-muted-foreground">Awaiting payment.</p>
+                  )}
+                </div>
               )}
             </div>
           </div>
@@ -905,6 +943,11 @@ export default function OrderDetailPage() {
                     isReached = false;
                     connectorStrong = false;
                   }
+                } else if (stage.key === 'PAYMENT') {
+                  const deliveredReached = currentIdx >= STATUS_FLOW.indexOf('DELIVERED');
+                  isReached = paymentRecorded || finalSubmitted;
+                  isCurrent = paymentRecorded || (deliveredReached && !paymentRecorded);
+                  connectorStrong = deliveredReached;
                 } else {
                   const flowIdx = STATUS_FLOW.indexOf(stage.key as OrderStatus);
                   isReached = currentIdx >= flowIdx;
@@ -941,30 +984,6 @@ export default function OrderDetailPage() {
               })}
             </div>
           </div>
-          {finalSubmitted && (
-            <div className="mt-4 border-t pt-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Payment</p>
-              {paymentRecorded && summary.payment ? (
-                <div className="flex flex-col gap-1.5 text-sm">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <PaymentStatusBadge status={summary.payment.status} />
-                    <span className="font-medium tabular-nums">{formatMoney(summary.payment.amount)}</span>
-                    <span className="text-muted-foreground">{summary.payment.provider.replace(/_/g, ' ')}</span>
-                  </div>
-                  {summary.payment.note ? (
-                    <p className="text-xs text-muted-foreground">
-                      <span className="font-medium text-foreground">Comments: </span>
-                      {summary.payment.note}
-                    </p>
-                  ) : null}
-                </div>
-              ) : (finalInvoice?.total ?? 0) <= 0 ? (
-                <p className="text-sm text-muted-foreground">No payment due (₹0 final invoice).</p>
-              ) : (
-                <p className="text-sm text-muted-foreground">Awaiting payment — use Record payment when the customer has paid.</p>
-              )}
-            </div>
-          )}
         </CardContent>
       </Card>
 
@@ -1483,7 +1502,7 @@ export default function OrderDetailPage() {
       )}
 
       {showTabs && (
-      <div className="final-invoice-print-area rounded-lg p-4 bg-pink-50">
+      <div className="final-invoice-print-area rounded-lg p-4 bg-secondary/30">
       <Card className="bg-transparent border-0 shadow-none">
         {isFinalLocked && (
           <CardHeader className="ack-print-hide-header">

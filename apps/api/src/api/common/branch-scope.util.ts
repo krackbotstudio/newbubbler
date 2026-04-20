@@ -7,13 +7,24 @@ export function isBranchScopedStaffRole(role: Role): boolean {
   return role === Role.OPS || role === AGENT_ROLE;
 }
 
+export function resolveScopedBranchId(
+  user: AuthUser | undefined,
+  queryBranchId?: string | null,
+): string | undefined {
+  const cleanedQuery = queryBranchId?.trim() || undefined;
+  if (!user) return cleanedQuery;
+  if (isBranchScopedStaffRole(user.role) && user.branchId) return user.branchId;
+  if (user.role === Role.PARTIAL_ADMIN) {
+    const allowed = user.branchIds ?? [];
+    if (cleanedQuery && allowed.includes(cleanedQuery)) return cleanedQuery;
+    return allowed[0];
+  }
+  return cleanedQuery;
+}
+
 export function effectiveBranchIdForAdminQuery(
   user: AuthUser | undefined,
   queryBranchId?: string | null,
 ): string | undefined {
-  if (!user) return queryBranchId?.trim() || undefined;
-  if (isBranchScopedStaffRole(user.role) && user.branchId) {
-    return user.branchId;
-  }
-  return queryBranchId?.trim() || undefined;
+  return resolveScopedBranchId(user, queryBranchId);
 }

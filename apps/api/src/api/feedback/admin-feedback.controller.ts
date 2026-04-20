@@ -5,7 +5,7 @@ import { JwtAuthGuard } from '../common/jwt-auth.guard';
 import { Roles } from '../common/roles.decorator';
 import { RolesGuard } from '../common/roles.guard';
 import type { AuthUser } from '../common/roles.guard';
-import { isBranchScopedStaffRole } from '../common/branch-scope.util';
+import { resolveScopedBranchId } from '../common/branch-scope.util';
 import { FeedbackService } from './feedback.service';
 import { AdminUpdateFeedbackDto } from './dto/admin-update-feedback.dto';
 import type { FeedbackType } from '@shared/enums';
@@ -25,7 +25,7 @@ function parseOptionalDate(value?: string): Date | undefined {
 
 @Controller('admin/feedback')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.ADMIN, Role.OPS, AGENT_ROLE)
+@Roles(Role.ADMIN, Role.PARTIAL_ADMIN, Role.OPS, AGENT_ROLE)
 export class AdminFeedbackController {
   constructor(private readonly feedbackService: FeedbackService) {}
 
@@ -42,8 +42,7 @@ export class AdminFeedbackController {
     @Query('cursor') cursor?: string,
   ) {
     const user = req.user;
-    const effectiveBranchId =
-      isBranchScopedStaffRole(user.role) && user.branchId ? user.branchId : branchId || undefined;
+    const effectiveBranchId = resolveScopedBranchId(user, branchId);
     const parsedLimit = parseOptionalInt(limit);
     const filters = {
       type: type as FeedbackType | undefined,
@@ -68,8 +67,7 @@ export class AdminFeedbackController {
     @Query('dateTo') dateTo?: string,
   ) {
     const user = req.user;
-    const effectiveBranchId =
-      isBranchScopedStaffRole(user.role) && user.branchId ? user.branchId : branchId || undefined;
+    const effectiveBranchId = resolveScopedBranchId(user, branchId);
     return this.feedbackService.adminRatingStats({
       type: type as FeedbackType | undefined,
       status: status as FeedbackStatus | undefined,

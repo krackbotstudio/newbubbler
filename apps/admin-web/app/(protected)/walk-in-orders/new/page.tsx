@@ -16,15 +16,22 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { getFriendlyErrorMessage } from '@/lib/api';
 import { toast } from 'sonner';
-import { LockedBranchSelect } from '@/components/shared/LockedBranchSelect';
 
 export default function NewWalkInOrderPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const userIdFromProfile = searchParams.get('userId') ?? null;
   const user = useMemo(() => getStoredUser(), []);
+  const isAdmin = user?.role === 'ADMIN' || user?.role === 'PARTIAL_ADMIN';
   const branchLocked = !!(user && isBranchFilterLocked(user.role, user.branchId));
   const { data: branches = [] } = useBranches();
+  const selectableBranches = useMemo(() => {
+    if (!user) return branches;
+    if (user.role !== 'PARTIAL_ADMIN') return branches;
+    const allowed = new Set(user.branchIds ?? []);
+    return branches.filter((b) => allowed.has(b.id));
+  }, [branches, user]);
+  const [selectedBranchId, setSelectedBranchId] = useState('');
   const [countryCode, setCountryCode] = useState('+91');
   const [mobile, setMobile] = useState('');
   const combinedPhone = useMemo(
@@ -34,14 +41,28 @@ export default function NewWalkInOrderPage() {
   const [submittedPhone, setSubmittedPhone] = useState('');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
-  const [branchId, setBranchId] = useState('');
   const [customerId, setCustomerId] = useState<string | null>(null);
 
   const { data: preselectedCustomer, isLoading: preselectedLoading } = useCustomer(userIdFromProfile);
 
+  const effectiveBranchId = useMemo(() => {
+    if (branchLocked && user?.branchId) return user.branchId;
+    if (selectedBranchId) return selectedBranchId;
+    if (selectableBranches.length === 1) return selectableBranches[0].id;
+    const defaultBranch = selectableBranches.find((b) => b.isDefault)?.id;
+    return defaultBranch ?? '';
+  }, [branchLocked, user?.branchId, selectedBranchId, selectableBranches]);
+
   useEffect(() => {
-    if (branchLocked && user?.branchId) setBranchId(user.branchId);
-  }, [branchLocked, user?.branchId]);
+    if (branchLocked) return;
+    if (selectedBranchId) return;
+    if (selectableBranches.length === 1) {
+      setSelectedBranchId(selectableBranches[0].id);
+      return;
+    }
+    const defaultBranch = selectableBranches.find((b) => b.isDefault)?.id;
+    if (defaultBranch) setSelectedBranchId(defaultBranch);
+  }, [branchLocked, selectedBranchId, selectableBranches]);
 
   const { data: existingCustomer, isLoading: lookupLoading } = useWalkInLookupCustomer(submittedPhone);
   const createCustomer = useWalkInCreateCustomer();
@@ -49,7 +70,11 @@ export default function NewWalkInOrderPage() {
 
   const customerResolved = !!preselectedCustomer || !!existingCustomer || customerId !== null;
   const effectiveCustomerId = preselectedCustomer?.id ?? existingCustomer?.id ?? customerId;
-  const canCreateOrder = customerResolved && effectiveCustomerId && branchId && branches.some((b) => b.id === branchId);
+  const canCreateOrder =
+    customerResolved &&
+    effectiveCustomerId &&
+    !!effectiveBranchId &&
+    selectableBranches.some((b) => b.id === effectiveBranchId);
 
   const handleLookup = useCallback(() => {
     const digits = mobile.replace(/\D/g, '');
@@ -85,18 +110,18 @@ export default function NewWalkInOrderPage() {
 
   const handleCreateOrder = useCallback(async () => {
     const uid = effectiveCustomerId;
-    if (!uid || !branchId) {
-      toast.error('Select customer and branch');
+    if (!uid || !effectiveBranchId) {
+      toast.error('Select customer');
       return;
     }
     try {
-      const { id } = await createOrder.mutateAsync({ userId: uid, branchId });
+      const { id } = await createOrder.mutateAsync({ userId: uid, branchId: effectiveBranchId });
       toast.success('Order created');
       router.push(`/orders/${id}`);
     } catch (e) {
       toast.error(getFriendlyErrorMessage(e));
     }
-  }, [effectiveCustomerId, branchId, createOrder, router]);
+  }, [effectiveCustomerId, effectiveBranchId, createOrder, router]);
 
   const resetCustomer = useCallback(() => {
     setCustomerId(null);
@@ -114,12 +139,36 @@ export default function NewWalkInOrderPage() {
       </div>
       <h1 className="text-2xl font-semibold">New walk-in order</h1>
 
+      {isAdmin && !branchLocked && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Branch</CardTitle>
+            <CardDescription>Select the branch where this walk-in order is created.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <select
+              className="h-10 min-w-[220px]"
+              value={selectedBranchId}
+              onChange={(e) => setSelectedBranchId(e.target.value)}
+              title="Select branch"
+            >
+              <option value="">Select branch</option>
+              {selectableBranches.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </select>
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle>Customer</CardTitle>
           <CardDescription>
             {preselectedCustomer
-              ? 'Customer selected from profile. Choose branch and create order.'
+              ? 'Customer selected from profile. Create order.'
               : 'Enter customer mobile. If they exist, name and email will be loaded. Otherwise enter name and optional email to create the customer.'}
           </CardDescription>
         </CardHeader>
@@ -238,39 +287,6 @@ export default function NewWalkInOrderPage() {
           )}
             </>
           )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Branch</CardTitle>
-          <CardDescription>
-            Select the branch for this walk-in order. Branch details (PAN, GST) will appear on the invoice.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-2">
-            <label htmlFor="branch" className="text-sm font-medium">
-              Branch
-            </label>
-            {branchLocked ? (
-              <LockedBranchSelect branchId={user?.branchId} className="w-full" selectClassName="w-full" />
-            ) : (
-              <select
-                id="branch"
-                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                value={branchId}
-                onChange={(e) => setBranchId(e.target.value)}
-              >
-                <option value="">Select branch</option>
-                {branches.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name ?? b.id}
-                  </option>
-                ))}
-              </select>
-            )}
-          </div>
         </CardContent>
       </Card>
 

@@ -10,15 +10,20 @@ import type {
 /** Presets that trigger API (exclude CUSTOM). */
 export type RevenuePreset = Exclude<AnalyticsPreset, 'CUSTOM'>;
 
-function fetchDashboardKpis(): Promise<DashboardKpisResponse> {
-  return api.get<DashboardKpisResponse>('/admin/analytics/dashboard-kpis').then((r) => r.data);
+function fetchDashboardKpis(branchId?: string | null): Promise<DashboardKpisResponse> {
+  const params: { branchId?: string } = {};
+  if (branchId && branchId.trim()) params.branchId = branchId.trim();
+  return api.get<DashboardKpisResponse>('/admin/analytics/dashboard-kpis', { params }).then((r) => r.data);
 }
 
-export function useDashboardKpis(options?: { enabled?: boolean; refetchInterval?: number }) {
+export function useDashboardKpis(
+  options?: { enabled?: boolean; refetchInterval?: number; branchId?: string | null },
+) {
   const enabled = options?.enabled ?? true;
+  const branchId = options?.branchId ?? null;
   return useQuery({
-    queryKey: ['admin', 'analytics', 'dashboard-kpis'],
-    queryFn: fetchDashboardKpis,
+    queryKey: ['admin', 'analytics', 'dashboard-kpis', branchId ?? ''],
+    queryFn: () => fetchDashboardKpis(branchId),
     enabled,
     refetchInterval: options?.refetchInterval,
   });

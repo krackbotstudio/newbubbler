@@ -14,6 +14,7 @@ import { AssetsModule } from '../api/assets/assets.module';
 import { BrandingModule } from '../api/branding/branding.module';
 import { CarouselModule } from '../api/carousel/carousel.module';
 import { SlotsModule } from '../api/slots/slots.module';
+import { PortalModule } from '../api/portal/portal.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { SlotsModule } from '../api/slots/slots.module';
     AssetsModule,
     BrandingModule,
     CarouselModule,
+    PortalModule,
   ],
 })
 export class AppModule {}

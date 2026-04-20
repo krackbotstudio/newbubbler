@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type CSSProperties } from 'react';
 import { useRouter } from 'next/navigation';
 import { z } from 'zod';
 import { getStoredUser, setStoredUser, type AuthUser } from '@/lib/auth';
@@ -15,7 +15,7 @@ import { useBranch, useUpdateBranch, useUploadBranchLogo, useBranchFieldUniquene
 import { BranchUniquenessUnderField } from '@/components/branding/BranchFieldUniquenessHints';
 import { useServiceAreas, useCreateServiceArea, useDeleteServiceArea } from '@/hooks/useServiceAreas';
 import { toast } from 'sonner';
-import { Loader2, X } from 'lucide-react';
+import { CalendarCheck2, ClipboardList, Home, ListOrdered, Loader2, UserRound, X } from 'lucide-react';
 
 function phoneDigitsLen(s: string): number {
   return s.replace(/\D/g, '').length;
@@ -46,6 +46,8 @@ const branchSchema = z
     upiId: z.string().max(120).optional(),
     upiPayeeName: z.string().max(120).optional(),
     upiLink: z.string().max(500).optional(),
+    primaryColor: z.string().trim().regex(/^#[0-9A-Fa-f]{6}$/, 'Primary color must be a 6-digit hex like #0f3d91'),
+    secondaryColor: z.string().trim().regex(/^#[0-9A-Fa-f]{6}$/, 'Secondary color must be a 6-digit hex like #e8f0ff'),
     termsAndConditions: z
       .string()
       .trim()
@@ -63,7 +65,7 @@ const branchSchema = z
   });
 
 const textareaClass = cn(
-  'flex min-h-[140px] w-full rounded-md border border-pink-200 bg-pink-50 px-3 py-2 text-sm text-pink-700 ring-offset-background placeholder:font-normal placeholder:text-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-pink-950/30 dark:border-pink-800 dark:text-pink-300 dark:placeholder:text-gray-400',
+  'flex min-h-[140px] w-full rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900 ring-offset-background placeholder:font-normal placeholder:text-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-sky-950/30 dark:border-sky-800 dark:text-sky-200 dark:placeholder:text-gray-400',
 );
 
 function branchLogoUrl(logoUrl: string | null, updatedAt: string): string | null {
@@ -95,6 +97,8 @@ export default function OnboardingPage() {
   const [upiId, setUpiId] = useState('');
   const [upiPayeeName, setUpiPayeeName] = useState('');
   const [upiLink, setUpiLink] = useState('');
+  const [primaryColor, setPrimaryColor] = useState('#0f3d91');
+  const [secondaryColor, setSecondaryColor] = useState('#e8f0ff');
   const [termsAndConditions, setTermsAndConditions] = useState('');
   const [pinInput, setPinInput] = useState('');
   const [finishError, setFinishError] = useState<unknown>(null);
@@ -122,6 +126,8 @@ export default function OnboardingPage() {
       setUpiId(branch.upiId ?? '');
       setUpiPayeeName(branch.upiPayeeName ?? '');
       setUpiLink(branch.upiLink ?? '');
+      setPrimaryColor(branch.primaryColor ?? '#0f3d91');
+      setSecondaryColor(branch.secondaryColor ?? '#e8f0ff');
       setTermsAndConditions(branch.termsAndConditions ?? '');
     }
   }, [branch]);
@@ -149,6 +155,8 @@ export default function OnboardingPage() {
       upiId: upiId.trim() || undefined,
       upiPayeeName: upiPayeeName.trim() || undefined,
       upiLink: upiLink.trim() || undefined,
+      primaryColor: primaryColor.trim(),
+      secondaryColor: secondaryColor.trim(),
       termsAndConditions: termsAndConditions.trim(),
     });
     if (!parsed.success) {
@@ -184,6 +192,8 @@ export default function OnboardingPage() {
         upiId: parsed.data.upiId?.trim() || null,
         upiPayeeName: parsed.data.upiPayeeName?.trim() || null,
         upiLink: parsed.data.upiLink?.trim() || null,
+        primaryColor: parsed.data.primaryColor.trim(),
+        secondaryColor: parsed.data.secondaryColor.trim(),
         termsAndConditions: parsed.data.termsAndConditions.trim(),
       },
       {
@@ -297,7 +307,16 @@ export default function OnboardingPage() {
   const preview = branch ? branchLogoUrl(branch.logoUrl, branch.updatedAt) : null;
 
   return (
-    <div className="mx-auto max-w-2xl space-y-8">
+    <div
+      className="mx-auto max-w-2xl space-y-8"
+      style={
+        {
+          '--primary': '221 83% 43%',
+          '--ring': '221 83% 43%',
+          '--secondary': '213 100% 97%',
+        } as CSSProperties
+      }
+    >
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Finish branch setup</h1>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -415,6 +434,173 @@ export default function OnboardingPage() {
               <FormField label="UPI payment link (optional)">
                 <Input type="url" placeholder="https://…" value={upiLink} onChange={(e) => setUpiLink(e.target.value)} />
               </FormField>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <FormField label="Primary color (required)">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={/^#[0-9A-Fa-f]{6}$/.test(primaryColor) ? primaryColor : '#0f3d91'}
+                      onChange={(e) => setPrimaryColor(e.target.value)}
+                      className="h-10 w-12 cursor-pointer rounded-md border border-slate-300 bg-white p-1"
+                      aria-label="Pick primary color"
+                    />
+                    <Input
+                      type="text"
+                      placeholder="#0f3d91"
+                      value={primaryColor}
+                      onChange={(e) => setPrimaryColor(e.target.value)}
+                    />
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Main accent for customer app (buttons, active order cards, highlights).
+                  </p>
+                </FormField>
+                <FormField label="Secondary color (required)">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={/^#[0-9A-Fa-f]{6}$/.test(secondaryColor) ? secondaryColor : '#e8f0ff'}
+                      onChange={(e) => setSecondaryColor(e.target.value)}
+                      className="h-10 w-12 cursor-pointer rounded-md border border-slate-300 bg-white p-1"
+                      aria-label="Pick secondary color"
+                    />
+                    <Input
+                      type="text"
+                      placeholder="#e8f0ff"
+                      value={secondaryColor}
+                      onChange={(e) => setSecondaryColor(e.target.value)}
+                    />
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Surface/tile background for customer app cards.
+                  </p>
+                </FormField>
+              </div>
+              <div className="rounded-lg border p-4" style={{ borderColor: '#dbeafe', backgroundColor: '#f8fbff' }}>
+                <p className="text-sm font-semibold" style={{ color: '#1e3a8a' }}>Customer Orders preview</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Preview with one active order and one delivered order to finalize branch colors.
+                </p>
+                <div className="mt-3 flex justify-center">
+                  <div className="w-full max-w-[340px] rounded-[30px] border-4 border-slate-800 bg-slate-900 p-2 shadow-xl">
+                    <div className="mx-auto mb-2 h-1.5 w-16 rounded-full bg-slate-700" />
+                    <div className="flex h-[640px] flex-col overflow-hidden rounded-[20px] bg-white">
+                      <div className="border-b px-4 py-3" style={{ borderColor: `color-mix(in srgb, ${secondaryColor} 78%, #d1d5db)` }}>
+                        <p className="text-xs font-medium" style={{ color: `color-mix(in srgb, ${primaryColor} 45%, #4b5563)` }}>
+                          ← Orders
+                        </p>
+                        <p className="mt-2 text-xl font-bold" style={{ color: `color-mix(in srgb, ${primaryColor} 80%, #111827)` }}>
+                          Orders
+                        </p>
+                        <p className="mt-1 text-xs" style={{ color: `color-mix(in srgb, ${primaryColor} 45%, #4b5563)` }}>
+                          All orders (ongoing and completed) with status and utilisation.
+                        </p>
+                      </div>
+
+                      <div className="flex-1 space-y-3 overflow-y-auto px-3 py-3">
+                        <div
+                          className="rounded-xl border p-3"
+                          style={{ backgroundColor: primaryColor, borderColor: primaryColor }}
+                        >
+                          <div className="mb-1 flex items-center gap-2">
+                            <p className="truncate text-sm font-semibold text-white">#TKS123456</p>
+                            <span
+                              className="rounded-full px-2 py-0.5 text-[10px] font-bold"
+                              style={{ backgroundColor: '#ffffff', color: primaryColor }}
+                            >
+                              Online
+                            </span>
+                          </div>
+                          <p className="text-sm text-white">2026-04-20 10:00-12:00</p>
+                          <p className="mt-1 text-[13px] text-white/90">Utilisation: Wash and Iron</p>
+                          <p className="mt-2 text-sm font-semibold text-white">Amount to pay: ₹672.00</p>
+                          <span className="mt-2 inline-flex rounded-full bg-white/20 px-2.5 py-1 text-[11px] font-semibold text-white">
+                            Picked up
+                          </span>
+                        </div>
+                        <div
+                          className="rounded-xl border p-3"
+                          style={{
+                            backgroundColor: secondaryColor,
+                            borderColor: `color-mix(in srgb, ${secondaryColor} 78%, #d1d5db)`,
+                          }}
+                        >
+                          <div className="mb-1 flex items-center gap-2">
+                            <p className="truncate text-sm font-semibold" style={{ color: `color-mix(in srgb, ${primaryColor} 80%, #111827)` }}>
+                              #TKS654321
+                            </p>
+                            <span
+                              className="rounded-full px-2 py-0.5 text-[10px] font-bold text-white"
+                              style={{ backgroundColor: primaryColor }}
+                            >
+                              Walk-in
+                            </span>
+                          </div>
+                          <p className="text-sm" style={{ color: `color-mix(in srgb, ${primaryColor} 80%, #111827)` }}>2026-04-19 16:00-18:00</p>
+                          <p className="mt-1 text-[13px]" style={{ color: `color-mix(in srgb, ${primaryColor} 45%, #4b5563)` }}>
+                            Utilisation: Dry cleaning
+                          </p>
+                          <p className="mt-2 text-sm font-semibold" style={{ color: `color-mix(in srgb, ${primaryColor} 60%, #166534)` }}>
+                            Paid: ₹382.00
+                          </p>
+                          <span
+                            className="mt-2 inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold"
+                            style={{
+                              backgroundColor: `color-mix(in srgb, ${primaryColor} 16%, white)`,
+                              color: `color-mix(in srgb, ${primaryColor} 80%, #111827)`,
+                            }}
+                          >
+                            Delivered
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="px-3 pb-3">
+                        <div
+                          className="relative flex h-[86px] items-end rounded-[30px] px-2.5 pb-2.5 pt-2 shadow-2xl"
+                          style={{ backgroundColor: primaryColor }}
+                        >
+                          <div className="flex flex-1 min-w-0">
+                            <span className="flex flex-1 min-w-0 flex-col items-center gap-0.5 rounded-xl px-1 py-2 text-[10px] font-medium leading-tight text-white/80 transition-colors">
+                              <Home className="h-[18px] w-[18px]" />
+                              <span>Home</span>
+                            </span>
+                          </div>
+                          <div className="flex flex-1 min-w-0">
+                            <span className="flex flex-1 min-w-0 flex-col items-center gap-0.5 rounded-xl px-1 py-2 text-[10px] font-medium leading-tight text-white/80 transition-colors">
+                              <ListOrdered className="h-[18px] w-[18px]" />
+                              <span>Price list</span>
+                            </span>
+                          </div>
+                          <div className="relative -mt-11 flex-[1.2]">
+                            <span className="flex flex-col items-center">
+                              <span
+                                className="flex h-[58px] w-[58px] items-center justify-center rounded-full border-4 shadow-xl ring-2 ring-white/20"
+                                style={{ backgroundColor: primaryColor, borderColor: '#ffffff' }}
+                              >
+                                <CalendarCheck2 className="h-6 w-6 text-white" />
+                              </span>
+                              <span className="mt-1.5 text-[11px] font-semibold text-white leading-none">Book Now</span>
+                            </span>
+                          </div>
+                          <div className="flex flex-1 min-w-0">
+                            <span className="flex flex-1 min-w-0 flex-col items-center gap-0.5 rounded-xl bg-white/22 px-1 py-2 text-[10px] font-semibold leading-tight text-white shadow-inner ring-1 ring-white/10">
+                              <ClipboardList className="h-[18px] w-[18px]" />
+                              <span>Orders</span>
+                            </span>
+                          </div>
+                          <div className="flex flex-1 min-w-0">
+                            <span className="flex flex-1 min-w-0 flex-col items-center gap-0.5 rounded-xl px-1 py-2 text-[10px] font-medium leading-tight text-white/80 transition-colors">
+                              <UserRound className="h-[18px] w-[18px]" />
+                              <span>Profile</span>
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
               <FormField label="Terms and conditions (shown on this branch’s invoices)">
                 <textarea
                   className={textareaClass}
@@ -478,7 +664,7 @@ export default function OnboardingPage() {
                   className={cn(
                     'inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-sm font-medium shadow-sm',
                     a.active
-                      ? 'border-pink-300 bg-pink-100 text-pink-900 dark:border-pink-700 dark:bg-pink-950/60 dark:text-pink-100'
+                      ? 'border-sky-300 bg-sky-100 text-sky-900 dark:border-sky-700 dark:bg-sky-950/60 dark:text-sky-100'
                       : 'border-muted-foreground/25 bg-muted/60 text-muted-foreground',
                   )}
                 >
@@ -489,7 +675,7 @@ export default function OnboardingPage() {
                     className={cn(
                       'ml-0.5 inline-flex rounded-full p-0.5 transition-colors',
                       a.active
-                        ? 'text-pink-800 hover:bg-pink-200/90 dark:text-pink-200 dark:hover:bg-pink-800/80'
+                        ? 'text-sky-800 hover:bg-sky-200/90 dark:text-sky-200 dark:hover:bg-sky-800/80'
                         : 'hover:bg-muted',
                     )}
                     aria-label={`Remove pincode ${a.pincode}`}

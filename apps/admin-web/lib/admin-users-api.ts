@@ -7,6 +7,7 @@ export interface AdminUser {
   email: string;
   role: Role;
   branchId: string | null;
+  branchIds: string[];
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -21,6 +22,7 @@ export interface AdminUsersQuery {
   role?: Role;
   active?: boolean;
   search?: string;
+  branchId?: string;
   limit?: number;
   cursor?: string | null;
 }
@@ -32,6 +34,7 @@ export async function fetchAdminUsers(params: AdminUsersQuery): Promise<AdminUse
       active:
         params.active === undefined ? undefined : params.active ? 'true' : 'false',
       search: params.search,
+      branchId: params.branchId,
       limit: params.limit,
       cursor: params.cursor ?? undefined,
     },
@@ -44,6 +47,7 @@ export interface CreateAdminUserInput {
   email: string;
   role: Role;
   branchId?: string | null;
+  branchIds?: string[];
   isActive?: boolean;
 }
 
@@ -64,6 +68,7 @@ export interface UpdateAdminUserInput {
   name?: string | null;
   role?: Role;
   branchId?: string | null;
+  branchIds?: string[];
   isActive?: boolean;
 }
 

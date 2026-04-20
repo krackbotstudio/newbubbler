@@ -1,0 +1,3 @@
+ALTER TABLE "Branch"
+  ADD COLUMN IF NOT EXISTS "primaryColor" TEXT,
+  ADD COLUMN IF NOT EXISTS "secondaryColor" TEXT;

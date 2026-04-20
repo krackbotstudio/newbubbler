@@ -1,7 +1,9 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { randomUUID } from 'crypto';
+import * as path from 'path';
 import { Role } from '@shared/enums';
-import type { BranchRepo, OperatingHoursRepo } from '../../../application/ports';
-import { BRANCH_REPO, OPERATING_HOURS_REPO } from '../../../infra/infra.module';
+import type { BranchRepo, OperatingHoursRepo, StorageAdapter } from '../../../application/ports';
+import { BRANCH_REPO, OPERATING_HOURS_REPO, STORAGE_ADAPTER } from '../../../infra/infra.module';
 import type { AuthUser } from '../../common/roles.guard';
 
 /** Default daily window for new branches (matches schedule UI placeholders). */
@@ -32,17 +34,38 @@ function normToken(s: string): string {
   return s.trim().toLowerCase();
 }
 
+function normalizeHexColor(s: string | null | undefined): string | null {
+  const t = (s ?? '').trim();
+  if (!t) return null;
+  const withHash = t.startsWith('#') ? t : `#${t}`;
+  if (!/^#[0-9A-Fa-f]{6}$/.test(withHash)) return null;
+  return withHash.toUpperCase();
+}
+
 @Injectable()
 export class AdminBranchesService {
   constructor(
     @Inject(BRANCH_REPO) private readonly branchRepo: BranchRepo,
     @Inject(OPERATING_HOURS_REPO) private readonly operatingHoursRepo: OperatingHoursRepo,
+    @Inject(STORAGE_ADAPTER) private readonly storageAdapter: StorageAdapter,
   ) {}
+
+  private extFromName(name: string | undefined): string {
+    const ext = path.extname(name || 'file').toLowerCase();
+    if (ext === '.png' || ext === '.jpg' || ext === '.jpeg' || ext === '.webp') return ext;
+    return '.png';
+  }
 
   private assertOpsOwnBranch(actor: AuthUser | undefined, branchId: string): void {
     if (actor?.role === Role.OPS) {
       if (!actor.branchId || actor.branchId !== branchId) {
         throw new ForbiddenException('You can only manage your own branch');
+      }
+    }
+    if (actor?.role === Role.PARTIAL_ADMIN) {
+      const allowed = new Set((actor.branchIds ?? []).filter(Boolean));
+      if (!allowed.has(branchId)) {
+        throw new ForbiddenException('You can only manage your assigned branches');
       }
     }
   }
@@ -51,6 +74,10 @@ export class AdminBranchesService {
     const all = await this.branchRepo.listAll();
     if (actor?.role === Role.OPS && actor.branchId) {
       return all.filter((b) => b.id === actor.branchId);
+    }
+    if (actor?.role === Role.PARTIAL_ADMIN) {
+      const allowed = new Set((actor.branchIds ?? []).filter(Boolean));
+      return all.filter((b) => allowed.has(b.id));
     }
     return all;
   }
@@ -142,8 +169,13 @@ export class AdminBranchesService {
   }
 
   async create(data: Parameters<BranchRepo['create']>[0]) {
-    await this.assertUniqueBranchFields(undefined, data.name, data.invoicePrefix ?? null, data.itemTagBrandName ?? null);
-    const branch = await this.branchRepo.create(data);
+    const normalized = {
+      ...data,
+      primaryColor: normalizeHexColor(data.primaryColor),
+      secondaryColor: normalizeHexColor(data.secondaryColor),
+    };
+    await this.assertUniqueBranchFields(undefined, normalized.name, normalized.invoicePrefix ?? null, normalized.itemTagBrandName ?? null);
+    const branch = await this.branchRepo.create(normalized);
     await this.operatingHoursRepo.set(branch.id, DEFAULT_OPERATING_START, DEFAULT_OPERATING_END);
     if (data.isDefault === true) {
       await this.branchRepo.clearOtherDefaults(branch.id);
@@ -153,18 +185,23 @@ export class AdminBranchesService {
   }
 
   async update(id: string, data: Parameters<BranchRepo['update']>[1], actor?: AuthUser) {
+    const normalized = {
+      ...data,
+      ...(data.primaryColor !== undefined && { primaryColor: normalizeHexColor(data.primaryColor) }),
+      ...(data.secondaryColor !== undefined && { secondaryColor: normalizeHexColor(data.secondaryColor) }),
+    };
     const existing = await this.getById(id, actor);
-    const mergedName = data.name !== undefined ? data.name : existing.name;
-    const mergedPrefix = data.invoicePrefix !== undefined ? data.invoicePrefix : existing.invoicePrefix;
-    const mergedTag = data.itemTagBrandName !== undefined ? data.itemTagBrandName : existing.itemTagBrandName;
+    const mergedName = normalized.name !== undefined ? normalized.name : existing.name;
+    const mergedPrefix = normalized.invoicePrefix !== undefined ? normalized.invoicePrefix : existing.invoicePrefix;
+    const mergedTag = normalized.itemTagBrandName !== undefined ? normalized.itemTagBrandName : existing.itemTagBrandName;
     await this.assertUniqueBranchFields(id, mergedName, mergedPrefix, mergedTag);
-    if (actor?.role === Role.OPS && data.isDefault === true) {
+    if (actor?.role === Role.OPS && normalized.isDefault === true) {
       throw new ForbiddenException('Branch heads cannot change the default branch flag');
     }
-    if (data.isDefault === true) {
+    if (normalized.isDefault === true) {
       await this.branchRepo.clearOtherDefaults(id);
     }
-    return this.branchRepo.update(id, data);
+    return this.branchRepo.update(id, normalized);
   }
 
   async delete(id: string) {
@@ -172,16 +209,38 @@ export class AdminBranchesService {
     return this.branchRepo.delete(id);
   }
 
-  async uploadLogo(branchId: string, fileName: string, actor?: AuthUser) {
+  async uploadLogo(
+    branchId: string,
+    file: { buffer: Buffer; originalname?: string; mimetype?: string },
+    actor?: AuthUser,
+  ) {
     await this.getById(branchId, actor);
-    const url = `/api/assets/branding/branches/${fileName}`;
+    const ext = this.extFromName(file.originalname);
+    const fileName = `branch-${branchId}-logo-${randomUUID()}${ext}`;
+    const key = `branding/branches/${fileName}`;
+    const uploaded = await this.storageAdapter.putObject(key, file.buffer, file.mimetype || 'image/png');
+    const url =
+      typeof uploaded === 'string' && uploaded.length > 0
+        ? uploaded
+        : `/api/assets/branding/branches/${fileName}`;
     await this.branchRepo.setLogoUrl(branchId, url);
     return this.getById(branchId, actor);
   }
 
-  async uploadUpiQr(branchId: string, fileName: string, actor?: AuthUser) {
+  async uploadUpiQr(
+    branchId: string,
+    file: { buffer: Buffer; originalname?: string; mimetype?: string },
+    actor?: AuthUser,
+  ) {
     await this.getById(branchId, actor);
-    const url = `/api/assets/branding/branches/${fileName}`;
+    const ext = this.extFromName(file.originalname);
+    const fileName = `branch-${branchId}-upi-qr-${randomUUID()}${ext}`;
+    const key = `branding/branches/${fileName}`;
+    const uploaded = await this.storageAdapter.putObject(key, file.buffer, file.mimetype || 'image/png');
+    const url =
+      typeof uploaded === 'string' && uploaded.length > 0
+        ? uploaded
+        : `/api/assets/branding/branches/${fileName}`;
     await this.branchRepo.setUpiQrUrl(branchId, url);
     return this.getById(branchId, actor);
   }

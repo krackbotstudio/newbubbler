@@ -55,7 +55,10 @@ api.interceptors.response.use(
   (error: AxiosError<{ error?: { code?: string; message?: string } }>) => {
     if (error.response?.status === 401) {
       if (typeof window !== 'undefined') {
-        window.location.href = '/login';
+        const isCustomerFlow = window.location.pathname.startsWith('/customer/');
+        if (!isCustomerFlow) {
+          window.location.href = '/login';
+        }
       }
     }
     return Promise.reject(error);
@@ -68,28 +71,48 @@ export interface ApiError {
   status?: number;
 }
 
+function toSafeMessage(value: unknown, fallback = 'An unexpected error occurred'): string {
+  if (typeof value === 'string') return value;
+  if (value instanceof Error) return value.message || fallback;
+  if (value && typeof value === 'object') {
+    const obj = value as Record<string, unknown>;
+    if (typeof obj.message === 'string') return obj.message;
+    if (obj.message && typeof obj.message === 'object') {
+      const nested = (obj.message as Record<string, unknown>).message;
+      if (typeof nested === 'string') return nested;
+    }
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return fallback;
+    }
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return fallback;
+}
+
 export function getApiError(error: unknown): ApiError {
   if (axios.isAxiosError(error)) {
     const data = error.response?.data as Record<string, unknown> | undefined;
     const err = data && typeof data === 'object' && 'error' in data
-      ? (data.error as { code?: string; message?: string })
+      ? (data.error as { code?: string; message?: unknown })
       : null;
-    if (err?.message) {
+    if (err?.message != null) {
       return {
-        message: err.message,
+        message: toSafeMessage(err.message, error.message || `Request failed with status ${error.response?.status ?? 'unknown'}`),
         code: err.code,
         status: error.response?.status,
       };
     }
-    const msg = data && typeof data === 'object' && 'message' in data && typeof (data as { message: unknown }).message === 'string'
-      ? (data as { message: string }).message
-      : error.message || `Request failed with status ${error.response?.status ?? 'unknown'}`;
+    const msg = data && typeof data === 'object' && 'message' in data
+      ? toSafeMessage((data as { message: unknown }).message, error.message || `Request failed with status ${error.response?.status ?? 'unknown'}`)
+      : (error.message || `Request failed with status ${error.response?.status ?? 'unknown'}`);
     return { message: msg, status: error.response?.status };
   }
   if (error instanceof Error) {
     const withCode = error as Error & { code?: string; status?: number };
     return {
-      message: error.message,
+      message: toSafeMessage(error.message),
       code: typeof withCode.code === 'string' ? withCode.code : undefined,
       status: typeof withCode.status === 'number' ? withCode.status : undefined,
     };
@@ -100,9 +123,9 @@ export function getApiError(error: unknown): ApiError {
     'message' in error &&
     typeof (error as { message: unknown }).message === 'string'
   ) {
-    const o = error as { message: string; code?: string; status?: number };
+    const o = error as { message: unknown; code?: string; status?: number };
     return {
-      message: o.message,
+      message: toSafeMessage(o.message),
       code: typeof o.code === 'string' ? o.code : undefined,
       status: typeof o.status === 'number' ? o.status : undefined,
     };

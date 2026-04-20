@@ -21,16 +21,18 @@ import {
 } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
-import { getStoredUser, type AuthUser } from '@/lib/auth';
+import { getStoredUser, restrictBranchesForUser, type AuthUser } from '@/lib/auth';
 import { getFriendlyErrorMessage, getApiErrorDetails } from '@/lib/api';
 import { toast } from 'sonner';
 import { Copy } from 'lucide-react';
 import { AdminUserDialog } from './AdminUserDialog';
+import { useBranches } from '@/hooks/useBranches';
 
 interface FiltersState {
   role: Role | 'ALL';
   activeOnly: boolean;
   search: string;
+  branchId: string;
 }
 
 function useAdminUsers(filters: FiltersState) {
@@ -43,6 +45,7 @@ function useAdminUsers(filters: FiltersState) {
         role: filters.role === 'ALL' ? undefined : (filters.role as Role),
         active: filters.activeOnly ? true : undefined,
         search: filters.search || undefined,
+        branchId: filters.branchId || undefined,
         limit: 20,
         cursor,
       }),
@@ -60,6 +63,7 @@ export function AdminUsersTable() {
     role: 'ALL',
     activeOnly: true,
     search: '',
+    branchId: '',
   });
   const [dialogUser, setDialogUser] = useState<AdminUser | null>(null);
   const [dialogMode, setDialogMode] = useState<'create' | 'edit'>('create');
@@ -71,6 +75,7 @@ export function AdminUsersTable() {
 
   const { query, cursor, setCursor } = useAdminUsers(filters);
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
+  const { data: branches = [] } = useBranches();
 
   async function handleResetPasswordInTable(user: AdminUser) {
     setResettingUserId(user.id);
@@ -94,6 +99,34 @@ export function AdminUsersTable() {
   useEffect(() => {
     setCurrentUser(getStoredUser());
   }, []);
+  const isAdmin = currentUser?.role === 'ADMIN';
+  const isPartialAdmin = currentUser?.role === 'PARTIAL_ADMIN';
+  const branchOptions = restrictBranchesForUser(branches, currentUser);
+  const roleFilterOptions: Array<{ value: FiltersState['role']; label: string }> = isPartialAdmin
+    ? [
+        { value: 'ALL', label: 'All roles' },
+        { value: 'OPS', label: 'Branch Head' },
+        { value: 'AGENT', label: 'Agent' },
+      ]
+    : [
+        { value: 'ALL', label: 'All roles' },
+        { value: 'ADMIN', label: 'Admin' },
+        { value: 'PARTIAL_ADMIN', label: 'Partial Admin' },
+        { value: 'OPS', label: 'Branch Head' },
+        { value: 'AGENT', label: 'Agent' },
+      ];
+  useEffect(() => {
+    if (isPartialAdmin && filters.role !== 'ALL' && filters.role !== 'OPS' && filters.role !== 'AGENT') {
+      setFilters((prev) => ({ ...prev, role: 'ALL' }));
+    }
+  }, [isPartialAdmin, filters.role]);
+  useEffect(() => {
+    if (!(isAdmin || isPartialAdmin)) return;
+    if (filters.branchId) return;
+    if (branchOptions.length > 0 && isPartialAdmin) {
+      setFilters((prev) => ({ ...prev, branchId: branchOptions[0].id }));
+    }
+  }, [isAdmin, isPartialAdmin, filters.branchId, branchOptions]);
   const data = query.data;
   const getPasswordState = (userId: string) => {
     const pwd = lastShownPasswords[userId];
@@ -118,13 +151,37 @@ export function AdminUsersTable() {
               <SelectValue placeholder="All roles" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="ALL">All roles</SelectItem>
-              <SelectItem value="ADMIN">Admin</SelectItem>
-              <SelectItem value="OPS">Branch Head</SelectItem>
-              <SelectItem value="AGENT">Agent</SelectItem>
+              {roleFilterOptions.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
+        {(isAdmin || isPartialAdmin) && (
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium uppercase text-muted-foreground">Branch</label>
+            <Select
+              value={filters.branchId || '__ALL__'}
+              onValueChange={(value) =>
+                setFilters((prev) => ({ ...prev, branchId: value === '__ALL__' ? '' : value }))
+              }
+            >
+              <SelectTrigger className="w-[190px]">
+                <SelectValue placeholder="All branches" />
+              </SelectTrigger>
+              <SelectContent>
+                {!isPartialAdmin && <SelectItem value="__ALL__">All branches</SelectItem>}
+                {branchOptions.map((b) => (
+                  <SelectItem key={b.id} value={b.id}>
+                    {b.name ?? b.id}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
         <div className="flex flex-col gap-1">
           <label className="text-xs font-medium uppercase text-muted-foreground">
             Active only
@@ -152,15 +209,17 @@ export function AdminUsersTable() {
           />
         </div>
         <div className="flex-1" />
-        <Button
-          onClick={() => {
-            setDialogMode('create');
-            setDialogUser(null);
-            setDialogOpen(true);
-          }}
-        >
-          New admin user
-        </Button>
+        {(isAdmin || isPartialAdmin) && (
+          <Button
+            onClick={() => {
+              setDialogMode('create');
+              setDialogUser(null);
+              setDialogOpen(true);
+            }}
+          >
+            New admin user
+          </Button>
+        )}
       </div>
 
       <div className="relative z-0 rounded-md border">
@@ -225,7 +284,13 @@ export function AdminUsersTable() {
                 </td>
                 <td className="px-3 py-2 align-middle">
                   <span className="rounded bg-muted px-2 py-0.5 text-xs font-medium uppercase">
-                    {user.role === 'OPS' ? 'Branch Head' : user.role === 'AGENT' ? 'Agent' : user.role}
+                    {user.role === 'OPS'
+                      ? 'Branch Head'
+                      : user.role === 'AGENT'
+                        ? 'Agent'
+                        : user.role === 'PARTIAL_ADMIN'
+                          ? 'Partial Admin'
+                          : user.role}
                   </span>
                 </td>
                 <td className="px-3 py-2 align-middle">

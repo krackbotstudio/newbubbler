@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { ADDRESSES_REPO, CUSTOMERS_REPO, ORDERS_REPO, SUBSCRIPTIONS_REPO, SUBSCRIPTION_PLANS_REPO } from '../../infra/infra.module';
-import type { AddressesRepo, CustomersRepo, OrdersRepo, SubscriptionsRepo, SubscriptionPlansRepo } from '../../application/ports';
+import { ADDRESSES_REPO, CUSTOMERS_REPO, CUSTOMER_PORTALS_REPO, ORDERS_REPO, SUBSCRIPTIONS_REPO, SUBSCRIPTION_PLANS_REPO } from '../../infra/infra.module';
+import type { AddressesRepo, CustomersRepo, CustomerPortalsRepo, OrdersRepo, SubscriptionsRepo, SubscriptionPlansRepo } from '../../application/ports';
+import { AppError } from '../../application/errors';
 import type { AuthUser } from '../common/roles.guard';
 
 export interface RegisterPushTokenResult {
@@ -79,17 +80,46 @@ export class MeService {
     @Inject(SUBSCRIPTION_PLANS_REPO) private readonly subscriptionPlansRepo: SubscriptionPlansRepo,
     @Inject(CUSTOMERS_REPO) private readonly customersRepo: CustomersRepo,
     @Inject(ORDERS_REPO) private readonly ordersRepo: OrdersRepo,
+    @Inject(CUSTOMER_PORTALS_REPO) private readonly customerPortalsRepo: CustomerPortalsRepo,
   ) {}
 
-  async getMe(user: AuthUser): Promise<MeResponse> {
+  private async resolvePortalBranchScope(
+    userId: string,
+    rawHost?: string,
+    slugHint?: string,
+  ): Promise<string | null> {
+    const hinted = (slugHint ?? '').trim().toLowerCase();
+    const host = (rawHost ?? '').split(',')[0]?.trim().toLowerCase().split(':')[0] ?? '';
+    const parts = host.split('.');
+    const hostSlug =
+      parts.length >= 4 && parts.slice(-3).join('.') === 'bubbler.krackbot.com'
+        ? parts.slice(0, -3).join('.')
+        : '';
+    const slug = hinted || hostSlug;
+    if (!slug) return null;
+    const portal = await this.customerPortalsRepo.getByAccessKey(slug);
+    if (!portal || !portal.isActive) throw new AppError('NOT_FOUND', 'Portal not found');
+    const isMember = await this.customerPortalsRepo.isMember(portal.id, userId);
+    if (!isMember) throw new AppError('FORBIDDEN', 'Join portal before continuing');
+    return portal.branchId;
+  }
+
+  async getMe(user: AuthUser, rawHost?: string, slugHint?: string): Promise<MeResponse> {
+    const portalBranchId = await this.resolvePortalBranchScope(user.id, rawHost, slugHint);
     const [customer, defaultAddress, activeSubscriptionsList, pastSubscriptionsList] = await Promise.all([
       this.customersRepo.getById(user.id),
       this.addressesRepo.findDefaultByUserId(user.id),
       this.subscriptionsRepo.listActiveByUserId(user.id),
       this.subscriptionsRepo.listPastByUserId(user.id),
     ]);
+    const scopedActive = portalBranchId
+      ? activeSubscriptionsList.filter((s) => s.branchId != null && s.branchId === portalBranchId)
+      : activeSubscriptionsList;
+    const scopedPast = portalBranchId
+      ? pastSubscriptionsList.filter((s) => s.branchId != null && s.branchId === portalBranchId)
+      : pastSubscriptionsList;
     const activeSubscriptions = await Promise.all(
-      activeSubscriptionsList.map(async (s) => {
+      scopedActive.map(async (s) => {
         const [activeOrder, plan] = await Promise.all([
           this.ordersRepo.findActiveBySubscriptionId(s.id),
           this.subscriptionPlansRepo.getById(s.planId),
@@ -114,7 +144,7 @@ export class MeService {
         };
       }),
     );
-    const pastSubscriptions = pastSubscriptionsList.map((s) => {
+    const pastSubscriptions = scopedPast.map((s) => {
       const maxPickups = s.maxPickups;
       const usedPickups = maxPickups - s.remainingPickups;
       return {

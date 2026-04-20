@@ -94,6 +94,34 @@ export class AuthService {
     };
   }
 
+  async loginCustomerByMobile(
+    phone: string,
+  ): Promise<{ token: string; user: { id: string; phone: string; role: Role } }> {
+    const user = await prisma.user.upsert({
+      where: { phone },
+      update: { role: Role.CUSTOMER },
+      create: {
+        phone,
+        role: Role.CUSTOMER,
+      },
+    });
+
+    const token = jwt.sign(
+      {
+        sub: user.id,
+        role: user.role as Role,
+        phone: user.phone,
+      },
+      this.jwtSecret,
+      { expiresIn: '7d' },
+    );
+
+    return {
+      token,
+      user: { id: user.id, phone: user.phone!, role: user.role as Role },
+    };
+  }
+
   async adminLogin(params: {
     email: string;
     password: string;
@@ -104,6 +132,7 @@ export class AuthService {
       email: string;
       role: Role;
       branchId?: string | null;
+      branchIds?: string[];
       onboardingCompletedAt?: string | null;
     };
   }> {
@@ -147,6 +176,7 @@ export class AuthService {
         role: user.role as Role,
         email: user.email,
         branchId: (user as { branchId?: string | null }).branchId ?? null,
+        branchIds: (user as { branchIds?: string[] }).branchIds ?? [],
       },
       this.jwtSecret,
       { expiresIn: '1h' },
@@ -159,6 +189,7 @@ export class AuthService {
         email: user.email!,
         role: user.role as Role,
         branchId: (user as { branchId?: string | null }).branchId ?? null,
+        branchIds: (user as { branchIds?: string[] }).branchIds ?? [],
         onboardingCompletedAt:
           (user as { onboardingCompletedAt?: Date | null }).onboardingCompletedAt?.toISOString() ??
           null,

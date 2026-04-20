@@ -13,7 +13,12 @@ import type {
   AdminOrderListRow,
   OrderAdminSummary,
 } from '../../../application/ports';
-import { toIndiaDateKey, indiaDayUtcRange, dateKeyToDdMmYyyy } from '../../../application/time/india-date';
+import {
+  toIndiaDateKey,
+  indiaDayUtcRange,
+  dateKeyToDdMmYyyy,
+  dateKeyToDdMmYy,
+} from '../../../application/time/india-date';
 
 /** Accepts PrismaClient or transaction client from prisma.$transaction(callback). */
 type PrismaLike = Pick<
@@ -113,44 +118,98 @@ function branchIdDiscriminator(branchId: string | null): string {
   return tail.replace(/[^0-9A-F]/g, '0').padStart(BRANCH_ID_DISC_LEN, '0').slice(-BRANCH_ID_DISC_LEN);
 }
 
-/** Order number: BRANCH3 + BRANCHDISC(hex) + DDMMYYYY + SEQ4 + ON|WI — per branch, per India calendar day. */
+/** Human-readable order id: PREFIX-DD-MM-YY-SEQ-WI|ON — per branch, per India calendar day (WI walk-in, ON online). */
 function buildOrderNumber(
-  branch3: string,
-  branchDisc: string,
-  dateKeyDdMmYyyy: string,
+  prefix: string,
+  dd: string,
+  mm: string,
+  yy: string,
   seq: number,
   orderSource: string | null,
 ): string {
-  const suffix = orderSource === 'WALK_IN' ? 'WI' : 'ON';
-  return `${branch3}${branchDisc}${dateKeyDdMmYyyy}${String(seq).padStart(4, '0')}${suffix}`;
+  const channel = orderSource === 'WALK_IN' ? 'WI' : 'ON';
+  return `${prefix}-${dd}-${mm}-${yy}-${String(seq).padStart(3, '0')}-${channel}`;
 }
 
-const ORDER_ID_SEQ_LEN = 4;
+const ORDER_ID_SEQ_LEN_NEW = 3;
+const ORDER_ID_SEQ_LEN_LEGACY = 4;
 
-/** Next sequence for this branch/day and id layout (handles deletes and avoids count+1 races). */
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** Uppercase alphanumeric only; suitable for PREFIX segment (no hyphens). */
+function sanitizeInvoicePrefix(raw: string | null | undefined): string | null {
+  if (raw == null || !String(raw).trim()) return null;
+  const s = String(raw).toUpperCase().replace(/[^A-Z0-9]/g, '');
+  return s.length > 0 ? s.slice(0, 20) : null;
+}
+
+/** Prefer branch invoice prefix; else branch name code + tail of branch id for uniqueness. */
+function resolveOrderNumberPrefix(branch: { id: string; name: string; invoicePrefix: string | null }): string {
+  const fromInvoice = sanitizeInvoicePrefix(branch.invoicePrefix);
+  if (fromInvoice) return fromInvoice;
+  return `${branchCodeFromName(branch.name)}${branchIdDiscriminator(branch.id).slice(-4)}`;
+}
+
+function fallbackOrderNumberPrefix(branch3: string, branchId: string | null): string {
+  return `${branch3}${branchIdDiscriminator(branchId).slice(-4)}`;
+}
+
+/**
+ * Next sequence for this branch/day and channel (WI vs ON). Parses new hyphenated ids and legacy compact ids
+ * so daily numbering continues across format changes.
+ */
 async function nextOrderSequenceForDay(
   tx: Pick<PrismaClient, 'order'>,
   branchId: string | null,
   dayStart: Date,
   dayEnd: Date,
-  idPrefixWithoutSeq: string,
-  suffix: string,
+  orderPrefix: string,
+  dd: string,
+  mm: string,
+  yy: string,
+  ddMmYyyyLegacy: string,
+  branch3: string,
+  branchDisc: string,
+  sourceSuffix: 'WI' | 'ON',
 ): Promise<number> {
   const rows = await tx.order.findMany({
     where: {
       ...(branchId === null ? { branchId: null } : { branchId }),
       createdAt: { gte: dayStart, lt: dayEnd },
-      id: { startsWith: idPrefixWithoutSeq },
     },
     select: { id: true },
   });
+
+  const newRe = new RegExp(
+    `^${escapeRegex(orderPrefix)}-${dd}-${mm}-${yy}-(\\d{${ORDER_ID_SEQ_LEN_NEW}})-${sourceSuffix}$`,
+  );
+
+  const legacyPrefixFull = `${branch3}${branchDisc}${ddMmYyyyLegacy}`;
+  const legacyNeedLen =
+    branch3.length + BRANCH_ID_DISC_LEN + ddMmYyyyLegacy.length + ORDER_ID_SEQ_LEN_LEGACY + sourceSuffix.length;
+
   let maxSeq = 0;
-  const needLen = idPrefixWithoutSeq.length + ORDER_ID_SEQ_LEN + suffix.length;
   for (const { id } of rows) {
-    if (id.length !== needLen || !id.endsWith(suffix)) continue;
-    const seqPart = id.slice(idPrefixWithoutSeq.length, idPrefixWithoutSeq.length + ORDER_ID_SEQ_LEN);
-    const n = parseInt(seqPart, 10);
-    if (Number.isFinite(n) && n > maxSeq) maxSeq = n;
+    const mNew = id.match(newRe);
+    if (mNew) {
+      const n = parseInt(mNew[1]!, 10);
+      if (Number.isFinite(n) && n > maxSeq) maxSeq = n;
+      continue;
+    }
+    if (
+      id.length === legacyNeedLen &&
+      id.startsWith(legacyPrefixFull) &&
+      id.endsWith(sourceSuffix)
+    ) {
+      const seqPart = id.slice(
+        legacyPrefixFull.length,
+        legacyPrefixFull.length + ORDER_ID_SEQ_LEN_LEGACY,
+      );
+      const n = parseInt(seqPart, 10);
+      if (Number.isFinite(n) && n > maxSeq) maxSeq = n;
+    }
   }
   return maxSeq + 1;
 }
@@ -163,34 +222,55 @@ export class PrismaOrdersRepo implements OrdersRepo {
       const now = new Date();
       const dateKey = toIndiaDateKey(now);
       const ddMmYyyy = dateKeyToDdMmYyyy(dateKey);
+      const { dd, mm, yy } = dateKeyToDdMmYy(dateKey);
       const { start: dayStart, end: dayEnd } = indiaDayUtcRange(dateKey);
 
       let branch3 = 'MAIN';
+      let orderNumberPrefix = fallbackOrderNumberPrefix(branch3, null);
       let effectiveBranchId: string | null = data.branchId ?? null;
 
       if (data.branchId) {
         const branch = await tx.branch.findUnique({
           where: { id: data.branchId },
-          select: { name: true },
+          select: { id: true, name: true, invoicePrefix: true },
         });
-        if (branch?.name) branch3 = branchCodeFromName(branch.name);
+        if (branch) {
+          branch3 = branchCodeFromName(branch.name);
+          orderNumberPrefix = resolveOrderNumberPrefix(branch);
+          effectiveBranchId = branch.id;
+        } else {
+          orderNumberPrefix = fallbackOrderNumberPrefix(branch3, data.branchId);
+        }
       } else {
         // Subscription / customer orders without branchId: use main branch so number and invoices show main branch (not UNK)
         const mainBranch = await tx.branch.findFirst({
           where: { isDefault: true },
-          select: { id: true, name: true },
+          select: { id: true, name: true, invoicePrefix: true },
         });
-        if (mainBranch?.name) {
+        if (mainBranch) {
           branch3 = branchCodeFromName(mainBranch.name);
+          orderNumberPrefix = resolveOrderNumberPrefix(mainBranch);
           effectiveBranchId = mainBranch.id;
         }
       }
 
       const branchDisc = branchIdDiscriminator(effectiveBranchId);
-      const suffix = data.orderSource === 'WALK_IN' ? 'WI' : 'ON';
-      const idPrefix = `${branch3}${branchDisc}${ddMmYyyy}`;
-      const seq = await nextOrderSequenceForDay(tx, effectiveBranchId, dayStart, dayEnd, idPrefix, suffix);
-      const id = buildOrderNumber(branch3, branchDisc, ddMmYyyy, seq, data.orderSource ?? null);
+      const sourceSuffix = data.orderSource === 'WALK_IN' ? 'WI' : 'ON';
+      const seq = await nextOrderSequenceForDay(
+        tx,
+        effectiveBranchId,
+        dayStart,
+        dayEnd,
+        orderNumberPrefix,
+        dd,
+        mm,
+        yy,
+        ddMmYyyy,
+        branch3,
+        branchDisc,
+        sourceSuffix,
+      );
+      const id = buildOrderNumber(orderNumberPrefix, dd, mm, yy, seq, data.orderSource ?? null);
 
       return tx.order.create({
         data: {
@@ -361,6 +441,19 @@ export class PrismaOrdersRepo implements OrdersRepo {
     pastRows.forEach((r) => { out[r.userId] = out[r.userId] ?? { past: 0, active: 0 }; out[r.userId].past = r._count.id; });
     activeRows.forEach((r) => { out[r.userId] = out[r.userId] ?? { past: 0, active: 0 }; out[r.userId].active = r._count.id; });
     return out;
+  }
+
+  async countDistinctCustomersWithPastOrActiveOrders(branchId?: string | null): Promise<number> {
+    const where: Prisma.OrderWhereInput = {
+      status: { not: PrismaOrderStatus.CANCELLED },
+      ...(branchId != null && branchId !== '' ? { branchId } : {}),
+    };
+    const rows = await (this.prisma as PrismaClient).order.findMany({
+      where,
+      select: { userId: true },
+      distinct: ['userId'],
+    });
+    return rows.length;
   }
 
   async updatePaymentStatus(orderId: string, paymentStatus: string): Promise<OrderRecord> {

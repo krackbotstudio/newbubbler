@@ -4,6 +4,7 @@ export interface AdminUserRecord {
   email: string;
   role: string;
   branchId: string | null;
+  branchIds: string[];
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -11,10 +12,14 @@ export interface AdminUserRecord {
 
 export interface AdminUsersFilters {
   role?: string;
+  roles?: string[];
+  actorRole?: string;
   active?: boolean;
   search?: string;
   /** When set, only users assigned to this branch (for branch head list). */
   branchId?: string;
+  /** When set, filter users to any of these branches. */
+  branchIds?: string[];
   limit: number;
   cursor?: string;
 }
@@ -31,6 +36,7 @@ export interface AdminUsersRepo {
     email: string;
     role: string;
     branchId?: string | null;
+    branchIds?: string[];
     isActive: boolean;
     passwordHash?: string | null;
   }): Promise<AdminUserRecord>;
@@ -40,6 +46,7 @@ export interface AdminUsersRepo {
       name?: string | null;
       role?: string;
       branchId?: string | null;
+      branchIds?: string[];
       isActive?: boolean;
     },
   ): Promise<AdminUserRecord>;

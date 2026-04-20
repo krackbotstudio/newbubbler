@@ -304,7 +304,7 @@ export default function SubscriptionInvoicePage() {
             <Download className="mr-2 h-4 w-4" />
             {downloadLoading ? 'Downloading…' : 'Download PDF'}
           </Button>
-          <Button variant="outline" size="sm" onClick={handleShare} disabled={shareLoading}>
+          <Button variant="default" size="sm" onClick={handleShare} disabled={shareLoading}>
             <Share2 className="mr-2 h-4 w-4" />
             {shareLoading ? 'Sharing…' : 'Share on WhatsApp'}
           </Button>

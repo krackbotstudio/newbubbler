@@ -16,6 +16,7 @@ function toRecord(row: any): AdminUserRecord {
     email: row.email!,
     role: row.role,
     branchId: row.branchId ?? null,
+    branchIds: Array.isArray(row.branchIds) ? row.branchIds : [],
     isActive: row.isActive,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -26,14 +27,19 @@ export class PrismaAdminUsersRepo implements AdminUsersRepo {
   constructor(private readonly prisma: PrismaLike) {}
 
   async listAdmin(filters: AdminUsersFilters): Promise<AdminUsersResult> {
-    const { role, active, search, branchId, limit, cursor } = filters;
+    const { role, roles, active, search, branchId, branchIds, limit, cursor } = filters;
 
     // Use `not: CUSTOMER` so we do not send `AGENT` in SQL until Postgres enum includes it (avoids 22P02 before migrate).
-    const where: any = {
-      role: role ? role : { not: 'CUSTOMER' },
-    };
+    const where: any = {};
+    if (Array.isArray(roles) && roles.length > 0) {
+      where.role = { in: roles };
+    } else {
+      where.role = role ? role : { not: 'CUSTOMER' };
+    }
     if (branchId) {
       where.branchId = branchId;
+    } else if (Array.isArray(branchIds) && branchIds.length > 0) {
+      where.branchId = { in: branchIds };
     }
     if (active !== undefined) {
       where.isActive = active;
@@ -67,6 +73,7 @@ export class PrismaAdminUsersRepo implements AdminUsersRepo {
     email: string;
     role: string;
     branchId?: string | null;
+    branchIds?: string[];
     isActive: boolean;
     passwordHash?: string | null;
   }): Promise<AdminUserRecord> {
@@ -77,9 +84,10 @@ export class PrismaAdminUsersRepo implements AdminUsersRepo {
           email: input.email,
           role: input.role as any,
           branchId: input.branchId ?? undefined,
+          branchIds: input.branchIds ?? [],
           isActive: input.isActive,
           passwordHash: input.passwordHash ?? undefined,
-        },
+        } as any,
       });
       return toRecord(row as any);
     } catch (e: any) {
@@ -98,6 +106,7 @@ export class PrismaAdminUsersRepo implements AdminUsersRepo {
       name?: string | null;
       role?: string;
       branchId?: string | null;
+      branchIds?: string[];
       isActive?: boolean;
     },
   ): Promise<AdminUserRecord> {
@@ -105,6 +114,7 @@ export class PrismaAdminUsersRepo implements AdminUsersRepo {
     if (input.name !== undefined) data.name = input.name;
     if (input.role !== undefined) data.role = input.role as any;
     if (input.branchId !== undefined) data.branchId = input.branchId ?? null;
+    if (input.branchIds !== undefined) data.branchIds = { set: input.branchIds };
     if (input.isActive !== undefined) data.isActive = input.isActive;
 
     const row = await this.prisma.user.update({

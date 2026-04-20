@@ -17,7 +17,7 @@ import { toAnalyticsPoints, type AdminOrdersFilters } from '@/types';
 import type { AnalyticsPreset, AnalyticsTotals } from '@/types';
 import { toast } from 'sonner';
 import type { AxiosError } from 'axios';
-import { getStoredUser, isBranchFilterLocked } from '@/lib/auth';
+import { getStoredUser, isBranchFilterLocked, restrictBranchesForUser } from '@/lib/auth';
 import { LockedBranchSelect } from '@/components/shared/LockedBranchSelect';
 import { normalizeDateRangeDraft } from '@/lib/normalize-applied-date-range';
 
@@ -55,6 +55,8 @@ export default function AnalyticsPage() {
   const effectiveScopedBranchId = branchLocked ? user?.branchId ?? null : null;
 
   const { data: branches = [], isLoading: branchesLoading } = useBranches();
+  const branchOptions = useMemo(() => restrictBranchesForUser(branches, user), [branches, user]);
+  const isPartialAdmin = user?.role === 'PARTIAL_ADMIN';
   const [branchId, setBranchId] = useState<string>('');
   const effectiveBranchId = effectiveScopedBranchId ?? (branchId || null);
   const [cursor, setCursor] = useState<string | undefined>(undefined);
@@ -161,6 +163,11 @@ export default function AnalyticsPage() {
   useEffect(() => {
     setCursor(undefined);
   }, [selectedPreset, appliedDateFrom, appliedDateTo, effectiveBranchId]);
+
+  useEffect(() => {
+    if (branchLocked || !isPartialAdmin || branchId) return;
+    if (branchOptions.length > 0) setBranchId(branchOptions[0].id);
+  }, [branchLocked, isPartialAdmin, branchId, branchOptions]);
 
   const limit = 20;
   const ordersFilters: AdminOrdersFilters = {
@@ -279,8 +286,8 @@ export default function AnalyticsPage() {
               }}
               disabled={branchesLoading}
             >
-              <option value="">All branches</option>
-              {(branches ?? []).map((b) => (
+              {!isPartialAdmin && <option value="">All branches</option>}
+              {branchOptions.map((b) => (
                 <option key={b.id} value={b.id}>
                   {b.name}
                 </option>

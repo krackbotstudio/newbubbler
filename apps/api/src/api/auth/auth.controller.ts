@@ -4,6 +4,7 @@ import {
   RequestCustomerOtpDto,
   VerifyCustomerOtpDto,
 } from './dto/customer-otp.dto';
+import { CustomerMobileLoginDto } from './dto/customer-mobile-login.dto';
 import { AdminLoginDto } from './dto/admin-login.dto';
 import { SyncProfileDto } from './dto/sync-profile.dto';
 import { JwtAuthGuard } from '../common/jwt-auth.guard';
@@ -43,6 +44,11 @@ export class AuthController {
       otp: dto.otp,
       requestId: dto.requestId ?? dto.phone,
     });
+  }
+
+  @Post('customer/mobile/login')
+  loginCustomerWithMobile(@Body() dto: CustomerMobileLoginDto) {
+    return this.authService.loginCustomerByMobile(dto.phone);
   }
 
   @Post('admin/login')

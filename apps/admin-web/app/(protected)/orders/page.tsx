@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { getStoredUser, isBranchFilterLocked } from '@/lib/auth';
+import { getStoredUser, isBranchFilterLocked, restrictBranchesForUser } from '@/lib/auth';
 import { useDeleteOrder, useOrders } from '@/hooks/useOrders';
 import { useBranches } from '@/hooks/useBranches';
 import { useDebounce } from '@/hooks/useDebounce';
@@ -35,8 +35,10 @@ export default function OrdersPage() {
   const user = useMemo(() => getStoredUser(), []);
   const branchLocked = !!(user && isBranchFilterLocked(user.role, user.branchId));
   const { data: branches = [] } = useBranches();
+  const branchOptions = useMemo(() => restrictBranchesForUser(branches, user), [branches, user]);
   const deleteOrder = useDeleteOrder();
   const isAdmin = user?.role === 'ADMIN';
+  const isPartialAdmin = user?.role === 'PARTIAL_ADMIN';
   const [searchInput, setSearchInput] = useState('');
   const debouncedSearch = useDebounce(searchInput.trim(), 400);
   const [branchId, setBranchId] = useState<string>('');
@@ -53,6 +55,11 @@ export default function OrdersPage() {
   useEffect(() => {
     if (branchLocked && user?.branchId) setBranchId(user.branchId);
   }, [branchLocked, user?.branchId]);
+
+  useEffect(() => {
+    if (branchLocked || !isPartialAdmin || branchId) return;
+    if (branchOptions.length > 0) setBranchId(branchOptions[0].id);
+  }, [branchLocked, isPartialAdmin, branchId, branchOptions]);
 
   const filters = {
     search: debouncedSearch || undefined,
@@ -142,8 +149,8 @@ export default function OrdersPage() {
                   }}
                   title="Filter orders by branch name"
                 >
-                  <option value="">All branches</option>
-                  {branches.map((b) => (
+                  {!isPartialAdmin && <option value="">All branches</option>}
+                  {branchOptions.map((b) => (
                     <option key={b.id} value={b.id}>
                       {b.name ?? b.id}
                     </option>

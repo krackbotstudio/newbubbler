@@ -5,7 +5,7 @@ import { JwtAuthGuard } from '../../common/jwt-auth.guard';
 import { Roles } from '../../common/roles.decorator';
 import { RolesGuard } from '../../common/roles.guard';
 import type { AuthUser } from '../../common/roles.guard';
-import { isBranchScopedStaffRole } from '../../common/branch-scope.util';
+import { resolveScopedBranchId } from '../../common/branch-scope.util';
 import { AdminAnalyticsService } from '../services/admin-analytics.service';
 import { RevenueQueryDto } from '../dto/revenue-query.dto';
 import type { RevenuePreset } from '../../../application/time/analytics-date';
@@ -17,7 +17,7 @@ const PRESETS: RevenuePreset[] = [
 
 @Controller('admin/analytics')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.ADMIN, Role.BILLING, Role.OPS, AGENT_ROLE)
+@Roles(Role.ADMIN, Role.PARTIAL_ADMIN, Role.BILLING, Role.OPS, AGENT_ROLE)
 export class AdminAnalyticsController {
   constructor(private readonly adminAnalyticsService: AdminAnalyticsService) {}
 
@@ -28,8 +28,7 @@ export class AdminAnalyticsController {
       : undefined;
     const user = req.user;
     const branchFromQuery = query.branchId ? String(query.branchId) : undefined;
-    const branchId =
-      isBranchScopedStaffRole(user.role) && user.branchId ? user.branchId : branchFromQuery;
+    const branchId = resolveScopedBranchId(user, branchFromQuery);
     const dateFrom = query.dateFrom ? new Date(query.dateFrom) : undefined;
     const dateTo = query.dateTo ? new Date(query.dateTo) : undefined;
     return this.adminAnalyticsService.getRevenue({
@@ -47,8 +46,7 @@ export class AdminAnalyticsController {
       : undefined;
     const user = req.user;
     const branchFromQuery = query.branchId ? String(query.branchId) : undefined;
-    const branchId =
-      isBranchScopedStaffRole(user.role) && user.branchId ? user.branchId : branchFromQuery;
+    const branchId = resolveScopedBranchId(user, branchFromQuery);
     const dateFrom = query.dateFrom ? new Date(query.dateFrom) : undefined;
     const dateTo = query.dateTo ? new Date(query.dateTo) : undefined;
     return this.adminAnalyticsService.getCompletedCatalogItems({
@@ -60,11 +58,10 @@ export class AdminAnalyticsController {
   }
 
   @Get('dashboard-kpis')
-  async getDashboardKpis(@Req() req: { user: AuthUser }) {
+  async getDashboardKpis(@Query() query: RevenueQueryDto, @Req() req: { user: AuthUser }) {
     const user = req.user;
-    if (isBranchScopedStaffRole(user.role) && user.branchId) {
-      return this.adminAnalyticsService.getDashboardKpisForBranch(user.branchId);
-    }
-    return this.adminAnalyticsService.getDashboardKpis();
+    const branchFromQuery = query.branchId ? String(query.branchId) : null;
+    const branchId = resolveScopedBranchId(user, branchFromQuery) ?? null;
+    return this.adminAnalyticsService.getDashboardKpis({ branchId });
   }
 }

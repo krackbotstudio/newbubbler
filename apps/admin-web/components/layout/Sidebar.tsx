@@ -8,6 +8,7 @@ import { canAccessRoute, isNavHidden } from '@/lib/permissions';
 import { cn } from '@/lib/utils';
 import { getApiOrigin } from '@/lib/api';
 import { useBranding } from '@/hooks/useBranding';
+import { useBranch } from '@/hooks/useBranches';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import {
@@ -40,6 +41,7 @@ const NAV_GROUPS: { items: NavItem[] }[] = [
       { href: '/orders', label: 'Orders', icon: Package },
       { href: '/walk-in-orders', label: 'Walk-in orders', icon: Store },
       { href: '/customers', label: 'Customers', icon: Users },
+      { href: '/customer-portal', label: 'Customer portal', icon: Palette },
     ],
   },
   {
@@ -73,6 +75,7 @@ export interface SidebarProps {
 export function Sidebar({ user, collapsed = false, onToggleCollapse, mobileOpen = false, onCloseMobile }: SidebarProps) {
   const pathname = usePathname();
   const { data: branding } = useBranding();
+  const { data: activeBranch } = useBranch(user.branchId ?? null);
 
   const navGroups = useMemo(
     () =>
@@ -82,16 +85,17 @@ export function Sidebar({ user, collapsed = false, onToggleCollapse, mobileOpen 
     [user.role],
   );
 
-  const logoUrl = branding?.logoUrl
-    ? (() => {
-        const base = branding.logoUrl.startsWith('http') ? branding.logoUrl : `${getApiOrigin()}${branding.logoUrl}`;
-        return `${base}${base.includes('?') ? '&' : '?'}v=${encodeURIComponent(branding.updatedAt)}`;
-      })()
-    : null;
+  const logoUrl = (() => {
+    const src = activeBranch?.logoUrl ?? branding?.logoUrl ?? null;
+    if (!src) return null;
+    const base = src.startsWith('http') ? src : `${getApiOrigin()}${src}`;
+    const version = activeBranch?.updatedAt ?? branding?.updatedAt ?? '';
+    return `${base}${base.includes('?') ? '&' : '?'}v=${encodeURIComponent(version)}`;
+  })();
 
   const sidebarContent = (
     <>
-      <div className="flex h-14 shrink-0 items-center justify-between border-b border-pink-200 px-3 dark:border-pink-800">
+      <div className="flex h-14 shrink-0 items-center justify-between border-b px-3">
         {logoUrl ? (
           <img
             src={logoUrl}
@@ -135,7 +139,7 @@ export function Sidebar({ user, collapsed = false, onToggleCollapse, mobileOpen 
             key={groupIndex}
             className={cn(
               'space-y-0.5',
-              groupIndex > 0 && 'mt-2 border-t border-pink-200 pt-2 dark:border-pink-800',
+              groupIndex > 0 && 'mt-2 border-t pt-2',
             )}
           >
             {group.items.map((item) => {
@@ -160,7 +164,7 @@ export function Sidebar({ user, collapsed = false, onToggleCollapse, mobileOpen 
             })}
           </div>
         ))}
-        <div className="mt-2 shrink-0 border-t border-pink-200 pt-2 dark:border-pink-800">
+        <div className="mt-2 shrink-0 border-t pt-2">
           <Button
             variant="ghost"
             size="sm"
@@ -191,7 +195,7 @@ export function Sidebar({ user, collapsed = false, onToggleCollapse, mobileOpen 
       )}
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 top-0 z-50 flex h-dvh flex-col border-r border-pink-200 bg-pink-50 transition-[width,transform] duration-200 ease-in-out dark:border-pink-800 dark:bg-pink-950/20',
+          'fixed inset-y-0 left-0 top-0 z-50 flex h-dvh flex-col border-r bg-secondary/35 transition-[width,transform] duration-200 ease-in-out',
           'w-64',
           mobileOpen ? 'translate-x-0' : '-translate-x-full',
           'md:translate-x-0',

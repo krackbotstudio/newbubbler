@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,7 +17,7 @@ import { useFeedbackList, useFeedbackRatingStats } from '@/hooks/useFeedback';
 import { formatDateTime } from '@/lib/format';
 import type { FeedbackStatus, FeedbackType } from '@/types';
 import { Skeleton } from '@/components/ui/skeleton';
-import { getStoredUser, isBranchFilterLocked } from '@/lib/auth';
+import { getStoredUser, isBranchFilterLocked, restrictBranchesForUser } from '@/lib/auth';
 import { LockedBranchSelect } from '@/components/shared/LockedBranchSelect';
 import { getApiError } from '@/lib/api';
 import { normalizeDateRangeDraft } from '@/lib/normalize-applied-date-range';
@@ -40,8 +40,15 @@ export default function FeedbackPage() {
   const branchLocked = !!(user && isBranchFilterLocked(user.role, user.branchId));
   const effectiveScopedBranchId = branchLocked ? user?.branchId ?? null : null;
   const { data: branches = [], isLoading: branchesLoading } = useBranches();
+  const branchOptions = useMemo(() => restrictBranchesForUser(branches, user), [branches, user]);
+  const isPartialAdmin = user?.role === 'PARTIAL_ADMIN';
   const [branchId, setBranchId] = useState<string>('');
   const effectiveBranchId = effectiveScopedBranchId ?? (branchId || null);
+
+  useEffect(() => {
+    if (branchLocked || !isPartialAdmin || branchId) return;
+    if (branchOptions.length > 0) setBranchId(branchOptions[0].id);
+  }, [branchLocked, isPartialAdmin, branchId, branchOptions]);
 
   const filters = {
     type: type || undefined,
@@ -131,8 +138,8 @@ export default function FeedbackPage() {
                 }}
                 disabled={branchesLoading}
               >
-                <option value="">All branches</option>
-                {(branches ?? []).map((b) => (
+                {!isPartialAdmin && <option value="">All branches</option>}
+                {branchOptions.map((b) => (
                   <option key={b.id} value={b.id}>
                     {b.name}
                   </option>

@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Patch, Body, Post, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Patch, Body, Post, UseGuards, Req } from '@nestjs/common';
 import { OrderStatus, Role } from '@shared/enums';
 import { AGENT_ROLE } from '../common/agent-role';
 import { JwtAuthGuard } from '../common/jwt-auth.guard';
@@ -18,7 +18,13 @@ export class OrdersController {
 
   @Post()
   @Roles(Role.CUSTOMER)
-  async createOrder(@CurrentUser() user: AuthUser, @Body() dto: CreateOrderDto) {
+  async createOrder(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: CreateOrderDto,
+    @Req() req: { headers?: { host?: string; 'x-forwarded-host'?: string; 'x-portal-slug'?: string } },
+  ) {
+    const host = req.headers?.['x-forwarded-host'] ?? req.headers?.host;
+    const slugHint = req.headers?.['x-portal-slug'];
     const result = await this.ordersService.createForCustomer(user, {
       orderType: dto.orderType,
       serviceType: dto.serviceType,
@@ -30,14 +36,19 @@ export class OrdersController {
       estimatedWeightKg: dto.estimatedWeightKg,
       subscriptionId: dto.subscriptionId,
       branchId: dto.branchId,
-    });
+    }, host, slugHint);
     return result;
   }
 
   @Get()
   @Roles(Role.CUSTOMER)
-  async listOrders(@CurrentUser() user: AuthUser) {
-    const orders = await this.ordersService.listForCustomer(user);
+  async listOrders(
+    @CurrentUser() user: AuthUser,
+    @Req() req: { headers?: { host?: string; 'x-forwarded-host'?: string; 'x-portal-slug'?: string } },
+  ) {
+    const host = req.headers?.['x-forwarded-host'] ?? req.headers?.host;
+    const slugHint = req.headers?.['x-portal-slug'];
+    const orders = await this.ordersService.listForCustomer(user, host, slugHint);
     return orders.map((o) => {
       const ext = o as {
         amountToPayPaise?: number | null;
@@ -71,8 +82,14 @@ export class OrdersController {
 
   @Get(':id')
   @Roles(Role.CUSTOMER, Role.ADMIN, Role.OPS, Role.BILLING, AGENT_ROLE)
-  async getOrder(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    const order = await this.ordersService.getOrderForUser(user, id);
+  async getOrder(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Req() req: { headers?: { host?: string; 'x-forwarded-host'?: string; 'x-portal-slug'?: string } },
+  ) {
+    const host = req.headers?.['x-forwarded-host'] ?? req.headers?.host;
+    const slugHint = req.headers?.['x-portal-slug'];
+    const order = await this.ordersService.getOrderForUser(user, id, host, slugHint);
     return order;
   }
 

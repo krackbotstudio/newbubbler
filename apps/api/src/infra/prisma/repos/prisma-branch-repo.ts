@@ -15,6 +15,8 @@ function toRecord(row: {
   invoicePrefix: string | null;
   itemTagBrandName: string | null;
   termsAndConditions: string | null;
+  primaryColor: string | null;
+  secondaryColor: string | null;
   logoUrl: string | null;
   upiId: string | null;
   upiPayeeName: string | null;
@@ -36,6 +38,8 @@ function toRecord(row: {
     invoicePrefix: row.invoicePrefix,
     itemTagBrandName: row.itemTagBrandName,
     termsAndConditions: row.termsAndConditions,
+    primaryColor: row.primaryColor,
+    secondaryColor: row.secondaryColor,
     logoUrl: row.logoUrl,
     upiId: row.upiId,
     upiPayeeName: row.upiPayeeName,
@@ -63,6 +67,8 @@ export class PrismaBranchRepo implements BranchRepo {
         invoicePrefix: data.invoicePrefix ?? undefined,
         itemTagBrandName: data.itemTagBrandName ?? undefined,
         termsAndConditions: data.termsAndConditions ?? undefined,
+        primaryColor: data.primaryColor ?? undefined,
+        secondaryColor: data.secondaryColor ?? undefined,
         logoUrl: data.logoUrl ?? undefined,
         upiId: data.upiId ?? undefined,
         upiPayeeName: data.upiPayeeName ?? undefined,
@@ -105,6 +111,8 @@ export class PrismaBranchRepo implements BranchRepo {
         ...(data.invoicePrefix !== undefined && { invoicePrefix: data.invoicePrefix }),
         ...(data.itemTagBrandName !== undefined && { itemTagBrandName: data.itemTagBrandName }),
         ...(data.termsAndConditions !== undefined && { termsAndConditions: data.termsAndConditions }),
+        ...(data.primaryColor !== undefined && { primaryColor: data.primaryColor }),
+        ...(data.secondaryColor !== undefined && { secondaryColor: data.secondaryColor }),
         ...(data.logoUrl !== undefined && { logoUrl: data.logoUrl }),
         ...(data.upiId !== undefined && { upiId: data.upiId }),
         ...(data.upiPayeeName !== undefined && { upiPayeeName: data.upiPayeeName }),

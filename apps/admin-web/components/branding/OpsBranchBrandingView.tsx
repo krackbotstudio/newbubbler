@@ -20,8 +20,15 @@ function imageUrl(url: string | null, cacheBuster?: string | null): string | nul
   return `${full}${full.includes('?') ? '&' : '?'}v=${encodeURIComponent(cacheBuster)}`;
 }
 
+function normalizeHexColor(value: string | null | undefined): string | null {
+  const v = (value ?? '').trim();
+  if (!v) return null;
+  const base = v.startsWith('#') ? v : `#${v}`;
+  return /^#[0-9A-Fa-f]{6}$/.test(base) ? base.toUpperCase() : null;
+}
+
 const textareaClass = cn(
-  'flex min-h-[120px] w-full rounded-md border border-pink-200 bg-pink-50 px-3 py-2 text-sm text-pink-700 ring-offset-background placeholder:font-normal placeholder:text-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-pink-950/30 dark:border-pink-800 dark:text-pink-300 dark:placeholder:text-gray-400',
+  'flex min-h-[120px] w-full rounded-md border border-primary/30 bg-secondary/35 px-3 py-2 text-sm text-primary ring-offset-background placeholder:font-normal placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
 );
 
 const branchSchema = z
@@ -45,6 +52,8 @@ const branchSchema = z
     panNumber: z.string().max(20).optional(),
     invoicePrefix: z.string().max(24).optional(),
     itemTagBrandName: z.string().max(40).optional(),
+    primaryColor: z.string().regex(/^#?[0-9A-Fa-f]{6}$/, 'Use a 6-digit hex color (e.g. #D94680)').optional(),
+    secondaryColor: z.string().regex(/^#?[0-9A-Fa-f]{6}$/, 'Use a 6-digit hex color (e.g. #FCE7F3)').optional(),
     footerNote: z.string().max(500).optional(),
     upiId: z.string().max(120).optional(),
     upiPayeeName: z.string().max(120).optional(),
@@ -76,6 +85,8 @@ export function OpsBranchBrandingView({ branchId }: { branchId: string }) {
   const [panNumber, setPanNumber] = useState('');
   const [invoicePrefix, setInvoicePrefix] = useState('');
   const [itemTagBrandName, setItemTagBrandName] = useState('');
+  const [primaryColor, setPrimaryColor] = useState('');
+  const [secondaryColor, setSecondaryColor] = useState('');
   const [footerNote, setFooterNote] = useState('');
   const [upiId, setUpiId] = useState('');
   const [upiPayeeName, setUpiPayeeName] = useState('');
@@ -100,6 +111,8 @@ export function OpsBranchBrandingView({ branchId }: { branchId: string }) {
       setPanNumber(branch.panNumber ?? '');
       setInvoicePrefix(branch.invoicePrefix ?? '');
       setItemTagBrandName(branch.itemTagBrandName ?? '');
+      setPrimaryColor(branch.primaryColor ?? '#D94680');
+      setSecondaryColor(branch.secondaryColor ?? '#FCE7F3');
       setFooterNote(branch.footerNote ?? '');
       setUpiId(branch.upiId ?? '');
       setUpiPayeeName(branch.upiPayeeName ?? '');
@@ -119,6 +132,8 @@ export function OpsBranchBrandingView({ branchId }: { branchId: string }) {
       panNumber: panNumber.trim() || undefined,
       invoicePrefix: invoicePrefix.trim() || undefined,
       itemTagBrandName: itemTagBrandName.trim() || undefined,
+      primaryColor: primaryColor.trim() || undefined,
+      secondaryColor: secondaryColor.trim() || undefined,
       footerNote: footerNote.trim() || undefined,
       upiId: upiId.trim() || undefined,
       upiPayeeName: upiPayeeName.trim() || undefined,
@@ -154,6 +169,8 @@ export function OpsBranchBrandingView({ branchId }: { branchId: string }) {
         panNumber: parsed.data.panNumber?.trim() || null,
         invoicePrefix: parsed.data.invoicePrefix?.trim() || null,
         itemTagBrandName: parsed.data.itemTagBrandName?.trim() || null,
+        primaryColor: normalizeHexColor(parsed.data.primaryColor),
+        secondaryColor: normalizeHexColor(parsed.data.secondaryColor),
         footerNote: parsed.data.footerNote?.trim() || null,
         upiId: parsed.data.upiId?.trim() || null,
         upiPayeeName: parsed.data.upiPayeeName?.trim() || null,
@@ -298,6 +315,42 @@ export function OpsBranchBrandingView({ branchId }: { branchId: string }) {
                     `This tag line is already used by "${other}". Use a different short brand for each branch.`
                   }
                 />
+              </FormField>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <FormField label="Primary color (hex)">
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="color"
+                    value={normalizeHexColor(primaryColor) ?? '#D94680'}
+                    onChange={(e) => setPrimaryColor(e.target.value)}
+                    className="h-10 w-16 p-1"
+                  />
+                  <Input
+                    value={primaryColor}
+                    onChange={(e) => setPrimaryColor(e.target.value)}
+                    placeholder="#D94680"
+                    maxLength={7}
+                  />
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">Used for selected nav and primary actions.</p>
+              </FormField>
+              <FormField label="Secondary color (hex)">
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="color"
+                    value={normalizeHexColor(secondaryColor) ?? '#FCE7F3'}
+                    onChange={(e) => setSecondaryColor(e.target.value)}
+                    className="h-10 w-16 p-1"
+                  />
+                  <Input
+                    value={secondaryColor}
+                    onChange={(e) => setSecondaryColor(e.target.value)}
+                    placeholder="#FCE7F3"
+                    maxLength={7}
+                  />
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">Replaces the default light-pink branch background.</p>
               </FormField>
             </div>
             <FormField label="Footer note on invoices (optional)">

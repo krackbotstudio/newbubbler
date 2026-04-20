@@ -23,6 +23,7 @@ import type {
   SegmentCategoryRepo,
   ServiceCategoryRepo,
   CustomersRepo,
+  CustomerPortalsRepo,
 } from '../../application/ports';
 import {
   ORDERS_REPO,
@@ -40,6 +41,7 @@ import {
   SEGMENT_CATEGORY_REPO,
   SERVICE_CATEGORY_REPO,
   CUSTOMERS_REPO,
+  CUSTOMER_PORTALS_REPO,
 } from '../../infra/infra.module';
 import type { AuthUser } from '../common/roles.guard';
 import { AppError } from '../../application/errors';
@@ -62,7 +64,33 @@ export class OrdersService {
     @Inject(SEGMENT_CATEGORY_REPO) private readonly segmentCategoryRepo: SegmentCategoryRepo,
     @Inject(SERVICE_CATEGORY_REPO) private readonly serviceCategoryRepo: ServiceCategoryRepo,
     @Inject(CUSTOMERS_REPO) private readonly customersRepo: CustomersRepo,
+    @Inject(CUSTOMER_PORTALS_REPO) private readonly customerPortalsRepo: CustomerPortalsRepo,
   ) {}
+
+  private async resolvePortalScopeForCustomer(
+    userId: string,
+    rawHost?: string,
+    slugHint?: string,
+  ): Promise<{ portalId: string; branchId: string } | null> {
+    const hinted = (slugHint ?? '').trim().toLowerCase();
+    const host = (rawHost ?? '').split(',')[0]?.trim().toLowerCase().split(':')[0] ?? '';
+    const parts = host.split('.');
+    const hostSlug =
+      parts.length >= 4 && parts.slice(-3).join('.') === 'bubbler.krackbot.com'
+        ? parts.slice(0, -3).join('.')
+        : '';
+    const slug = hinted || hostSlug;
+    if (!slug) return null;
+    const portal = await this.customerPortalsRepo.getByAccessKey(slug);
+    if (!portal || !portal.isActive) {
+      throw new AppError('NOT_FOUND', 'Portal not found');
+    }
+    const isMember = await this.customerPortalsRepo.isMember(portal.id, userId);
+    if (!isMember) {
+      throw new AppError('FORBIDDEN', 'Join portal before accessing customer data');
+    }
+    return { portalId: portal.id, branchId: portal.branchId };
+  }
 
   async listInvoicesForOrder(orderId: string, user: AuthUser) {
     return listInvoicesForOrder(orderId, user.id, {
@@ -85,7 +113,8 @@ export class OrdersService {
     estimatedWeightKg?: number;
     subscriptionId?: string;
     branchId?: string;
-  }): Promise<{ orderId: string; orderType?: string }> {
+  }, rawHost?: string, slugHint?: string): Promise<{ orderId: string; orderType?: string }> {
+    const portalScope = await this.resolvePortalScopeForCustomer(user.id, rawHost, slugHint);
     const orderType =
       dto.orderType === 'SUBSCRIPTION' ? OrderType.SUBSCRIPTION
         : OrderType.INDIVIDUAL;
@@ -109,6 +138,9 @@ export class OrdersService {
       });
     }
 
+    const requestedBranchId = dto.branchId?.trim() || null;
+    const effectiveBranchId = portalScope ? portalScope.branchId : requestedBranchId;
+
     const result = await createOrder(
       {
         userId: user.id,
@@ -121,7 +153,7 @@ export class OrdersService {
         timeWindow: dto.timeWindow,
         estimatedWeightKg: dto.estimatedWeightKg ?? null,
         subscriptionId: dto.subscriptionId ?? null,
-        branchId: dto.branchId?.trim() || null,
+        branchId: effectiveBranchId,
       },
       {
         ordersRepo: this.ordersRepo,
@@ -144,17 +176,32 @@ export class OrdersService {
     return { orderId: result.orderId, orderType };
   }
 
-  async listForCustomer(user: AuthUser): Promise<Array<OrderRecord & { amountToPayPaise: number | null }>> {
-    return this.ordersRepo.listByUserForCustomer(user.id);
+  async listForCustomer(
+    user: AuthUser,
+    rawHost?: string,
+    slugHint?: string,
+  ): Promise<Array<OrderRecord & { amountToPayPaise: number | null }>> {
+    const portalScope = await this.resolvePortalScopeForCustomer(user.id, rawHost, slugHint);
+    const list = await this.ordersRepo.listByUserForCustomer(user.id);
+    if (!portalScope) return list;
+    return list.filter((o) => o.branchId != null && o.branchId === portalScope.branchId);
   }
 
-  async getOrderForUser(user: AuthUser, id: string): Promise<OrderRecord> {
+  async getOrderForUser(user: AuthUser, id: string, rawHost?: string, slugHint?: string): Promise<OrderRecord> {
     const order = await this.ordersRepo.getById(id);
     if (!order) {
       throw new AppError('ORDER_NOT_FOUND', 'Order not found', { orderId: id });
     }
     if (user.role === 'CUSTOMER' && order.userId !== user.id) {
       throw new AppError('ORDER_ACCESS_DENIED', 'Not allowed to view this order');
+    }
+    if (user.role === 'CUSTOMER') {
+      const portalScope = await this.resolvePortalScopeForCustomer(user.id, rawHost, slugHint);
+      if (portalScope) {
+        if (!order.branchId || order.branchId !== portalScope.branchId) {
+          throw new AppError('ORDER_ACCESS_DENIED', 'Order is outside this portal');
+        }
+      }
     }
     return order;
   }

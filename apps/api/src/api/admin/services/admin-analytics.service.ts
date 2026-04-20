@@ -45,23 +45,20 @@ export class AdminAnalyticsService {
     return this.analyticsRepo.getCompletedCatalogItemQuantities(dateFrom, dateTo, input.branchId);
   }
 
-  async getDashboardKpis(): Promise<{ activeSubscriptionsCount: number; totalCustomersCount: number }> {
-    const [activeSubscriptionsCount, totalCustomersCount] = await Promise.all([
-      this.subscriptionsRepo.countActive(),
-      this.customersRepo.count(),
-    ]);
-    return { activeSubscriptionsCount, totalCustomersCount };
-  }
-
-  /** KPIs scoped to one branch (Branch Head / Agent dashboard). */
-  async getDashboardKpisForBranch(branchId: string): Promise<{
+  async getDashboardKpis(input?: { branchId?: string | null }): Promise<{
     activeSubscriptionsCount: number;
     totalCustomersCount: number;
   }> {
-    const [activeSubscriptionsCount, totalCustomersCount] = await Promise.all([
-      this.subscriptionsRepo.countActiveForBranch(branchId),
-      this.customersRepo.countWithOrdersInBranch(branchId),
-    ]);
+    const branchId = input?.branchId?.trim() ? input.branchId.trim() : null;
+    const [activeSubscriptionsCount, totalCustomersCount] = branchId
+      ? await Promise.all([
+          this.subscriptionsRepo.countActiveForBranch(branchId),
+          this.customersRepo.countWithOrdersInBranch(branchId),
+        ])
+      : await Promise.all([
+          this.subscriptionsRepo.countActive(),
+          this.customersRepo.count(),
+        ]);
     return { activeSubscriptionsCount, totalCustomersCount };
   }
 }

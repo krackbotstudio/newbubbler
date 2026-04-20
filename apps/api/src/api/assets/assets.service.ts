@@ -125,6 +125,28 @@ export class AssetsService {
     return { stream, contentType };
   }
 
+  /** Customer portal branding assets: pathKey = branding/portals/:fileName */
+  async getBrandingPortalStream(
+    fileName: string,
+  ): Promise<{ stream: Readable; contentType: string }> {
+    if (!safeFileName(fileName)) {
+      throw new AppError('ASSET_NOT_FOUND', 'Invalid asset name');
+    }
+    const local = await this.getLocalStreamOrNull(path.join('branding', 'portals', fileName));
+    if (local) return local;
+
+    const pathKey = `branding/portals/${fileName}`;
+    const stream = await this.storageAdapter.getObjectStream(pathKey);
+    if (!stream) {
+      throw new AppError('ASSET_NOT_FOUND', 'Asset not found', { fileName });
+    }
+    const contentType =
+      'getContentTypeForPath' in this.storageAdapter
+        ? (this.storageAdapter as StorageAdapter & { getContentTypeForPath(p: string): string }).getContentTypeForPath(pathKey)
+        : 'application/octet-stream';
+    return { stream, contentType };
+  }
+
   /** Catalog item custom icons: pathKey = catalog-icons/:fileName */
   async getCatalogIconStream(
     fileName: string,

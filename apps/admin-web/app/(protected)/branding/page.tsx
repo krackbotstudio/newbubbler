@@ -610,12 +610,12 @@ export default function BrandingPage() {
         <CardHeader>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <CardTitle>Branches</CardTitle>
-            <RoleGate role={role} gate="brandingEdit">
+            {role === 'ADMIN' ? (
               <Button onClick={handleAddBranch} size="sm">
                 <Plus className="mr-2 h-4 w-4" />
                 Add branch
               </Button>
-            </RoleGate>
+            ) : null}
           </div>
         </CardHeader>
         <CardContent>
@@ -653,7 +653,7 @@ export default function BrandingPage() {
                       <p className="text-muted-foreground text-xs">{b.footerNote}</p>
                     )}
                   </div>
-                  <RoleGate role={role} gate="brandingEdit">
+                  {role === 'ADMIN' ? (
                     <div className="flex gap-2">
                       <Button
                         variant="outline"
@@ -674,7 +674,7 @@ export default function BrandingPage() {
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
-                  </RoleGate>
+                  ) : null}
                 </li>
               ))}
             </ul>

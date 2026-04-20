@@ -147,7 +147,7 @@ export class PrismaFeedbackRepo implements FeedbackRepo {
             ${input.orderId ?? null},
             ${input.type}::"FeedbackType",
             ${input.rating ?? null},
-            ${tagsText},
+            ${tagsText}::text[],
             ${input.message ?? null},
             ${(input.status as 'NEW' | 'REVIEWED' | 'RESOLVED') ?? 'NEW'}::"FeedbackStatus",
             ${null},

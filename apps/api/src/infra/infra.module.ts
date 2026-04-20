@@ -26,6 +26,7 @@ import {
   PrismaAnalyticsRepo,
   PrismaFeedbackRepo,
   PrismaAdminUsersRepo,
+  PrismaCustomerPortalsRepo,
 } from './prisma/repos';
 import type {
   OrdersRepo,
@@ -53,6 +54,7 @@ import type {
   AnalyticsRepo,
   FeedbackRepo,
   AdminUsersRepo,
+  CustomerPortalsRepo,
   StorageAdapter,
   PdfGenerator,
 } from '../application/ports';
@@ -85,6 +87,7 @@ export const CUSTOMERS_REPO = Symbol('CustomersRepo');
 export const ANALYTICS_REPO = Symbol('AnalyticsRepo');
 export const FEEDBACK_REPO = Symbol('FeedbackRepo');
 export const ADMIN_USERS_REPO = Symbol('AdminUsersRepo');
+export const CUSTOMER_PORTALS_REPO = Symbol('CustomerPortalsRepo');
 export const STORAGE_ADAPTER = Symbol('StorageAdapter');
 export const PDF_GENERATOR = Symbol('PdfGenerator');
 
@@ -192,6 +195,10 @@ export const PDF_GENERATOR = Symbol('PdfGenerator');
       useFactory: (): AdminUsersRepo => new PrismaAdminUsersRepo(prisma),
     },
     {
+      provide: CUSTOMER_PORTALS_REPO,
+      useFactory: (): CustomerPortalsRepo => new PrismaCustomerPortalsRepo(prisma),
+    },
+    {
       provide: STORAGE_ADAPTER,
       useFactory: (): StorageAdapter => {
         const url = process.env.SUPABASE_URL;
@@ -234,6 +241,7 @@ export const PDF_GENERATOR = Symbol('PdfGenerator');
     ANALYTICS_REPO,
     FEEDBACK_REPO,
     ADMIN_USERS_REPO,
+    CUSTOMER_PORTALS_REPO,
     STORAGE_ADAPTER,
     PDF_GENERATOR,
   ],

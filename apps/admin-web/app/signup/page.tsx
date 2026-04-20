@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, type CSSProperties } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -329,7 +329,15 @@ export default function SignupPage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-white lg:flex-row">
+    <div
+      className="flex min-h-screen flex-col bg-white lg:flex-row"
+      style={
+        {
+          '--primary': '221 83% 43%',
+          '--ring': '221 83% 43%',
+        } as CSSProperties
+      }
+    >
       <div className="relative h-48 w-full shrink-0 overflow-hidden bg-slate-100 lg:h-auto lg:min-h-screen lg:w-1/2">
         <Image
           src="/images/login-hero.png"
@@ -382,7 +390,7 @@ export default function SignupPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   autoComplete="email"
-                  className="border-slate-200 bg-sky-50/60 font-normal text-slate-900 placeholder:text-slate-400 focus-visible:ring-slate-400"
+                  className="border-slate-200 bg-sky-50/60 font-normal text-slate-900 placeholder:text-slate-400 focus-visible:ring-slate-400 [&:not(:placeholder-shown)]:text-slate-800"
                 />
               </div>
               <Button
@@ -422,7 +430,7 @@ export default function SignupPage() {
                     const digits = e.target.value.replace(/\D/g, '').slice(0, EMAIL_OTP_MAX_LEN);
                     setOtpCode(digits);
                   }}
-                  className="border-slate-200 bg-sky-50/60 font-mono text-lg tracking-widest text-slate-900 placeholder:text-slate-400 focus-visible:ring-slate-400"
+                  className="border-slate-200 bg-sky-50/60 font-mono text-lg tracking-widest text-slate-900 placeholder:text-slate-400 focus-visible:ring-slate-400 [&:not(:placeholder-shown)]:text-slate-800"
                 />
               </div>
               <div className="flex flex-col gap-2 sm:flex-row">
@@ -467,7 +475,7 @@ export default function SignupPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   autoComplete="new-password"
-                  className="border-slate-200 bg-sky-50/60 font-normal text-slate-900 placeholder:text-slate-400 focus-visible:ring-slate-400"
+                  className="border-slate-200 bg-sky-50/60 font-normal text-slate-900 placeholder:text-slate-400 focus-visible:ring-slate-400 [&:not(:placeholder-shown)]:text-slate-800"
                 />
               </div>
               <div className="space-y-2">
@@ -479,7 +487,7 @@ export default function SignupPage() {
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   autoComplete="name"
-                  className="border-slate-200 bg-sky-50/60 font-normal text-slate-900 placeholder:text-slate-400 focus-visible:ring-slate-400"
+                  className="border-slate-200 bg-sky-50/60 font-normal text-slate-900 placeholder:text-slate-400 focus-visible:ring-slate-400 [&:not(:placeholder-shown)]:text-slate-800"
                 />
               </div>
               <div className="space-y-2">
@@ -490,7 +498,7 @@ export default function SignupPage() {
                   id="branchName"
                   value={branchName}
                   onChange={(e) => setBranchName(e.target.value)}
-                  className="border-slate-200 bg-sky-50/60 font-normal text-slate-900 placeholder:text-slate-400 focus-visible:ring-slate-400"
+                  className="border-slate-200 bg-sky-50/60 font-normal text-slate-900 placeholder:text-slate-400 focus-visible:ring-slate-400 [&:not(:placeholder-shown)]:text-slate-800"
                 />
               </div>
               <div className="space-y-2">
@@ -501,7 +509,7 @@ export default function SignupPage() {
                   id="branchAddress"
                   value={branchAddress}
                   onChange={(e) => setBranchAddress(e.target.value)}
-                  className="border-slate-200 bg-sky-50/60 font-normal text-slate-900 placeholder:text-slate-400 focus-visible:ring-slate-400"
+                  className="border-slate-200 bg-sky-50/60 font-normal text-slate-900 placeholder:text-slate-400 focus-visible:ring-slate-400 [&:not(:placeholder-shown)]:text-slate-800"
                 />
               </div>
               <div className="space-y-2">
@@ -516,7 +524,7 @@ export default function SignupPage() {
                   placeholder="+91 98765 43210 or 9876543210"
                   value={branchPhone}
                   onChange={(e) => setBranchPhone(e.target.value)}
-                  className="border-slate-200 bg-sky-50/60 font-normal text-slate-900 placeholder:text-slate-400 focus-visible:ring-slate-400"
+                  className="border-slate-200 bg-sky-50/60 font-normal text-slate-900 placeholder:text-slate-400 focus-visible:ring-slate-400 [&:not(:placeholder-shown)]:text-slate-800"
                 />
               </div>
 
@@ -533,7 +541,7 @@ export default function SignupPage() {
                     id="branchLogo"
                     type="file"
                     accept="image/png,image/jpeg,image/webp"
-                    className="cursor-pointer border-slate-200 bg-white text-sm file:mr-3 file:rounded file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-slate-800"
+                    className="cursor-pointer border-slate-200 bg-white text-sm text-slate-800 [&:not(:placeholder-shown)]:text-slate-800 file:mr-3 file:rounded file:border-0 file:bg-sky-100 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-sky-900 hover:file:bg-sky-200"
                     onChange={(e) => {
                       const f = e.target.files?.[0];
                       if (!f) {
@@ -567,7 +575,7 @@ export default function SignupPage() {
                     placeholder="contact@mylaundry.com"
                     value={branchContactEmail}
                     onChange={(e) => setBranchContactEmail(e.target.value)}
-                    className="border-slate-200 bg-white font-normal text-slate-900 placeholder:text-slate-400 focus-visible:ring-slate-400"
+                    className="border-slate-200 bg-white font-normal text-slate-900 placeholder:text-slate-400 focus-visible:ring-slate-400 [&:not(:placeholder-shown)]:text-slate-800"
                   />
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -579,7 +587,7 @@ export default function SignupPage() {
                       id="gstNumber"
                       value={gstNumber}
                       onChange={(e) => setGstNumber(e.target.value)}
-                      className="border-slate-200 bg-white font-normal text-slate-900 focus-visible:ring-slate-400"
+                      className="border-slate-200 bg-white font-normal text-slate-900 focus-visible:ring-slate-400 [&:not(:placeholder-shown)]:text-slate-800"
                     />
                   </div>
                   <div className="space-y-2">
@@ -590,7 +598,7 @@ export default function SignupPage() {
                       id="panNumber"
                       value={panNumber}
                       onChange={(e) => setPanNumber(e.target.value)}
-                      className="border-slate-200 bg-white font-normal text-slate-900 focus-visible:ring-slate-400"
+                      className="border-slate-200 bg-white font-normal text-slate-900 focus-visible:ring-slate-400 [&:not(:placeholder-shown)]:text-slate-800"
                     />
                   </div>
                 </div>
@@ -603,7 +611,7 @@ export default function SignupPage() {
                     placeholder="name@bank"
                     value={upiId}
                     onChange={(e) => setUpiId(e.target.value)}
-                    className="border-slate-200 bg-white font-normal text-slate-900 focus-visible:ring-slate-400"
+                    className="border-slate-200 bg-white font-normal text-slate-900 focus-visible:ring-slate-400 [&:not(:placeholder-shown)]:text-slate-800"
                   />
                 </div>
                 <div className="space-y-2">
@@ -614,7 +622,7 @@ export default function SignupPage() {
                     id="upiPayeeName"
                     value={upiPayeeName}
                     onChange={(e) => setUpiPayeeName(e.target.value)}
-                    className="border-slate-200 bg-white font-normal text-slate-900 focus-visible:ring-slate-400"
+                    className="border-slate-200 bg-white font-normal text-slate-900 focus-visible:ring-slate-400 [&:not(:placeholder-shown)]:text-slate-800"
                   />
                 </div>
                 <div className="space-y-2">
@@ -627,7 +635,7 @@ export default function SignupPage() {
                     placeholder="https://…"
                     value={upiLink}
                     onChange={(e) => setUpiLink(e.target.value)}
-                    className="border-slate-200 bg-white font-normal text-slate-900 focus-visible:ring-slate-400"
+                    className="border-slate-200 bg-white font-normal text-slate-900 focus-visible:ring-slate-400 [&:not(:placeholder-shown)]:text-slate-800"
                   />
                 </div>
                 <div className="space-y-2">
@@ -638,7 +646,7 @@ export default function SignupPage() {
                     id="footerNote"
                     value={footerNote}
                     onChange={(e) => setFooterNote(e.target.value)}
-                    className="border-slate-200 bg-white font-normal text-slate-900 focus-visible:ring-slate-400"
+                    className="border-slate-200 bg-white font-normal text-slate-900 focus-visible:ring-slate-400 [&:not(:placeholder-shown)]:text-slate-800"
                   />
                 </div>
               </div>

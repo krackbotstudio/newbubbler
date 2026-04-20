@@ -22,3 +22,4 @@ export { PrismaCustomersRepo } from './prisma-customers-repo';
 export { PrismaAnalyticsRepo } from './prisma-analytics-repo';
 export { PrismaFeedbackRepo } from './prisma-feedback-repo';
 export { PrismaAdminUsersRepo } from './prisma-admin-users-repo';
+export { PrismaCustomerPortalsRepo } from './prisma-customer-portals-repo';

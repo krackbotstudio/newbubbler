@@ -1,5 +1,6 @@
 import type { PrismaClient } from '@prisma/client';
 import { Prisma, Role } from '@prisma/client';
+import { OrderStatus as PrismaOrderStatus } from '@prisma/client';
 import type { CustomersRepo, CustomerRecord, UpdateCustomerPatch, ListCustomersResult, CreateCustomerInput } from '../../../application/ports';
 
 type PrismaLike = Pick<PrismaClient, 'user'>;
@@ -82,21 +83,23 @@ export class PrismaCustomersRepo implements CustomersRepo {
 
   async countWithOrdersInBranch(branchId: string): Promise<number> {
     const db = this.prisma as unknown as PrismaClient;
-    const areas = await db.serviceArea.findMany({
-      where: { branchId, active: true },
-      select: { pincode: true },
-    });
-    const pincodes = [...new Set(areas.map((a) => a.pincode))];
-    const orderMatch: Prisma.OrderWhereInput =
-      pincodes.length > 0
-        ? {
-            OR: [{ branchId }, { branchId: null, pincode: { in: pincodes } }],
-          }
-        : { branchId };
     return db.user.count({
       where: {
         role: Role.CUSTOMER,
-        orders: { some: orderMatch },
+        orders: {
+          some: {
+            branchId,
+            status: {
+              in: [
+                PrismaOrderStatus.PICKED_UP,
+                PrismaOrderStatus.IN_PROCESSING,
+                PrismaOrderStatus.READY,
+                PrismaOrderStatus.OUT_FOR_DELIVERY,
+                PrismaOrderStatus.DELIVERED,
+              ],
+            },
+          },
+        },
       },
     });
   }

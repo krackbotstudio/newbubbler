@@ -39,7 +39,10 @@ export interface CustomersRepo {
   update(userId: string, patch: UpdateCustomerPatch): Promise<CustomerRecord>;
   /** Total number of users with role CUSTOMER. */
   count(): Promise<number>;
-  /** Distinct customers who have at least one order attributed to this branch (same rules as admin order list). */
+  /**
+   * Distinct customers who have at least one non-cancelled order attributed to this branch
+   * (same branch attribution rules as admin order list).
+   */
   countWithOrdersInBranch(branchId: string): Promise<number>;
   /** List customers with optional cursor and search (phone/name). When branchId is set, only customers with an order in that branch (same attribution as admin orders). */
   list(limit: number, cursor?: string | null, search?: string | null, branchId?: string | null): Promise<ListCustomersResult>;

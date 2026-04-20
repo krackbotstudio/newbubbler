@@ -17,7 +17,7 @@ export interface ActiveSubscriptionSummary {
 }
 
 export interface MeResponse {
-  user: { id: string; phone: string | null; role: string };
+  user: { id: string; phone: string | null; role: string; name: string | null; email: string | null };
   defaultAddress?: { id: string; pincode: string };
   /** All active subscriptions (customer picks one when booking). */
   activeSubscriptions: ActiveSubscriptionSummary[];

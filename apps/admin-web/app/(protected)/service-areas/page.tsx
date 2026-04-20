@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { getStoredUser, isBranchScopedStaff } from '@/lib/auth';
+import { getStoredUser, isBranchScopedStaff, restrictBranchesForUser } from '@/lib/auth';
 import { ErrorDisplay } from '@/components/shared/ErrorDisplay';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -29,6 +29,7 @@ export default function ServiceAreasPage() {
   const user = getStoredUser();
   const role = user?.role ?? 'CUSTOMER';
   const isBranchHead = isBranchScopedStaff(role) && !!user?.branchId;
+  const isPartialAdmin = role === 'PARTIAL_ADMIN';
   /** Branch heads (OPS) manage pincodes for their branch only; admins manage all. */
   const canManageServiceAreas = role === 'ADMIN' || (role === 'OPS' && !!user?.branchId);
 
@@ -46,9 +47,15 @@ export default function ServiceAreasPage() {
   }, [isBranchHead, user?.branchId]);
 
   const { data: branches = [], isLoading: branchesLoading } = useBranches();
+  const branchOptions = restrictBranchesForUser(branches, user);
   const branchIdForApi = branchFilter || undefined;
   const { data: areas, isLoading, error } = useServiceAreas(branchIdForApi);
-  const branchNameById = Object.fromEntries(branches.map((b) => [b.id, b.name ?? b.id]));
+  const branchNameById = Object.fromEntries(branchOptions.map((b) => [b.id, b.name ?? b.id]));
+
+  useEffect(() => {
+    if (isBranchHead || !isPartialAdmin || branchFilter) return;
+    if (branchOptions.length > 0) setBranchFilter(branchOptions[0].id);
+  }, [isBranchHead, isPartialAdmin, branchFilter, branchOptions]);
 
   if (error) {
     return (
@@ -74,8 +81,8 @@ export default function ServiceAreasPage() {
             disabled={!!isBranchHead}
             title={isBranchHead ? 'Your assigned branch (filter locked)' : undefined}
           >
-            <option value="">All branches</option>
-            {branches.map((b) => (
+            {!isPartialAdmin && <option value="">All branches</option>}
+            {branchOptions.map((b) => (
               <option key={b.id} value={b.id}>{b.name}</option>
             ))}
           </select>

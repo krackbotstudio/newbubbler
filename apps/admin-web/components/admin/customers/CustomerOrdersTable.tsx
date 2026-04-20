@@ -456,7 +456,7 @@ export function CustomerOrdersTable({ userId, role, userBranchId }: CustomerOrde
                 {downloadLoading ? 'Downloading…' : 'Download PDF'}
               </Button>
               <Button
-                variant="outline"
+                variant="default"
                 size="sm"
                 onClick={handleShare}
                 disabled={shareLoading}

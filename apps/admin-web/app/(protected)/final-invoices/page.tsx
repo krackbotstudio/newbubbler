@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { getStoredUser, isBranchScopedStaff } from '@/lib/auth';
+import { getStoredUser, isBranchScopedStaff, restrictBranchesForUser } from '@/lib/auth';
 import { useFinalInvoices, type AdminFinalInvoiceRow } from '@/hooks/useFinalInvoices';
 import { useBranches } from '@/hooks/useBranches';
 import { useWalkInLookupCustomer } from '@/hooks/useWalkIn';
@@ -29,6 +29,8 @@ export default function FinalInvoicesPage() {
   const user = useMemo(() => getStoredUser(), []);
   const isBranchHead = user && isBranchScopedStaff(user.role) && user.branchId;
   const { data: branches = [] } = useBranches();
+  const branchOptions = useMemo(() => restrictBranchesForUser(branches, user), [branches, user]);
+  const isPartialAdmin = user?.role === 'PARTIAL_ADMIN';
   const [countryCode, setCountryCode] = useState('+91');
   const [phoneDigits, setPhoneDigits] = useState('');
   const combinedPhone = useMemo(
@@ -52,6 +54,11 @@ export default function FinalInvoicesPage() {
   useEffect(() => {
     if (isBranchHead && user?.branchId) setBranchId(user.branchId);
   }, [isBranchHead, user?.branchId]);
+
+  useEffect(() => {
+    if (isBranchHead || !isPartialAdmin || branchId) return;
+    if (branchOptions.length > 0) setBranchId(branchOptions[0].id);
+  }, [isBranchHead, isPartialAdmin, branchId, branchOptions]);
 
   const filters = {
     customerId: resolvedCustomerId ?? undefined,
@@ -170,8 +177,8 @@ export default function FinalInvoicesPage() {
                   }}
                   title="Filter final invoices by branch name"
                 >
-                  <option value="">All branches</option>
-                  {branches.map((b) => (
+                  {!isPartialAdmin && <option value="">All branches</option>}
+                  {branchOptions.map((b) => (
                     <option key={b.id} value={b.id}>
                       {b.name ?? b.id}
                     </option>

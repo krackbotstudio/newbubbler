@@ -1,6 +1,19 @@
 import axios, { type AxiosError } from 'axios';
 import { getToken } from './auth';
 
+function getPortalSlugFromStorage(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem('customer_portal_public');
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { slug?: string };
+    const slug = (parsed.slug ?? '').trim();
+    return slug || null;
+  } catch {
+    return null;
+  }
+}
+
 export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3000/api';
 
@@ -14,6 +27,10 @@ export const api = axios.create({
 api.interceptors.request.use((config) => {
   const token = getToken();
   if (token) config.headers.Authorization = `Bearer ${token}`;
+  const portalSlug = getPortalSlugFromStorage();
+  if (portalSlug) {
+    config.headers['x-portal-slug'] = portalSlug;
+  }
   return config;
 });
 

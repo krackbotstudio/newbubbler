@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Patch, Post, UnauthorizedException, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Post, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../common/jwt-auth.guard';
 import { Roles } from '../common/roles.decorator';
 import { RolesGuard } from '../common/roles.guard';
@@ -21,9 +21,14 @@ export class MeController {
   constructor(private readonly meService: MeService) {}
 
   @Get()
-  getMe(@CurrentUser() user: AuthUser | undefined) {
+  getMe(
+    @CurrentUser() user: AuthUser | undefined,
+    @Req() req: { headers?: { host?: string; 'x-forwarded-host'?: string; 'x-portal-slug'?: string } },
+  ) {
     if (!user) throw new UnauthorizedException();
-    return this.meService.getMe(user);
+    const host = req.headers?.['x-forwarded-host'] ?? req.headers?.host;
+    const slugHint = req.headers?.['x-portal-slug'];
+    return this.meService.getMe(user, host, slugHint);
   }
 
   @Patch()

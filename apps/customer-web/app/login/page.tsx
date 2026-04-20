@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, getApiError } from '@/lib/api';
 import { setToken, setStoredUser, type CustomerUser } from '@/lib/auth';
@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { z } from 'zod';
+import { fetchPortalPublic, getStoredPortal } from '@/lib/portal';
 
 const phoneSchema = z.string().regex(/^\+91[6-9]\d{9}$/, 'Use +91 followed by 10 digits');
 const otpSchema = z.string().length(6, 'OTP is 6 digits');
@@ -19,6 +20,24 @@ export default function LoginPage() {
   const [requestId, setRequestId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [portalBrandName, setPortalBrandName] = useState<string | null>(
+    () => getStoredPortal()?.brandName ?? null,
+  );
+  const [portalTerms, setPortalTerms] = useState<string | null>(
+    () => getStoredPortal()?.termsAndConditions ?? null,
+  );
+
+  useEffect(() => {
+    const slugHint =
+      typeof window !== 'undefined'
+        ? new URLSearchParams(window.location.search).get('portalSlug') ?? undefined
+        : undefined;
+    void fetchPortalPublic(slugHint).then((portal) => {
+      if (!portal) return;
+      if (portal.brandName) setPortalBrandName(portal.brandName);
+      setPortalTerms(portal.termsAndConditions ?? null);
+    });
+  }, []);
 
   async function handleRequestOtp(e: React.FormEvent) {
     e.preventDefault();
@@ -84,7 +103,7 @@ export default function LoginPage() {
     <div className="flex min-h-[100dvh] min-h-screen w-full items-center justify-center bg-muted/30">
       <Card className="w-full max-w-sm">
         <CardHeader>
-          <CardTitle>Customer login</CardTitle>
+          <CardTitle>{portalBrandName ? `${portalBrandName} login` : 'Customer login'}</CardTitle>
           <CardDescription>Enter phone and verify OTP (dev OTP: 123456)</CardDescription>
         </CardHeader>
         <CardContent>
@@ -150,6 +169,11 @@ export default function LoginPage() {
               </div>
             </form>
           )}
+          {portalTerms ? (
+            <p className="mt-4 text-xs text-muted-foreground whitespace-pre-wrap">
+              {portalTerms}
+            </p>
+          ) : null}
         </CardContent>
       </Card>
     </div>

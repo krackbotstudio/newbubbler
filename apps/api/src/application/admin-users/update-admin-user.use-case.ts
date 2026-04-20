@@ -6,6 +6,7 @@ export interface UpdateAdminUserInput {
   name?: string | null;
   role?: Role;
   branchId?: string | null;
+  branchIds?: string[];
   isActive?: boolean;
 }
 

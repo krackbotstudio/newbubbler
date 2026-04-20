@@ -43,7 +43,7 @@ export class AdminSignupController {
 
   @Get('profile')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.ADMIN, Role.BILLING, Role.OPS, AGENT_ROLE)
+  @Roles(Role.ADMIN, Role.PARTIAL_ADMIN, Role.BILLING, Role.OPS, AGENT_ROLE)
   async profile(@CurrentUser() user: AuthUser | undefined) {
     if (!user) {
       throw new UnauthorizedException();

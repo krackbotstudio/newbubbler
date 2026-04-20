@@ -1237,7 +1237,7 @@ export function InvoiceBuilder({
             )}
             {issued && whatsappShareMessage && (
               <Button
-                variant="outline"
+                variant="default"
                 className="ack-print-hide"
                 onClick={handleShareOnWhatsApp}
                 disabled={shareLoading}

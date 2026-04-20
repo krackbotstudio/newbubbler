@@ -1,8 +1,5 @@
 import { Controller, Get, Put, Post, Patch, Delete, Param, Body, Query, UseGuards, UseInterceptors, UploadedFile, BadRequestException, Req } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
-import * as fs from 'fs';
-import * as path from 'path';
 import { Role } from '@shared/enums';
 import { AGENT_ROLE } from '../../common/agent-role';
 import type { Request } from 'express';
@@ -20,73 +17,15 @@ import { PatchSegmentCategoryDto } from '../dto/patch-segment-category.dto';
 import { ImportCatalogDto } from '../dto/import-catalog.dto';
 
 interface MulterUploadFile {
-  filename?: string;
+  buffer?: Buffer;
   originalname?: string;
-}
-
-function sanitizeOriginalName(name: string): string {
-  return (name || 'file').replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 80) || 'icon';
+  mimetype?: string;
 }
 
 function sanitizeIconKey(name: string): string {
   return (name || 'default').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80) || 'default';
 }
 
-function extFromName(name: string): string {
-  const clean = sanitizeOriginalName(name);
-  const ext = path.extname(clean).toLowerCase();
-  if (ext === '.png' || ext === '.jpg' || ext === '.jpeg' || ext === '.webp') return ext;
-  return '.png';
-}
-
-function resolveApiAssetsRoot(): string {
-  const configuredRoot = process.env.LOCAL_STORAGE_ROOT?.trim();
-  if (configuredRoot) {
-    const root = path.resolve(configuredRoot);
-    if (!fs.existsSync(root)) fs.mkdirSync(root, { recursive: true });
-    return root;
-  }
-  // Vercel serverless: /var/task is read-only; /tmp is the only writable dir.
-  if (process.env.VERCEL || process.env.VERCEL_ENV) {
-    const tmp = path.join('/tmp', 'api-assets');
-    if (!fs.existsSync(tmp)) fs.mkdirSync(tmp, { recursive: true });
-    return tmp;
-  }
-  const cwd = process.cwd();
-  const monorepoApiRoot = path.resolve(cwd, 'apps', 'api');
-  const apiRoot = fs.existsSync(path.join(monorepoApiRoot, 'src'))
-    ? monorepoApiRoot
-    : cwd;
-  const assetsRoot = path.join(apiRoot, 'assets');
-  if (!fs.existsSync(assetsRoot)) fs.mkdirSync(assetsRoot, { recursive: true });
-  return assetsRoot;
-}
-
-function catalogIconMulterOptions() {
-  const destination = path.join(resolveApiAssetsRoot(), 'catalog-icons');
-  if (!fs.existsSync(destination)) fs.mkdirSync(destination, { recursive: true });
-  return {
-    storage: diskStorage({
-      destination: (_req, _file, cb) => cb(null, destination),
-      filename: (req, file, cb) => {
-        const key = sanitizeIconKey(String(req.query?.key ?? req.query?.itemId ?? 'default'));
-        const base = `icon-${key}`;
-        const ext = extFromName(file.originalname);
-        const finalName = `${base}${ext}`;
-        try {
-          for (const existing of fs.readdirSync(destination)) {
-            if (existing.startsWith(base) && existing !== finalName) {
-              fs.unlinkSync(path.join(destination, existing));
-            }
-          }
-        } catch {
-          // best-effort cleanup only
-        }
-        cb(null, finalName);
-      },
-    }),
-  };
-}
 
 @Controller('admin/catalog')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -307,13 +246,16 @@ export class AdminCatalogMatrixController {
 
   @Post('icon/upload')
   @Roles(Role.ADMIN, Role.OPS)
-  @UseInterceptors(FileInterceptor('file', catalogIconMulterOptions()))
+  @UseInterceptors(FileInterceptor('file'))
   async uploadCatalogIcon(@UploadedFile() file: MulterUploadFile, @Req() req: Request) {
-    if (!file?.filename) {
+    if (!file?.buffer?.length) {
       throw new BadRequestException('File is required');
     }
     const iconKey = sanitizeIconKey(String((req.query?.key as string | undefined) ?? (req.query?.itemId as string | undefined) ?? 'default'));
-    return this.adminCatalogService.uploadCatalogIcon(file.filename, iconKey);
+    return this.adminCatalogService.uploadCatalogIcon(
+      file as { buffer: Buffer; originalname?: string; mimetype?: string },
+      iconKey,
+    );
   }
 
   @Post('import')

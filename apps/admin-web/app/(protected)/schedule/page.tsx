@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,7 +17,7 @@ import { ErrorDisplay } from '@/components/shared/ErrorDisplay';
 import { getFriendlyErrorMessage } from '@/lib/api';
 import { isoToLocalDateKey, getTodayLocalDateKey } from '@/lib/format';
 import { useBranches } from '@/hooks/useBranches';
-import { getStoredUser, isBranchScopedStaff } from '@/lib/auth';
+import { getStoredUser, isBranchScopedStaff, restrictBranchesForUser } from '@/lib/auth';
 
 interface OperatingHours {
   id: string;
@@ -36,21 +36,17 @@ interface Holiday {
 export default function SchedulePage() {
   const user = typeof window !== 'undefined' ? getStoredUser() : null;
   const isAdmin = user?.role === 'ADMIN';
+  const isPartialAdmin = user?.role === 'PARTIAL_ADMIN';
   const isBranchHead = user && isBranchScopedStaff(user.role) && !!user.branchId;
   /** Branch heads (OPS) may set hours and branch-only holidays for their branch; agents do not (route is OPS/ADMIN). */
   const isOpsBranchHead = user?.role === 'OPS' && !!user.branchId;
   const canManageBranchSchedule = isAdmin || isOpsBranchHead;
 
   const { data: branches = [] } = useBranches();
+  const branchOptions = useMemo(() => restrictBranchesForUser(branches, user), [branches, user]);
   const [selectedBranchId, setSelectedBranchId] = useState<string>(() =>
     isBranchHead && user?.branchId ? user.branchId : '',
   );
-  const initialBranchSet = useRef(false);
-
-  /** Branch-wise timings (read-only): key = branch id */
-  const [branchHoursMap, setBranchHoursMap] = useState<Record<string, OperatingHours | null>>({});
-  const [branchHoursLoading, setBranchHoursLoading] = useState(true);
-
   const [hours, setHours] = useState<OperatingHours | null>(null);
   const [startTime, setStartTime] = useState('09:00');
   const [endTime, setEndTime] = useState('18:00');
@@ -72,42 +68,13 @@ export default function SchedulePage() {
   const [editScopeCommon, setEditScopeCommon] = useState(true);
   const [savingEditId, setSavingEditId] = useState<string | null>(null);
 
-  const branchIdForApi = selectedBranchId || (branches.length > 0 ? branches[0].id : null) || null;
+  const branchIdForApi = selectedBranchId || (branchOptions.length > 0 ? branchOptions[0].id : null) || null;
 
   const { commonHolidays, branchHolidays } = useMemo(() => {
     const common = holidays.filter((h) => h.branchId == null);
     const branch = holidays.filter((h) => h.branchId != null);
     return { commonHolidays: common, branchHolidays: branch };
   }, [holidays]);
-
-  // Load timings for selected branch only
-  useEffect(() => {
-    if (branches.length === 0 || !selectedBranchId) {
-      setBranchHoursLoading(false);
-      setBranchHoursMap({});
-      return;
-    }
-    let cancelled = false;
-    setBranchHoursLoading(true);
-    const load = async () => {
-      try {
-        const res = await api.get<OperatingHours | null>('/admin/operating-hours', {
-          params: { branchId: selectedBranchId },
-        }).then((r) => r.data);
-        if (!cancelled) {
-          setBranchHoursMap({ [selectedBranchId]: res ?? null });
-        }
-      } catch (e) {
-        if (!cancelled) setBranchHoursMap({});
-      } finally {
-        if (!cancelled) setBranchHoursLoading(false);
-      }
-    };
-    load();
-    return () => {
-      cancelled = true;
-    };
-  }, [branches.length, selectedBranchId]);
 
   useEffect(() => {
     if (isBranchHead && user?.branchId) {
@@ -116,18 +83,8 @@ export default function SchedulePage() {
   }, [isBranchHead, user?.branchId]);
 
   useEffect(() => {
-    if (branches.length > 0 && !initialBranchSet.current) {
-      initialBranchSet.current = true;
-      setSelectedBranchId((prev) => prev || branches[0].id);
-    }
-  }, [branches]);
-
-  const refetchBranchHours = () => {
-    if (!selectedBranchId) return;
-    api.get<OperatingHours | null>('/admin/operating-hours', { params: { branchId: selectedBranchId } })
-      .then((r) => setBranchHoursMap({ [selectedBranchId]: r.data ?? null }))
-      .catch(() => setBranchHoursMap({}));
-  };
+    if (branchOptions.length > 0) setSelectedBranchId((prev) => prev || branchOptions[0].id);
+  }, [branchOptions]);
 
   useEffect(() => {
     if (!branchIdForApi) {
@@ -198,7 +155,6 @@ export default function SchedulePage() {
         endTime,
       });
       setHours(res.data);
-      refetchBranchHours();
       toast.success('Operating hours saved for this branch.');
     } catch (err) {
       setHoursError(err);
@@ -301,73 +257,25 @@ export default function SchedulePage() {
       <p className="text-sm text-muted-foreground">
         Each branch has its own operating hours and holidays. Common holidays apply to all branches.
       </p>
-
-      <div className="flex flex-wrap items-center gap-4">
-        <div className="space-y-1">
-          <label htmlFor="schedule-branch" className="text-sm font-medium block">Branch</label>
-          <select
-            id="schedule-branch"
-            className="flex h-9 min-w-[200px] rounded-md border border-input bg-background px-3 py-1 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
-            value={selectedBranchId}
-            onChange={(e) => setSelectedBranchId(e.target.value)}
-            disabled={!!isBranchHead}
-            title={isBranchHead ? 'Your assigned branch (filter locked)' : undefined}
-          >
-            {branches.map((b) => (
-              <option key={b.id} value={b.id}>{b.name}</option>
-            ))}
-          </select>
+      {(isAdmin || isPartialAdmin) && (
+        <div className="flex items-end gap-2">
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground">Branch filter</label>
+            <select
+              className="h-10 min-w-[180px]"
+              value={selectedBranchId}
+              onChange={(e) => setSelectedBranchId(e.target.value)}
+              title="Filter schedule by branch"
+            >
+              {branchOptions.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name ?? b.id}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Branch-wise timings</CardTitle>
-          <CardDescription>
-            {canManageBranchSchedule
-              ? 'Daily operating hours for the selected branch. Use the form below to update start and end times.'
-              : 'Daily operating hours for the selected branch (view only).'}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {branchHoursLoading ? (
-            <p className="text-sm text-muted-foreground">Loading…</p>
-          ) : (
-            <div className="rounded-md border">
-              <table className="w-full text-sm">
-                <thead className="bg-muted/50 text-left text-xs font-medium uppercase text-muted-foreground">
-                  <tr>
-                    <th className="px-3 py-2">Branch</th>
-                    <th className="px-3 py-2">Start</th>
-                    <th className="px-3 py-2">End</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {selectedBranchId ? (
-                    (() => {
-                      const h = branchHoursMap[selectedBranchId];
-                      const label = branches.find((b) => b.id === selectedBranchId)?.name ?? selectedBranchId;
-                      return (
-                        <tr className="border-t">
-                          <td className="px-3 py-2 font-medium">{label}</td>
-                          <td className="px-3 py-2 text-muted-foreground">{h?.startTime ?? '—'}</td>
-                          <td className="px-3 py-2 text-muted-foreground">{h?.endTime ?? '—'}</td>
-                        </tr>
-                      );
-                    })()
-                  ) : (
-                    <tr className="border-t">
-                      <td colSpan={3} className="px-3 py-2 text-muted-foreground text-center">
-                        Select a branch to view timings.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      )}
 
       {canManageBranchSchedule && (
         <Card>
@@ -536,7 +444,7 @@ export default function SchedulePage() {
                           {new Date(h.date).toLocaleDateString('en-IN', { dateStyle: 'medium' })}
                           {h.label ? ` — ${h.label}` : ''}
                           <span className="ml-2 text-xs text-muted-foreground">
-                            ({branches.find((b) => b.id === h.branchId)?.name ?? 'Branch'})
+                            ({branchOptions.find((b) => b.id === h.branchId)?.name ?? 'Branch'})
                           </span>
                         </span>
                         {(isAdmin || (isOpsBranchHead && user?.branchId === h.branchId)) && (

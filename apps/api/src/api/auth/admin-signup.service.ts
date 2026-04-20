@@ -2,36 +2,23 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
-import * as fs from 'fs';
 import * as path from 'path';
 import { Role } from '@shared/enums';
 import { Prisma, type User } from '@prisma/client';
 import * as jwt from 'jsonwebtoken';
 import { prisma } from '../../infra/prisma/prisma-client';
+import { STORAGE_ADAPTER } from '../../infra/infra.module';
+import type { StorageAdapter } from '../../application/ports';
 import { hashAdminPassword } from './password.util';
 import type { SupabaseJwtPayload } from './supabase-jwt.guard';
 import type { AdminSignupCompleteDto } from './dto/admin-signup-complete.dto';
 import type { AuthUser } from '../common/roles.guard';
-
-function resolveApiAssetsRoot(): string {
-  const configuredRoot = process.env.LOCAL_STORAGE_ROOT?.trim();
-  if (configuredRoot) {
-    const root = path.resolve(configuredRoot);
-    if (!fs.existsSync(root)) fs.mkdirSync(root, { recursive: true });
-    return root;
-  }
-  const cwd = process.cwd();
-  const monorepoApiRoot = path.resolve(cwd, 'apps', 'api');
-  const apiRoot = fs.existsSync(path.join(monorepoApiRoot, 'src')) ? monorepoApiRoot : cwd;
-  const assetsRoot = path.join(apiRoot, 'assets');
-  if (!fs.existsSync(assetsRoot)) fs.mkdirSync(assetsRoot, { recursive: true });
-  return assetsRoot;
-}
 
 function sanitizeOriginalName(name: string): string {
   return (name || 'file').replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 100) || 'file';
@@ -46,33 +33,27 @@ function extFromOriginalName(name: string): string {
 
 @Injectable()
 export class AdminSignupService {
+  constructor(
+    @Inject(STORAGE_ADAPTER) private readonly storageAdapter: StorageAdapter,
+  ) {}
+
   private get jwtSecret() {
     return process.env.JWT_SECRET || 'dev-secret';
   }
 
   /** Writes branch logo next to other branch assets; returns public URL path. */
-  private persistBranchLogo(branchId: string, file: Express.Multer.File): string {
+  private async persistBranchLogo(branchId: string, file: Express.Multer.File): Promise<string> {
     const buf = file.buffer;
     if (!buf?.length) {
       throw new BadRequestException('Branch logo file is empty');
     }
     const ext = extFromOriginalName(file.originalname);
-    const destDir = path.join(resolveApiAssetsRoot(), 'branding', 'branches');
-    if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
-    const base = `branch-${branchId}-logo`;
-    const fileName = `${base}${ext}`;
-    const fullPath = path.join(destDir, fileName);
-    try {
-      for (const existing of fs.readdirSync(destDir)) {
-        if (existing.startsWith(base) && existing !== fileName) {
-          fs.unlinkSync(path.join(destDir, existing));
-        }
-      }
-    } catch {
-      /* best-effort */
-    }
-    fs.writeFileSync(fullPath, buf);
-    return `/api/assets/branding/branches/${fileName}`;
+    const fileName = `branch-${branchId}-logo-${randomUUID()}${ext}`;
+    const key = `branding/branches/${fileName}`;
+    const uploaded = await this.storageAdapter.putObject(key, buf, file.mimetype || 'image/png');
+    return typeof uploaded === 'string' && uploaded.length > 0
+      ? uploaded
+      : `/api/assets/branding/branches/${fileName}`;
   }
 
   /**
@@ -228,7 +209,7 @@ export class AdminSignupService {
     }
 
     if (branchLogo?.buffer?.length) {
-      const logoUrl = this.persistBranchLogo(result.branch.id, branchLogo);
+      const logoUrl = await this.persistBranchLogo(result.branch.id, branchLogo);
       await prisma.branch.update({
         where: { id: result.branch.id },
         data: { logoUrl },
@@ -305,6 +286,7 @@ export class AdminSignupService {
         name: true,
         role: true,
         branchId: true,
+        branchIds: true,
         onboardingCompletedAt: true,
       },
     });

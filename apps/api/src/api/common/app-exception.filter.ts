@@ -136,6 +136,7 @@ export class AppExceptionFilter implements ExceptionFilter {
       case 'DESCRIPTION_TOO_LONG':
       case 'SUBSCRIPTION_PLAN_ALREADY_REDEEMED':
       case 'QUOTA':
+      case 'BRANCH_REQUIRED':
         return HttpStatus.BAD_REQUEST;
       case 'FORBIDDEN':
       case 'USER_DISABLED':
@@ -143,6 +144,8 @@ export class AppExceptionFilter implements ExceptionFilter {
       case 'CANNOT_DISABLE_SELF':
         return HttpStatus.CONFLICT;
       case 'CANNOT_DELETE_PROTECTED':
+      case 'CANNOT_UPDATE_PROTECTED':
+      case 'CANNOT_RESET_PROTECTED':
         return HttpStatus.FORBIDDEN;
       default:
         return HttpStatus.INTERNAL_SERVER_ERROR;

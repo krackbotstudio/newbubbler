@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, Req, UseGuards } from '@nestjs/common';
 import { Role } from '@shared/enums';
 import { JwtAuthGuard } from '../common/jwt-auth.guard';
 import { Roles } from '../common/roles.decorator';
@@ -24,7 +24,14 @@ export class ItemsController {
   }
 
   @Get('price-list')
-  async listPriceList() {
-    return this.itemsService.listPriceList();
+  async listPriceList(
+    @Req()
+    req: {
+      headers?: { host?: string; 'x-forwarded-host'?: string; 'x-portal-slug'?: string };
+    },
+  ) {
+    const host = req.headers?.['x-forwarded-host'] ?? req.headers?.host;
+    const slugHint = req.headers?.['x-portal-slug'];
+    return this.itemsService.listPriceList(host, slugHint);
   }
 }

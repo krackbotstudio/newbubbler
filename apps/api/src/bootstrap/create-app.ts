@@ -92,7 +92,7 @@ export async function createApp(): Promise<INestApplication> {
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-portal-slug', 'x-forwarded-host'],
   });
 
   app.setGlobalPrefix('api');
@@ -122,7 +122,15 @@ export async function createApp(): Promise<INestApplication> {
     if (!auth || !auth.startsWith('Bearer ')) return { ok: false, status: 401, body: { error: { message: 'Missing Authorization header' } } };
     try {
       const payload = jwt.verify(auth.slice(7), secret) as { role: string };
-      if (payload.role !== 'ADMIN' && payload.role !== 'BILLING') return { ok: false, status: 403, body: { error: { message: 'Forbidden' } } };
+      if (
+        payload.role !== 'ADMIN' &&
+        payload.role !== 'PARTIAL_ADMIN' &&
+        payload.role !== 'BILLING' &&
+        payload.role !== 'OPS' &&
+        payload.role !== 'AGENT'
+      ) {
+        return { ok: false, status: 403, body: { error: { message: 'Forbidden' } } };
+      }
       return { ok: true };
     } catch {
       return { ok: false, status: 401, body: { error: { message: 'Invalid or expired token' } } };

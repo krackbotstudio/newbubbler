@@ -20,6 +20,17 @@ export class AssetsController {
     stream.pipe(res);
   }
 
+  @Get('portals/:fileName')
+  @Header('Cache-Control', 'public, max-age=3600')
+  async getPortalAsset(
+    @Param('fileName') fileName: string,
+    @Res({ passthrough: false }) res: Response,
+  ) {
+    const { stream, contentType } = await this.assetsService.getBrandingPortalStream(fileName);
+    res.setHeader('Content-Type', contentType);
+    stream.pipe(res);
+  }
+
   @Get(':fileName')
   @Header('Cache-Control', 'public, max-age=3600')
   async getBrandingAsset(

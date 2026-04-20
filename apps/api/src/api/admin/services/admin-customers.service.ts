@@ -114,6 +114,13 @@ export class AdminCustomersService {
     return { data: items, nextCursor };
   }
 
+  async countForDashboard(branchId?: string | null): Promise<{ totalCustomersCount: number }> {
+    const totalCustomersCount = await this.ordersRepo.countDistinctCustomersWithPastOrActiveOrders(
+      branchId ?? null,
+    );
+    return { totalCustomersCount };
+  }
+
   async get(userId: string, branchId?: string | null): Promise<AdminCustomerResponse> {
     const [customer, addressList, activeList] = await Promise.all([
       getCustomer(userId, { customersRepo: this.customersRepo }),

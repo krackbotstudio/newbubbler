@@ -114,3 +114,19 @@ From now on, every deployment will automatically:
 3. Prevent schema mismatch errors
 
 No additional steps needed! 🎉
+
+## Subdomain Setup For Partial Admin Portals
+
+To support shareable customer links like `https://{slug}.bubbler.krackbot.com`, configure:
+
+1. DNS wildcard record:
+   - `*.bubbler.krackbot.com` -> customer-web ingress/load balancer.
+2. TLS wildcard certificate:
+   - certificate covering `*.bubbler.krackbot.com`.
+3. Reverse proxy host forwarding:
+   - preserve `Host` and `X-Forwarded-Host` headers to API/customer-web.
+4. Route behavior:
+   - all wildcard subdomains should serve `apps/customer-web`.
+   - API remains on your normal API domain/base path.
+
+Portal resolution logic reads host to identify tenant, so wildcard DNS/TLS and forwarded host headers are required.

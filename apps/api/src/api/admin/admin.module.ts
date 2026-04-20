@@ -19,6 +19,7 @@ import { AdminUsersController } from './controllers/admin-users.controller';
 import { AdminHolidaysController } from './controllers/admin-holidays.controller';
 import { AdminOperatingHoursController } from './controllers/admin-operating-hours.controller';
 import { WalkInController } from './controllers/walk-in.controller';
+import { AdminCustomerPortalsController } from './controllers/admin-customer-portals.controller';
 import { AdminOrdersService } from './services/admin-orders.service';
 import { WalkInService } from './services/walk-in.service';
 import { AdminCatalogService } from './services/admin-catalog.service';
@@ -37,6 +38,7 @@ import { AdminUsersService } from './services/admin-users.service';
 import { AdminHolidaysService } from './services/admin-holidays.service';
 import { AdminOperatingHoursService } from './services/admin-operating-hours.service';
 import { DbInfoService } from './services/db-info.service';
+import { AdminCustomerPortalsService } from './services/admin-customer-portals.service';
 
 @Module({
   controllers: [
@@ -60,6 +62,7 @@ import { DbInfoService } from './services/db-info.service';
     WalkInController,
     AdminTestController,
     AdminSystemController,
+    AdminCustomerPortalsController,
   ],
   providers: [
     DbInfoService,
@@ -80,6 +83,7 @@ import { DbInfoService } from './services/db-info.service';
     AdminUsersService,
     AdminHolidaysService,
     AdminOperatingHoursService,
+    AdminCustomerPortalsService,
   ],
 })
 export class AdminModule {}

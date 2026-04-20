@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsBoolean, MaxLength } from 'class-validator';
+import { IsString, IsOptional, IsBoolean, MaxLength, Matches } from 'class-validator';
 
 export class UpdateBranchDto {
   @IsOptional()
@@ -45,6 +45,18 @@ export class UpdateBranchDto {
   @IsString()
   @MaxLength(200000)
   termsAndConditions?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(7)
+  @Matches(/^#?[0-9A-Fa-f]{6}$/)
+  primaryColor?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(7)
+  @Matches(/^#?[0-9A-Fa-f]{6}$/)
+  secondaryColor?: string | null;
 
   @IsOptional()
   @IsString()

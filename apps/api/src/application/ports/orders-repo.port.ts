@@ -194,6 +194,8 @@ export interface OrdersRepo {
   countByUserCreatedBefore(userId: string, createdAt: Date): Promise<number>;
   /** Per-user order counts: past (DELIVERED/CANCELLED), active (all other statuses). */
   getOrderCountsByUserIds(userIds: string[]): Promise<Record<string, { past: number; active: number }>>;
+  /** Distinct customers with at least one past/active order (non-cancelled), optionally scoped by branch. */
+  countDistinctCustomersWithPastOrActiveOrders(branchId?: string | null): Promise<number>;
   adminList(filters: AdminOrdersFilters): Promise<AdminOrdersResult>;
   getAdminSummary(orderId: string): Promise<OrderAdminSummary | null>;
 }

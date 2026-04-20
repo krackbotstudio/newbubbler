@@ -1,6 +1,8 @@
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
-import type { CarouselRepo } from '../../../application/ports';
-import { CAROUSEL_REPO } from '../../../infra/infra.module';
+import { randomUUID } from 'crypto';
+import * as path from 'path';
+import type { CarouselRepo, StorageAdapter } from '../../../application/ports';
+import { CAROUSEL_REPO, STORAGE_ADAPTER } from '../../../infra/infra.module';
 
 const MAX_IMAGES = 3;
 const POSITIONS = [1, 2, 3] as const;
@@ -9,7 +11,14 @@ const POSITIONS = [1, 2, 3] as const;
 export class AdminCarouselService {
   constructor(
     @Inject(CAROUSEL_REPO) private readonly carouselRepo: CarouselRepo,
+    @Inject(STORAGE_ADAPTER) private readonly storageAdapter: StorageAdapter,
   ) {}
+
+  private extFromName(name: string | undefined): string {
+    const ext = path.extname(name || 'file').toLowerCase();
+    if (ext === '.png' || ext === '.jpg' || ext === '.jpeg' || ext === '.webp') return ext;
+    return '.png';
+  }
 
   async list() {
     const images = await this.carouselRepo.list();
@@ -31,11 +40,16 @@ export class AdminCarouselService {
     return { slots: [byPosition[1], byPosition[2], byPosition[3]] };
   }
 
-  async upload(fileName: string, position: number) {
+  async upload(file: { buffer: Buffer; originalname?: string; mimetype?: string }, position: number) {
     if (!POSITIONS.includes(position as 1 | 2 | 3)) {
       throw new BadRequestException('Position must be 1, 2, or 3');
     }
-    const imageUrl = `/api/assets/carousel/${fileName}`;
+    const ext = this.extFromName(file.originalname);
+    const fileName = `carousel-${position}-${randomUUID()}${ext}`;
+    const key = `carousel/${fileName}`;
+    const uploaded = await this.storageAdapter.putObject(key, file.buffer, file.mimetype || 'image/png');
+    const imageUrl =
+      typeof uploaded === 'string' && uploaded.length > 0 ? uploaded : `/api/assets/carousel/${fileName}`;
     const record = await this.carouselRepo.setImage(position, imageUrl);
     return {
       position: record.position,

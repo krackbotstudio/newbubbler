@@ -3,9 +3,10 @@
 import { useMemo, useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { ExternalLink, Plus } from 'lucide-react';
-import { getStoredUser, isBranchFilterLocked, isBranchScopedStaff, type Role } from '@/lib/auth';
+import { getStoredUser, isBranchFilterLocked, isBranchScopedStaff, restrictBranchesForUser, type Role } from '@/lib/auth';
 import { canAccessRoute } from '@/lib/permissions';
-import { useAnalyticsRevenue, useDashboardKpis } from '@/hooks/useAnalytics';
+import { useAnalyticsRevenue } from '@/hooks/useAnalytics';
+import { useCustomersCount } from '@/hooks/useCustomers';
 import { useOrders } from '@/hooks/useOrders';
 import { useOrderSummary } from '@/hooks/useOrderSummary';
 import { useBranches } from '@/hooks/useBranches';
@@ -157,15 +158,19 @@ function playNewOrderAlert(): void {
 }
 
 export default function DashboardPage() {
-  const user = useMemo(() => getStoredUser(), []);
+  const user = getStoredUser();
   const role = (user?.role ?? 'CUSTOMER') as Role;
   const isAgent = role === 'AGENT';
+  const isPartialAdmin = role === 'PARTIAL_ADMIN';
   const canCreateWalkIn = canAccessRoute(role, '/walk-in-orders/new');
   const branchScoped = isBranchScopedStaff(role);
   const branchLocked = isBranchFilterLocked(role, user?.branchId);
   const [branchId, setBranchId] = useState<string>(() =>
     branchLocked && user?.branchId ? user.branchId : ''
   );
+  const effectiveBranchId = branchLocked
+    ? (user?.branchId ?? undefined)
+    : (branchId || undefined);
   const [statusFilter, setStatusFilter] = useState<OrderStatus | 'CONFIRMED' | ''>('CONFIRMED');
   const [previewOrderId, setPreviewOrderId] = useState<string | null>(null);
 
@@ -187,16 +192,27 @@ export default function DashboardPage() {
 
   const { data, isLoading, error } = useAnalyticsRevenue({
     preset: 'TODAY',
+    branchId: effectiveBranchId,
     refetchInterval: DASHBOARD_REFRESH_MS,
-  });
-  const { data: kpis, isLoading: kpisLoading, error: kpisError } = useDashboardKpis({
-    refetchInterval: DASHBOARD_REFRESH_MS,
-    enabled: !branchScoped,
   });
   const { data: branches = [] } = useBranches();
-  const effectiveBranchId = branchLocked
-    ? (user?.branchId ?? undefined)
-    : (branchId || undefined);
+  const branchOptions = useMemo(() => restrictBranchesForUser(branches, user), [branches, user]);
+
+  useEffect(() => {
+    if (branchLocked) return;
+    if (!isPartialAdmin) return;
+    if (branchId) return;
+    if (branchOptions.length > 0) {
+      setBranchId(branchOptions[0].id);
+    }
+  }, [branchLocked, isPartialAdmin, branchId, branchOptions]);
+  const { data: customersCount, isLoading: customersCountLoading } = useCustomersCount(
+    effectiveBranchId ?? null,
+    {
+      enabled: !isAgent,
+      refetchInterval: DASHBOARD_REFRESH_MS,
+    },
+  );
 
   const { data: ordersData, isLoading: ordersLoading } = useOrders(
     {
@@ -337,8 +353,9 @@ export default function DashboardPage() {
             onChange={(e) => setBranchId(e.target.value)}
             title="Filter dashboard by branch name"
           >
-            <option value="">All branches</option>
-            {branches.map((b) => (
+            {!isPartialAdmin && <option value="">All branches</option>}
+            {branchOptions.length === 0 && <option value="">No branch assigned</option>}
+            {branchOptions.map((b) => (
               <option key={b.id} value={b.id}>
                 {b.name ?? b.id}
               </option>
@@ -349,76 +366,58 @@ export default function DashboardPage() {
 
       {!isAgent && (
       <div
-        className={`grid grid-cols-2 gap-4 sm:grid-cols-3 ${branchScoped ? 'lg:grid-cols-3' : 'lg:grid-cols-5'}`}
+        className="grid grid-cols-2 gap-4 sm:grid-cols-2 lg:grid-cols-4"
       >
-        <Card>
+        <Card className="bg-secondary/35 border-primary/20">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Collected (today)</CardTitle>
+            <CardTitle className="text-sm font-medium text-primary">Collected (today)</CardTitle>
           </CardHeader>
           <CardContent>
             {isLoading ? (
               <Skeleton className="h-8 w-24" />
             ) : (
-              <span className="text-2xl font-bold">{formatMoney(data?.collectedPaise ?? 0)}</span>
+              <span className="text-2xl font-bold text-primary">{formatMoney(data?.collectedPaise ?? 0)}</span>
             )}
           </CardContent>
         </Card>
-        <Card>
+        <Card className="bg-secondary/35 border-primary/20">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Orders (today)</CardTitle>
+            <CardTitle className="text-sm font-medium text-primary">Orders (today)</CardTitle>
           </CardHeader>
           <CardContent>
             {isLoading ? (
               <Skeleton className="h-8 w-12" />
             ) : (
-              <span className="text-2xl font-bold">{data?.ordersCount ?? 0}</span>
+              <span className="text-2xl font-bold text-primary">{data?.ordersCount ?? 0}</span>
             )}
           </CardContent>
         </Card>
-        <Card>
+        <Card className="bg-secondary/35 border-primary/20">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Invoices (today)</CardTitle>
+            <CardTitle className="text-sm font-medium text-primary">Invoices (today)</CardTitle>
           </CardHeader>
           <CardContent>
             {isLoading ? (
               <Skeleton className="h-8 w-12" />
             ) : (
-              <span className="text-2xl font-bold">{data?.invoicesCount ?? 0}</span>
+              <span className="text-2xl font-bold text-primary">{data?.invoicesCount ?? 0}</span>
             )}
           </CardContent>
         </Card>
-        {!branchScoped ? (
-          <>
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Active subscriptions</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {kpisError ? (
-                  <p className="text-sm text-destructive">Failed to load</p>
-                ) : kpisLoading ? (
-                  <Skeleton className="h-8 w-12" />
-                ) : (
-                  <span className="text-2xl font-bold">{kpis?.activeSubscriptionsCount ?? 0}</span>
-                )}
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Total customers</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {kpisError ? (
-                  <p className="text-sm text-destructive">Failed to load</p>
-                ) : kpisLoading ? (
-                  <Skeleton className="h-8 w-12" />
-                ) : (
-                  <span className="text-2xl font-bold">{kpis?.totalCustomersCount ?? 0}</span>
-                )}
-              </CardContent>
-            </Card>
-          </>
-        ) : null}
+        <Card className="bg-secondary/35 border-primary/20">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-primary">Customers</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {customersCountLoading ? (
+              <Skeleton className="h-8 w-16" />
+            ) : (
+              <span className="text-2xl font-bold text-primary">
+                {customersCount?.totalCustomersCount ?? 0}
+              </span>
+            )}
+          </CardContent>
+        </Card>
       </div>
       )}
 
@@ -489,8 +488,8 @@ export default function DashboardPage() {
                       {rows.map((row) => {
                         const isSub = isSubscriptionOrder(row);
                         const rowBg = isSub
-                          ? 'bg-sky-50 dark:bg-sky-950/30'
-                          : 'bg-fuchsia-50 dark:bg-fuchsia-950/30';
+                          ? 'bg-secondary/45'
+                          : 'bg-secondary/30';
                         const status = row.status as OrderStatus;
                         const slot =
                           statusFilter === 'CONFIRMED' ? row.timeWindow : row.timeWindow || '—';
@@ -531,9 +530,9 @@ export default function DashboardPage() {
           if (!open) setPreviewOrderId(null);
         }}
       >
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md border-primary/25 bg-white text-black">
           <DialogHeader>
-            <DialogTitle>Order details</DialogTitle>
+            <DialogTitle className="text-primary">Order details</DialogTitle>
           </DialogHeader>
           {previewLoading && (
             <div className="space-y-3 py-2">
