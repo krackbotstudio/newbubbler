@@ -26,9 +26,11 @@ export function getApiOrigin(): string {
 }
 
 const baseURL = API_BASE_URL;
+/** Remote HTTPS APIs (Dokploy, etc.) need a longer timeout than local dev — cold starts often exceed 15s. */
 const longTimeoutHost =
   baseURL.includes('onrender.com') ||
-  (baseURL.startsWith('http') && baseURL.includes('vercel.app'));
+  (baseURL.startsWith('http') && baseURL.includes('vercel.app')) ||
+  (baseURL.startsWith('https://') && !baseURL.includes('localhost'));
 
 export const api = axios.create({
   baseURL,
