@@ -6,7 +6,7 @@
     "prisma:generate": "node -e \"process.exit(0)\"",
     "dev": "node scripts/next-dev.cjs",
     "dev:fresh": "node -e \"try { require('fs').rmSync('.next', { recursive: true }); } catch (_) {}\" && npm run dev",
-    "build": "next build",
+    "build": "next build --webpack",
     "start": "next start -p 3004",
     "lint": "next lint"
   },

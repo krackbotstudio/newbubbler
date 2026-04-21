@@ -38,8 +38,7 @@ else
     echo "💡 To run migrations, set environment variable: RUN_MIGRATIONS=true"
 fi
 
-echo "🌐 Starting API server..."
-echo "📍 Server will listen on port ${PORT:-8080}"
+echo "Starting API server (PORT=${PORT:-8080})"
 
-# Start the API server
-exec node -r tsconfig-paths/register dist/apps/api/src/bootstrap/main.js
+# CMD from Docker passes the Node process here (see apps/api/Dockerfile)
+exec "$@"

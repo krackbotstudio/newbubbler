@@ -1,11 +1,11 @@
-# Same build as `/Dockerfile` at repo root (many hosts only auto-detect ./Dockerfile).
-# Build from monorepo root:
-#   docker build -f apps/admin-web/Dockerfile .
+# Admin Web (Next.js) — default image when `docker build` runs from repo root (e.g. Dokploy).
+# API image: docker build -f apps/api/Dockerfile .
+#
+# Build context must be the monorepo root.
 
 FROM node:20-alpine AS builder
 WORKDIR /app
 
-# Install deps using only admin-web manifest (standalone app at /app)
 COPY apps/admin-web/package.json ./package.json
 RUN npm install --ignore-scripts --omit=optional
 
@@ -14,7 +14,6 @@ RUN mkdir -p ./public
 
 RUN npm run build
 
-# ─── Stage 2: Production runner ───────────────────────────────────────────────
 FROM node:20-alpine AS runner
 WORKDIR /app
 

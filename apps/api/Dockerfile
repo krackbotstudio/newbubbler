@@ -71,8 +71,12 @@ COPY --from=builder /app/packages ./packages
 
 WORKDIR /app/apps/api
 
+COPY apps/api/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
 EXPOSE 8080
 
-# Start the API server
-# To run migrations: cd /app/apps/api && npx prisma migrate deploy --schema=src/infra/prisma/schema.prisma
+ENTRYPOINT ["/entrypoint.sh"]
 CMD ["node", "-r", "tsconfig-paths/register", "dist/apps/api/src/bootstrap/main.js"]
+
+# Manual migrations without RUN_MIGRATIONS: npx prisma migrate deploy --schema=src/infra/prisma/schema.prisma
