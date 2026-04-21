@@ -13,7 +13,7 @@ export class ServiceabilityController {
 
   @Get()
   async check(@Query() query: ServiceabilityQueryDto) {
-    const result = await this.serviceabilityService.check(query.pincode);
+    const result = await this.serviceabilityService.check(query.pincode, query.branchId ?? null);
     return {
       pincode: query.pincode,
       serviceable: result.serviceable,

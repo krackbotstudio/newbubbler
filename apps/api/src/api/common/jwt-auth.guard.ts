@@ -15,7 +15,6 @@ interface JwtPayload {
   phone?: string | null;
   email?: string | null;
   branchId?: string | null;
-  branchIds?: string[];
 }
 
 @Injectable()
@@ -31,18 +30,16 @@ export class JwtAuthGuard implements CanActivate {
     try {
       const payload = jwt.verify(token, secret) as JwtPayload;
       let branchId = payload.branchId ?? null;
-      let branchIds = Array.isArray(payload.branchIds) ? payload.branchIds : [];
 
       // Keep branch scope in sync even if JWT was minted before assignment changes.
       if (payload.role !== Role.CUSTOMER) {
         try {
           const dbUser = await prisma.user.findUnique({
             where: { id: payload.sub },
-            select: { branchId: true, branchIds: true },
+            select: { branchId: true },
           });
           if (dbUser) {
             branchId = dbUser.branchId ?? null;
-            branchIds = Array.isArray(dbUser.branchIds) ? dbUser.branchIds : [];
           }
         } catch {
           // Best-effort sync; fallback to JWT payload values on DB read failures.
@@ -55,7 +52,6 @@ export class JwtAuthGuard implements CanActivate {
         phone: payload.phone,
         email: payload.email,
         branchId,
-        branchIds,
       };
       request.user = user;
       return true;

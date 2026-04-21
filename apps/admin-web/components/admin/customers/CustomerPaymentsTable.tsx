@@ -38,8 +38,7 @@ export function CustomerPaymentsTable({ userId, role, userBranchId }: CustomerPa
   const { data: payments, isLoading, error } = useCustomerPayments(userId, effectiveBranchId || undefined);
 
   const handleView = (p: CustomerPaymentRow) => {
-    if (p.type === 'order' && p.orderId) router.push(`/orders/${p.orderId}`);
-    else if (p.type === 'subscription' && p.subscriptionId) router.push(`/subscription-invoice/${p.subscriptionId}`);
+    if (p.orderId) router.push(`/orders/${p.orderId}`);
   };
 
   return (
@@ -109,7 +108,7 @@ export function CustomerPaymentsTable({ userId, role, userBranchId }: CustomerPa
                     {formatDate(p.createdAt)}
                   </TableCell>
                   <TableCell className="font-mono text-sm">
-                    {p.orderId ? `${p.orderId.slice(0, 8)}…` : p.subscriptionId ? `${p.subscriptionId.slice(0, 8)}…` : '—'}
+                    {p.orderId ? `${p.orderId.slice(0, 8)}…` : '—'}
                   </TableCell>
                   <TableCell className="text-muted-foreground text-sm">
                     {(p.branchName ?? p.branchId) ?? '—'}
@@ -130,7 +129,8 @@ export function CustomerPaymentsTable({ userId, role, userBranchId }: CustomerPa
                       variant="ghost"
                       size="sm"
                       onClick={() => handleView(p)}
-                      title={p.type === 'subscription' ? 'View invoice' : 'View order'}
+                      disabled={!p.orderId}
+                      title="View order"
                     >
                       <Eye className="h-4 w-4" />
                     </Button>

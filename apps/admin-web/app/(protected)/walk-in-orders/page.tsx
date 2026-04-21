@@ -47,7 +47,6 @@ export default function WalkInOrdersPage() {
   const branchOptions = useMemo(() => restrictBranchesForUser(branches, user), [branches, user]);
   const deleteOrder = useDeleteOrder();
   const isAdmin = user?.role === 'ADMIN';
-  const isPartialAdmin = user?.role === 'PARTIAL_ADMIN';
   const [status, setStatus] = useState<OrderStatus | ''>('');
   const [branchId, setBranchId] = useState<string>('');
   const [dateFromDraft, setDateFromDraft] = useState('');
@@ -63,11 +62,6 @@ export default function WalkInOrdersPage() {
   useEffect(() => {
     if (branchLocked && user?.branchId) setBranchId(user.branchId);
   }, [branchLocked, user?.branchId]);
-
-  useEffect(() => {
-    if (branchLocked || !isPartialAdmin || branchId) return;
-    if (branchOptions.length > 0) setBranchId(branchOptions[0].id);
-  }, [branchLocked, isPartialAdmin, branchId, branchOptions]);
 
   const filters = {
     orderSource: 'WALK_IN' as const,
@@ -158,7 +152,7 @@ export default function WalkInOrdersPage() {
                   }}
                   title="Filter by branch"
                 >
-                  {!isPartialAdmin && <option value="">All branches</option>}
+                  <option value="">All branches</option>
                   {branchOptions.map((b) => (
                     <option key={b.id} value={b.id}>
                       {b.name ?? b.id}

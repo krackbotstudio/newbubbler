@@ -7,7 +7,6 @@ import { useCustomer } from '@/hooks/useCustomers';
 import { CustomerHeader } from '@/components/admin/customers/CustomerHeader';
 import { CustomerProfileCard } from '@/components/admin/customers/CustomerProfileCard';
 import { CustomerAddressesCard } from '@/components/admin/customers/CustomerAddressesCard';
-import { CustomerSubscriptionCard } from '@/components/admin/customers/CustomerSubscriptionCard';
 import { CustomerOrdersTable } from '@/components/admin/customers/CustomerOrdersTable';
 import { CustomerPaymentsTable } from '@/components/admin/customers/CustomerPaymentsTable';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -79,14 +78,13 @@ export default function CustomerDetailPage() {
         role={role}
       />
 
-      <div className="grid gap-6 md:grid-cols-2">
+      <div className="max-w-2xl">
         <CustomerProfileCard
           customer={customer}
           role={role}
           modalOpen={profileEditOpen}
           onModalOpenChange={setProfileEditOpen}
         />
-        <CustomerSubscriptionCard customer={customer} role={role} />
       </div>
 
       <CustomerAddressesCard customer={customer} />

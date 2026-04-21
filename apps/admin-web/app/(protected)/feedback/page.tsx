@@ -41,14 +41,13 @@ export default function FeedbackPage() {
   const effectiveScopedBranchId = branchLocked ? user?.branchId ?? null : null;
   const { data: branches = [], isLoading: branchesLoading } = useBranches();
   const branchOptions = useMemo(() => restrictBranchesForUser(branches, user), [branches, user]);
-  const isPartialAdmin = user?.role === 'PARTIAL_ADMIN';
   const [branchId, setBranchId] = useState<string>('');
   const effectiveBranchId = effectiveScopedBranchId ?? (branchId || null);
 
   useEffect(() => {
-    if (branchLocked || !isPartialAdmin || branchId) return;
+    if (branchLocked || branchId) return;
     if (branchOptions.length > 0) setBranchId(branchOptions[0].id);
-  }, [branchLocked, isPartialAdmin, branchId, branchOptions]);
+  }, [branchLocked, branchId, branchOptions]);
 
   const filters = {
     type: type || undefined,
@@ -138,7 +137,7 @@ export default function FeedbackPage() {
                 }}
                 disabled={branchesLoading}
               >
-                {!isPartialAdmin && <option value="">All branches</option>}
+                <option value="">All branches</option>
                 {branchOptions.map((b) => (
                   <option key={b.id} value={b.id}>
                     {b.name}

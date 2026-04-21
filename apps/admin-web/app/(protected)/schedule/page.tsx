@@ -36,7 +36,6 @@ interface Holiday {
 export default function SchedulePage() {
   const user = typeof window !== 'undefined' ? getStoredUser() : null;
   const isAdmin = user?.role === 'ADMIN';
-  const isPartialAdmin = user?.role === 'PARTIAL_ADMIN';
   const isBranchHead = user && isBranchScopedStaff(user.role) && !!user.branchId;
   /** Branch heads (OPS) may set hours and branch-only holidays for their branch; agents do not (route is OPS/ADMIN). */
   const isOpsBranchHead = user?.role === 'OPS' && !!user.branchId;
@@ -257,7 +256,7 @@ export default function SchedulePage() {
       <p className="text-sm text-muted-foreground">
         Each branch has its own operating hours and holidays. Common holidays apply to all branches.
       </p>
-      {(isAdmin || isPartialAdmin) && (
+      {isAdmin && (
         <div className="flex items-end gap-2">
           <div className="space-y-1">
             <label className="text-xs text-muted-foreground">Branch filter</label>

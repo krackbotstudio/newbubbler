@@ -4,7 +4,6 @@ import type {
   CustomerRecord,
   CustomerListRow,
   PatchCustomerBody,
-  PatchSubscriptionOverrideBody,
 } from '@/types';
 
 export interface CustomersListResponse {
@@ -48,8 +47,7 @@ function fetchCustomer(userId: string): Promise<CustomerRecord> {
 export interface CustomerPaymentRow {
   id: string;
   orderId: string | null;
-  subscriptionId: string | null;
-  type: 'order' | 'subscription';
+  type: 'order';
   amount: number;
   status: string;
   provider: string;
@@ -118,23 +116,6 @@ export function useCustomer(userId: string | null) {
   });
 }
 
-export interface SubscriptionOrderItem {
-  subscriptionId: string;
-  orderIds: string[];
-}
-
-function fetchSubscriptionOrders(userId: string): Promise<SubscriptionOrderItem[]> {
-  return api.get<SubscriptionOrderItem[]>(`/admin/customers/${userId}/subscription-orders`).then((r) => r.data);
-}
-
-export function useSubscriptionOrders(userId: string | null) {
-  return useQuery({
-    queryKey: ['admin', 'customers', userId, 'subscription-orders'],
-    queryFn: () => fetchSubscriptionOrders(userId!),
-    enabled: !!userId,
-  });
-}
-
 export function useUpdateCustomer(userId: string) {
   const qc = useQueryClient();
   return useMutation({
@@ -147,16 +128,4 @@ export function useUpdateCustomer(userId: string) {
   });
 }
 
-export function useSubscriptionOverride(userId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (body: PatchSubscriptionOverrideBody) =>
-      api
-        .patch<CustomerRecord>(`/admin/customers/${userId}/subscription`, body)
-        .then((r) => r.data),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['admin', 'customers', userId] });
-      qc.invalidateQueries({ queryKey: ['admin', 'customers'] });
-    },
-  });
-}
+// Subscription overrides removed.

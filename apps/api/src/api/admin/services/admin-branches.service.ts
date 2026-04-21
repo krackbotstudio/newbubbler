@@ -62,22 +62,12 @@ export class AdminBranchesService {
         throw new ForbiddenException('You can only manage your own branch');
       }
     }
-    if (actor?.role === Role.PARTIAL_ADMIN) {
-      const allowed = new Set((actor.branchIds ?? []).filter(Boolean));
-      if (!allowed.has(branchId)) {
-        throw new ForbiddenException('You can only manage your assigned branches');
-      }
-    }
   }
 
   async list(actor?: AuthUser) {
     const all = await this.branchRepo.listAll();
     if (actor?.role === Role.OPS && actor.branchId) {
       return all.filter((b) => b.id === actor.branchId);
-    }
-    if (actor?.role === Role.PARTIAL_ADMIN) {
-      const allowed = new Set((actor.branchIds ?? []).filter(Boolean));
-      return all.filter((b) => allowed.has(b.id));
     }
     return all;
   }

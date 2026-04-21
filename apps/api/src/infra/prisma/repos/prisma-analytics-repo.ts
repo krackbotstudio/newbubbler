@@ -39,7 +39,7 @@ export class PrismaAnalyticsRepo implements AnalyticsRepo {
     });
     const ordersInRange = await this.prisma.order.findMany({
       where: { createdAt: { gte: dateFrom, lt: dateTo }, ...(branchId ? { branchId } : {}) },
-      select: { id: true, createdAt: true, status: true, orderSource: true, orderType: true },
+      select: { id: true, createdAt: true, status: true, orderSource: true },
     });
 
     const billedPaise = invoices.reduce((s, i) => s + i.total, 0);
@@ -76,20 +76,11 @@ export class PrismaAnalyticsRepo implements AnalyticsRepo {
 
     // Partitioned order categories for pie-chart percentage accuracy.
     const cancelled = ordersInRange.filter((o) => o.status === 'CANCELLED').length;
-    const subscription = ordersInRange.filter(
-      (o) => o.status !== 'CANCELLED' && (o.orderType === 'SUBSCRIPTION' || o.orderType === 'BOTH'),
-    ).length;
     const online = ordersInRange.filter(
-      (o) =>
-        o.status !== 'CANCELLED' &&
-        !(o.orderType === 'SUBSCRIPTION' || o.orderType === 'BOTH') &&
-        o.orderSource === 'ONLINE',
+      (o) => o.status !== 'CANCELLED' && o.orderSource === 'ONLINE',
     ).length;
     const walkin = ordersInRange.filter(
-      (o) =>
-        o.status !== 'CANCELLED' &&
-        !(o.orderType === 'SUBSCRIPTION' || o.orderType === 'BOTH') &&
-        o.orderSource !== 'ONLINE',
+      (o) => o.status !== 'CANCELLED' && o.orderSource !== 'ONLINE',
     ).length;
 
     const allKeys = new Set([
@@ -117,7 +108,6 @@ export class PrismaAnalyticsRepo implements AnalyticsRepo {
       orderCategories: {
         online,
         walkin,
-        subscription,
         cancelled,
       },
       breakdown,

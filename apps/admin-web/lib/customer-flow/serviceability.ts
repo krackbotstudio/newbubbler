@@ -8,10 +8,16 @@ export interface ServiceabilityResult {
   branchName?: string | null;
 }
 
-export async function checkPincodeServiceability(pincode: string): Promise<ServiceabilityResult> {
+export async function checkPincodeServiceability(
+  pincode: string,
+  branchId?: string | null,
+): Promise<ServiceabilityResult> {
   const pc = pincode.trim();
   const { data } = await customerFlowApi.get<ServiceabilityResult>('/serviceability', {
-    params: { pincode: pc },
+    params: {
+      pincode: pc,
+      ...(branchId?.trim() ? { branchId: branchId.trim() } : {}),
+    },
   });
   return {
     pincode: pc,

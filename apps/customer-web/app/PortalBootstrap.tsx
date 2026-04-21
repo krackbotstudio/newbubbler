@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { fetchPortalPublic, getStoredPortal } from '@/lib/portal';
 import { getApiOrigin } from '@/lib/api-origin';
+import { applyBranchThemeToDocument } from '@/lib/portal-theme';
 
 function absoluteAsset(url: string | null | undefined): string | null {
   if (!url) return null;
@@ -16,6 +17,10 @@ export function PortalBootstrap() {
       typeof window !== 'undefined'
         ? new URLSearchParams(window.location.search).get('portalSlug') ?? undefined
         : undefined;
+    const existing = getStoredPortal();
+    if (existing) {
+      applyBranchThemeToDocument(existing.primaryColor ?? null, existing.secondaryColor ?? null);
+    }
     void fetchPortalPublic(slugHint);
   }, []);
 

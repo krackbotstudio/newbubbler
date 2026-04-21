@@ -3,9 +3,8 @@ import { api } from '@/lib/api';
 
 export interface AdminFinalInvoiceRow {
   invoiceId: string;
-  type: 'FINAL' | 'SUBSCRIPTION';
+  type: 'FINAL';
   orderId: string | null;
-  subscriptionId: string | null;
   code: string | null;
   total: number;
   issuedAt: string | null;
@@ -13,7 +12,6 @@ export interface AdminFinalInvoiceRow {
   customerId: string;
   customerName: string | null;
   customerPhone: string | null;
-  planName: string | null;
   branchName: string | null;
   /** WALK_IN | ONLINE | null for order invoices; used to show Type as Walk in / Online. */
   orderSource: string | null;

@@ -14,6 +14,8 @@ export interface UpdateServiceAreaPatch {
 
 export interface ServiceAreaRepo {
   isServiceable(pincode: string): Promise<boolean>;
+  /** True when this branch has an active service area row for the pincode. */
+  isPincodeActiveForBranch(pincode: string, branchId: string): Promise<boolean>;
   listAll(): Promise<ServiceAreaRecord[]>;
   listByBranchId(branchId: string): Promise<ServiceAreaRecord[]>;
   /** All active service areas for this pincode (multiple branches may serve the same pincode). */

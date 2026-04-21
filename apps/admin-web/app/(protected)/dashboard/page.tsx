@@ -111,11 +111,6 @@ function getDayLabel(dateKey: string, todayKey: string): string {
   return d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
 }
 
-/** Subscription = has subscriptionId or orderType SUBSCRIPTION; else individual (online) booking. */
-function isSubscriptionOrder(row: AdminOrderListRow): boolean {
-  return !!(row.subscriptionId ?? (row.orderType === 'SUBSCRIPTION'));
-}
-
 const DASHBOARD_REFRESH_MS = 5000;
 
 /** Gentle 10-second chime (nature-inspired wind-chime melody) for new order alerts. */
@@ -161,7 +156,6 @@ export default function DashboardPage() {
   const user = getStoredUser();
   const role = (user?.role ?? 'CUSTOMER') as Role;
   const isAgent = role === 'AGENT';
-  const isPartialAdmin = role === 'PARTIAL_ADMIN';
   const canCreateWalkIn = canAccessRoute(role, '/walk-in-orders/new');
   const branchScoped = isBranchScopedStaff(role);
   const branchLocked = isBranchFilterLocked(role, user?.branchId);
@@ -200,12 +194,11 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (branchLocked) return;
-    if (!isPartialAdmin) return;
     if (branchId) return;
     if (branchOptions.length > 0) {
       setBranchId(branchOptions[0].id);
     }
-  }, [branchLocked, isPartialAdmin, branchId, branchOptions]);
+  }, [branchLocked, branchId, branchOptions]);
   const { data: customersCount, isLoading: customersCountLoading } = useCustomersCount(
     effectiveBranchId ?? null,
     {
@@ -279,7 +272,7 @@ export default function DashboardPage() {
             borderColor: '#f48fb1',
             color: '#880e4f',
           },
-          descriptionClassName: 'text-pink-800/70',
+          descriptionClassName: 'text-blue-900/70',
         });
       }
     }
@@ -353,7 +346,7 @@ export default function DashboardPage() {
             onChange={(e) => setBranchId(e.target.value)}
             title="Filter dashboard by branch name"
           >
-            {!isPartialAdmin && <option value="">All branches</option>}
+            <option value="">All branches</option>
             {branchOptions.length === 0 && <option value="">No branch assigned</option>}
             {branchOptions.map((b) => (
               <option key={b.id} value={b.id}>
@@ -486,10 +479,7 @@ export default function DashboardPage() {
                     </div>
                     <ul className="space-y-1.5">
                       {rows.map((row) => {
-                        const isSub = isSubscriptionOrder(row);
-                        const rowBg = isSub
-                          ? 'bg-secondary/45'
-                          : 'bg-secondary/30';
+                        const rowBg = 'bg-secondary/30';
                         const status = row.status as OrderStatus;
                         const slot =
                           statusFilter === 'CONFIRMED' ? row.timeWindow : row.timeWindow || '—';
@@ -500,7 +490,7 @@ export default function DashboardPage() {
                             type="button"
                             onClick={() => setPreviewOrderId(row.id)}
                             className={`w-full text-left text-xs cursor-pointer rounded-md px-2 py-1.5 ${rowBg} hover:ring-1 hover:ring-primary/30`}
-                            title={`${displayName} · ${slot}${isSub ? ' · Subscription' : ''} · ${status}`}
+                            title={`${displayName} · ${slot} · ${status}`}
                           >
                             <span className="block font-medium text-foreground truncate">{displayName}</span>
                             <span className="mt-1 inline-block rounded-md bg-primary/15 px-1.5 py-0.5 text-[11px] font-bold tabular-nums text-primary">

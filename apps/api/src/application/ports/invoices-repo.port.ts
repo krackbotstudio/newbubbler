@@ -6,6 +6,8 @@ export interface InvoiceItemRecord {
   type: string;
   name: string;
   quantity: number;
+  /** When null/undefined, UI treats as same as `quantity`. */
+  clothesCount?: number | null;
   unitPrice: number;
   amount: number;
   catalogItemId?: string | null;
@@ -60,6 +62,7 @@ export interface CreateDraftInput {
     type: string;
     name: string;
     quantity: number;
+    clothesCount?: number | null;
     unitPrice: number;
     amount: number;
     catalogItemId?: string | null;
@@ -87,6 +90,7 @@ export interface UpdateDraftInput {
     type: string;
     name: string;
     quantity: number;
+    clothesCount?: number | null;
     unitPrice: number;
     amount: number;
     catalogItemId?: string | null;

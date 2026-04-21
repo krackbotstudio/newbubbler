@@ -124,7 +124,6 @@ export async function createApp(): Promise<INestApplication> {
       const payload = jwt.verify(auth.slice(7), secret) as { role: string };
       if (
         payload.role !== 'ADMIN' &&
-        payload.role !== 'PARTIAL_ADMIN' &&
         payload.role !== 'BILLING' &&
         payload.role !== 'OPS' &&
         payload.role !== 'AGENT'

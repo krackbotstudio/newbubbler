@@ -16,7 +16,7 @@ export class AdminInvoicesController {
   @Post(':id/ack-invoice/draft')
   async createAckDraft(@Param('id') orderId: string, @Body() dto: InvoiceDraftDto) {
     const result = await this.adminInvoicesService.createAckDraft(orderId, {
-      orderMode: dto.orderMode,
+      orderMode: dto.orderMode === 'INDIVIDUAL' ? 'INDIVIDUAL' : 'INDIVIDUAL',
       items: dto.items.map((i) => ({
         type: i.type,
         name: i.name,
@@ -29,13 +29,6 @@ export class AdminInvoicesController {
       })),
       taxPaise: dto.taxPaise,
       discountPaise: dto.discountPaise,
-      subscriptionUtilized: dto.subscriptionUtilized,
-      subscriptionId: dto.subscriptionId,
-      subscriptionUsageKg: dto.subscriptionUsageKg,
-      subscriptionUsageItems: dto.subscriptionUsageItems,
-      subscriptionUsageSubscriptionIds: dto.subscriptionUsageSubscriptionIds,
-      newSubscription: dto.newSubscription,
-      newSubscriptions: dto.newSubscriptions,
       comments: dto.comments,
     });
     return {
@@ -76,8 +69,6 @@ export class AdminInvoicesController {
       taxPaise: dto.taxPaise,
       discountPaise: dto.discountPaise,
       comments: dto.comments,
-      subscriptionUsageKg: dto.subscriptionUsageKg,
-      subscriptionUsageItems: dto.subscriptionUsageItems,
     });
     return {
       invoiceId: result.invoiceId,

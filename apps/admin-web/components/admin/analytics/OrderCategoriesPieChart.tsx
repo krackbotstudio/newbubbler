@@ -15,7 +15,6 @@ import { EmptyState } from '@/components/ui/empty-state';
 type OrderCategories = {
   online: number;
   walkin: number;
-  subscription: number;
   cancelled: number;
 };
 
@@ -34,17 +33,15 @@ export function OrderCategoriesPieChart({ isLoading, categories }: OrderCategori
     const c = categories ?? {
       online: 0,
       walkin: 0,
-      subscription: 0,
       cancelled: 0,
     };
 
-    const total = c.online + c.walkin + c.subscription + c.cancelled;
+    const total = c.online + c.walkin + c.cancelled;
     return {
       total,
       rows: [
         { name: 'Online', value: c.online, fill: 'hsl(var(--chart-1))' },
         { name: 'Walk-in', value: c.walkin, fill: 'hsl(var(--chart-2))' },
-        { name: 'Subscription', value: c.subscription, fill: 'hsl(var(--chart-3))' },
         { name: 'Cancelled', value: c.cancelled, fill: 'hsl(var(--chart-4))' },
       ],
     };
@@ -89,10 +86,6 @@ export function OrderCategoriesPieChart({ isLoading, categories }: OrderCategori
         <span className="flex items-center gap-2">
           <span className="h-2.5 w-2.5 rounded-full bg-[hsl(var(--chart-2))]" />
           Walk-in
-        </span>
-        <span className="flex items-center gap-2">
-          <span className="h-2.5 w-2.5 rounded-full bg-[hsl(var(--chart-3))]" />
-          Subscription
         </span>
         <span className="flex items-center gap-2">
           <span className="h-2.5 w-2.5 rounded-full bg-[hsl(var(--chart-4))]" />

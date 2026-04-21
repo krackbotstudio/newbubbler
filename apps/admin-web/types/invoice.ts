@@ -9,6 +9,8 @@ export interface InvoiceDraftItem {
   type: InvoiceItemType;
   name: string;
   quantity: number;
+  /** Piece count for dry-clean lines; omit or leave unset to treat as same as quantity. */
+  clothesCount?: number;
   unitPricePaise: number;
   amountPaise?: number;
   /** Catalog matrix: item id for Item → Segment → Service cascading */
@@ -17,23 +19,13 @@ export interface InvoiceDraftItem {
   serviceCategoryId?: string | null;
 }
 
-export type InvoiceOrderMode = 'INDIVIDUAL' | 'SUBSCRIPTION_ONLY' | 'BOTH';
+export type InvoiceOrderMode = 'INDIVIDUAL';
 
 export interface InvoiceDraftBody {
   orderMode?: InvoiceOrderMode;
   items: InvoiceDraftItem[];
   taxPaise?: number;
   discountPaise?: number;
-  subscriptionUtilized?: boolean;
-  subscriptionId?: string | null;
-  subscriptionUsageKg?: number | null;
-  subscriptionUsageItems?: number | null;
-  /** When using multiple subscriptions for this pickup: list of subscription IDs to deduct 1 pickup + weight/items from each. */
-  subscriptionUsageSubscriptionIds?: string[];
-  /** When set, add subscription to invoice (plan + start date + quantity); price included in subtotal/tax/discount. */
-  newSubscription?: { planId: string; validityStartDate: string; quantityMonths?: number } | null;
-  /** Multiple new subscriptions on same invoice; when set, use instead of newSubscription. */
-  newSubscriptions?: Array<{ planId: string; validityStartDate: string; quantityMonths?: number }> | null;
   comments?: string | null;
 }
 

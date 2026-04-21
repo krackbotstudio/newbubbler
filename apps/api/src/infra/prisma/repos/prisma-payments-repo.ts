@@ -11,7 +11,7 @@ type PrismaLike = Pick<PrismaClient, 'payment'>;
 function toPaymentRecord(row: {
   id: string;
   orderId: string | null;
-  subscriptionId: string | null;
+  subscriptionId?: string | null;
   provider: string;
   status: string;
   amount: number;
@@ -24,7 +24,7 @@ function toPaymentRecord(row: {
   return {
     id: row.id,
     orderId: row.orderId,
-    subscriptionId: row.subscriptionId,
+    subscriptionId: row.subscriptionId ?? null,
     provider: row.provider as PaymentRecord['provider'],
     status: row.status as PaymentRecord['status'],
     amount: row.amount,
@@ -63,26 +63,8 @@ export class PrismaPaymentsRepo implements PaymentsRepo {
     return toPaymentRecord(payment);
   }
 
-  async upsertForSubscription(input: UpsertSubscriptionPaymentInput): Promise<PaymentRecord> {
-    const payment = await (this.prisma as PrismaClient).payment.upsert({
-      where: { subscriptionId: input.subscriptionId },
-      create: {
-        subscriptionId: input.subscriptionId,
-        provider: input.provider,
-        status: input.status,
-        amount: input.amount,
-        providerPaymentId: input.providerPaymentId ?? undefined,
-        providerOrderId: input.providerOrderId ?? undefined,
-      },
-      update: {
-        provider: input.provider,
-        status: input.status,
-        amount: input.amount,
-        providerPaymentId: input.providerPaymentId ?? undefined,
-        providerOrderId: input.providerOrderId ?? undefined,
-      },
-    });
-    return toPaymentRecord(payment);
+  async upsertForSubscription(_input: UpsertSubscriptionPaymentInput): Promise<PaymentRecord> {
+    throw new Error('Subscription payments are no longer supported');
   }
 
   async getByOrderId(orderId: string): Promise<PaymentRecord | null> {
@@ -92,18 +74,13 @@ export class PrismaPaymentsRepo implements PaymentsRepo {
     return payment ? toPaymentRecord(payment) : null;
   }
 
-  async getBySubscriptionId(subscriptionId: string): Promise<PaymentRecord | null> {
-    const payment = await (this.prisma as PrismaClient).payment.findUnique({
-      where: { subscriptionId },
-    });
-    return payment ? toPaymentRecord(payment) : null;
+  async getBySubscriptionId(_subscriptionId: string): Promise<PaymentRecord | null> {
+    return null;
   }
 
   async listByUserId(userId: string): Promise<PaymentRecord[]> {
     const payments = await (this.prisma as PrismaClient).payment.findMany({
-      where: {
-        OR: [{ order: { userId } }, { subscription: { userId } }],
-      },
+      where: { order: { userId } },
       orderBy: { createdAt: 'desc' },
     });
     return payments.map(toPaymentRecord);

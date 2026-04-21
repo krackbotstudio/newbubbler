@@ -46,6 +46,7 @@ export interface CreateFinalInvoiceDraftInput {
     type: string;
     name: string;
     quantity: number;
+    clothesCount?: number | null;
     unitPrice: number;
     amount?: number;
     catalogItemId?: string | null;
@@ -215,6 +216,7 @@ export async function createFinalInvoiceDraft(
       type: i.type,
       name: i.name,
       quantity: i.quantity,
+      ...(i.clothesCount != null && Number.isFinite(i.clothesCount) && { clothesCount: i.clothesCount }),
       unitPrice: i.unitPrice,
       amount: totals.items[idx].amount,
       catalogItemId: i.catalogItemId,
@@ -283,6 +285,7 @@ export async function createFinalInvoiceDraft(
       type: i.type,
       name: i.name,
       quantity: i.quantity,
+      ...(i.clothesCount != null && Number.isFinite(i.clothesCount) && { clothesCount: i.clothesCount }),
       unitPrice: i.unitPrice,
       amount: totals.items[idx].amount,
       catalogItemId: i.catalogItemId,

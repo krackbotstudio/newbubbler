@@ -22,15 +22,10 @@ export default function NewWalkInOrderPage() {
   const searchParams = useSearchParams();
   const userIdFromProfile = searchParams.get('userId') ?? null;
   const user = useMemo(() => getStoredUser(), []);
-  const isAdmin = user?.role === 'ADMIN' || user?.role === 'PARTIAL_ADMIN';
+  const isAdmin = user?.role === 'ADMIN';
   const branchLocked = !!(user && isBranchFilterLocked(user.role, user.branchId));
   const { data: branches = [] } = useBranches();
-  const selectableBranches = useMemo(() => {
-    if (!user) return branches;
-    if (user.role !== 'PARTIAL_ADMIN') return branches;
-    const allowed = new Set(user.branchIds ?? []);
-    return branches.filter((b) => allowed.has(b.id));
-  }, [branches, user]);
+  const selectableBranches = useMemo(() => branches, [branches]);
   const [selectedBranchId, setSelectedBranchId] = useState('');
   const [countryCode, setCountryCode] = useState('+91');
   const [mobile, setMobile] = useState('');

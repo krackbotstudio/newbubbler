@@ -71,16 +71,6 @@ export function FinalInvoiceDialog({
     : null;
   const logoUrlCacheBuster = merged?.logoUrlCacheBuster ?? branding?.updatedAt ?? undefined;
 
-  const hasSubscription = Boolean(summary.subscription && summary.subscriptionUsage);
-  const subscriptionUnit =
-    summary.subscription?.kgLimit != null
-      ? 'KG'
-      : summary.subscription?.itemsLimit != null
-        ? 'Nos'
-        : undefined;
-  const subscriptionUsageRowIndex =
-    hasSubscription && (finalInvoice.items?.length ?? 0) > 0 ? 0 : undefined;
-
   const invoiceLabelForFile = finalInvoice.code?.trim() || `IN${orderId}`;
 
   const buildWhatsAppMessage = useCallback(() => {
@@ -143,8 +133,6 @@ export function FinalInvoiceDialog({
             branding={brandingForView}
             logoUrlCacheBuster={logoUrlCacheBuster}
             catalogMatrix={catalogMatrix ?? null}
-            subscriptionUnit={subscriptionUnit}
-            subscriptionUsageRowIndex={subscriptionUsageRowIndex}
           />
         </div>
 

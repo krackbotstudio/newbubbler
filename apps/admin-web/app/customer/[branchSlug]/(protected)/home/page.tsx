@@ -95,7 +95,6 @@ export default function CustomerFlowHomePage() {
 
   function orderTypeLabel(order: OrderListItem): string {
     if (order.orderSource === 'WALK_IN') return 'Walk-in';
-    if ((order.orderType ?? '').toUpperCase() === 'SUBSCRIPTION') return 'Subscription';
     return 'Online';
   }
 

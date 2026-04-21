@@ -120,6 +120,9 @@ export interface OrderAdminSummary {
     invoicePrefix?: string | null;
     itemTagBrandName?: string | null;
     logoUrl?: string | null;
+    /** Hex for staff UI (e.g. add-invoice dialog). */
+    primaryColor?: string | null;
+    secondaryColor?: string | null;
     updatedAt?: Date;
   } | null;
   orderItems: Array<{
@@ -157,6 +160,7 @@ export interface OrderAdminSummary {
       type: string;
       name: string;
       quantity: number;
+      clothesCount?: number | null;
       unitPrice: number;
       amount: number;
       catalogItemId?: string | null;

@@ -333,8 +333,8 @@ export default function SignupPage() {
       className="flex min-h-screen flex-col bg-white lg:flex-row"
       style={
         {
-          '--primary': '221 83% 43%',
-          '--ring': '221 83% 43%',
+          '--primary': '222 58% 39%',
+          '--ring': '222 58% 39%',
         } as CSSProperties
       }
     >

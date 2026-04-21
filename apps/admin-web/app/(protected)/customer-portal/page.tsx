@@ -53,8 +53,8 @@ export default function CustomerPortalPage() {
   const [slug, setSlug] = useState('');
   const [termsAndConditions, setTermsAndConditions] = useState('');
 
-  if (!user || !['ADMIN', 'PARTIAL_ADMIN', 'OPS'].includes(user.role)) {
-    return <div className="text-sm text-muted-foreground">Only admin, partial admin, and branch head can access this page.</div>;
+  if (!user || !['ADMIN', 'OPS'].includes(user.role)) {
+    return <div className="text-sm text-muted-foreground">Only admin and branch head can access this page.</div>;
   }
 
   const effectiveBrandName = brandName || portal?.brandName || '';

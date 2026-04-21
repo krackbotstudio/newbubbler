@@ -23,7 +23,7 @@ import {
 /** Accepts PrismaClient or transaction client from prisma.$transaction(callback). */
 type PrismaLike = Pick<
   PrismaClient,
-  'order' | 'subscription' | 'serviceArea' | 'branch' | 'segmentCategory' | 'serviceCategory'
+  'order' | 'serviceArea' | 'branch' | 'segmentCategory' | 'serviceCategory'
 >;
 
 function toOrderRecord(row: {
@@ -42,7 +42,7 @@ function toOrderRecord(row: {
   estimatedWeightKg: unknown;
   actualWeightKg: unknown;
   status: string;
-  subscriptionId: string | null;
+  subscriptionId?: string | null;
   branchId?: string | null;
   paymentStatus: string;
   createdAt: Date;
@@ -73,7 +73,7 @@ function toOrderRecord(row: {
     estimatedWeightKg: row.estimatedWeightKg != null ? Number(row.estimatedWeightKg) : null,
     actualWeightKg: row.actualWeightKg != null ? Number(row.actualWeightKg) : null,
     status: row.status as OrderRecord['status'],
-    subscriptionId: row.subscriptionId,
+    subscriptionId: (row as { subscriptionId?: string | null }).subscriptionId ?? null,
     branchId: row.branchId ?? null,
     paymentStatus: row.paymentStatus,
     createdAt: row.createdAt,
@@ -276,7 +276,7 @@ export class PrismaOrdersRepo implements OrdersRepo {
         data: {
           id,
           userId: data.userId,
-          orderType: data.orderType as 'INDIVIDUAL' | 'SUBSCRIPTION' | 'BOTH',
+          orderType: 'INDIVIDUAL',
           serviceType: data.serviceType,
           serviceTypes: data.serviceTypes ?? [],
           addressId: data.addressId,
@@ -287,7 +287,6 @@ export class PrismaOrdersRepo implements OrdersRepo {
           timeWindow: data.timeWindow,
           estimatedWeightKg: data.estimatedWeightKg != null ? data.estimatedWeightKg : undefined,
           status: PrismaOrderStatus.BOOKING_CONFIRMED,
-          subscriptionId: data.subscriptionId ?? undefined,
           branchId: effectiveBranchId ?? undefined,
           orderSource: data.orderSource ?? undefined,
         },
@@ -317,23 +316,12 @@ export class PrismaOrdersRepo implements OrdersRepo {
     await this.prisma.order.delete({ where: { id } });
   }
 
-  async findActiveBySubscriptionId(subscriptionId: string): Promise<OrderRecord | null> {
-    const order = await this.prisma.order.findFirst({
-      where: {
-        subscriptionId,
-        status: { notIn: [PrismaOrderStatus.DELIVERED, PrismaOrderStatus.CANCELLED] },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-    return order ? toOrderRecord(order) : null;
+  async findActiveBySubscriptionId(_subscriptionId: string): Promise<OrderRecord | null> {
+    return null;
   }
 
-  async listBySubscriptionId(subscriptionId: string): Promise<OrderRecord[]> {
-    const rows = await this.prisma.order.findMany({
-      where: { subscriptionId },
-      orderBy: { createdAt: 'asc' },
-    });
-    return rows.map(toOrderRecord);
+  async listBySubscriptionId(_subscriptionId: string): Promise<OrderRecord[]> {
+    return [];
   }
 
   async updateStatus(orderId: string, status: OrderRecord['status'], options?: { cancellationReason?: string | null }): Promise<OrderRecord> {
@@ -392,15 +380,8 @@ export class PrismaOrdersRepo implements OrdersRepo {
       const finalIssued = finalInv && (finalInv as { issuedAt?: Date | null }).issuedAt;
       const amountToPayPaise =
         finalIssued && finalInv ? finalInv.total : ackInv ? ackInv.total : null;
-      const invForUsage = finalIssued && finalInv ? finalInv : ackInv;
-      const subscriptionUsageKg =
-        invForUsage && invForUsage.subscriptionUsageKg != null
-          ? Number(invForUsage.subscriptionUsageKg)
-          : null;
-      const subscriptionUsageItems =
-        invForUsage && invForUsage.subscriptionUsageItems != null
-          ? invForUsage.subscriptionUsageItems
-          : null;
+      const subscriptionUsageKg = null;
+      const subscriptionUsageItems = null;
       return {
         ...base,
         amountToPayPaise,
@@ -464,11 +445,8 @@ export class PrismaOrdersRepo implements OrdersRepo {
     return toOrderRecord(order);
   }
 
-  async updateSubscriptionId(orderId: string, subscriptionId: string): Promise<OrderRecord> {
-    const order = await this.prisma.order.update({
-      where: { id: orderId },
-      data: { subscriptionId },
-    });
+  async updateSubscriptionId(orderId: string, _subscriptionId: string): Promise<OrderRecord> {
+    const order = await this.prisma.order.findUniqueOrThrow({ where: { id: orderId } });
     return toOrderRecord(order);
   }
 
@@ -588,7 +566,7 @@ export class PrismaOrdersRepo implements OrdersRepo {
       estimatedWeightKg: unknown;
       actualWeightKg: unknown;
       status: string;
-      subscriptionId: string | null;
+      subscriptionId?: string | null;
       paymentStatus: string;
       createdAt: Date;
       updatedAt: Date;
@@ -687,8 +665,6 @@ export class PrismaOrdersRepo implements OrdersRepo {
         address: true,
         branch: true,
         orderItems: { include: { laundryItem: true } },
-        subscription: { include: { plan: true } },
-        subscriptionUsages: true,
         invoices: { include: { items: true } },
         payment: true,
       },
@@ -710,6 +686,8 @@ export class PrismaOrdersRepo implements OrdersRepo {
       invoicePrefix: string | null;
       itemTagBrandName: string | null;
       logoUrl: string | null;
+      primaryColor: string | null;
+      secondaryColor: string | null;
       updatedAt: Date;
     } | null = order.branch
       ? {
@@ -723,6 +701,8 @@ export class PrismaOrdersRepo implements OrdersRepo {
           invoicePrefix: order.branch.invoicePrefix ?? null,
           itemTagBrandName: order.branch.itemTagBrandName ?? null,
           logoUrl: order.branch.logoUrl ?? null,
+          primaryColor: order.branch.primaryColor ?? null,
+          secondaryColor: order.branch.secondaryColor ?? null,
           updatedAt: order.branch.updatedAt,
         }
       : null;
@@ -743,6 +723,8 @@ export class PrismaOrdersRepo implements OrdersRepo {
           invoicePrefix: serviceArea.branch.invoicePrefix ?? null,
           itemTagBrandName: serviceArea.branch.itemTagBrandName ?? null,
           logoUrl: serviceArea.branch.logoUrl ?? null,
+          primaryColor: serviceArea.branch.primaryColor ?? null,
+          secondaryColor: serviceArea.branch.secondaryColor ?? null,
           updatedAt: serviceArea.branch.updatedAt,
         };
       }
@@ -804,47 +786,9 @@ export class PrismaOrdersRepo implements OrdersRepo {
         unitPricePaise: oi.unitPricePaise ?? null,
         amountPaise: oi.amountPaise ?? null,
       })),
-      subscription: order.subscription
-        ? {
-            id: order.subscription.id,
-            planName: order.subscription.plan.name,
-            remainingPickups: order.subscription.remainingPickups,
-            maxPickups: order.subscription.totalMaxPickups ?? order.subscription.plan.maxPickups,
-            usedKg: Number(order.subscription.usedKg),
-            usedItemsCount: order.subscription.usedItemsCount,
-            kgLimit: order.subscription.plan.kgLimit != null ? Number(order.subscription.plan.kgLimit) : null,
-            itemsLimit: order.subscription.plan.itemsLimit ?? null,
-            expiryDate: order.subscription.expiryDate,
-            active: order.subscription.active,
-          }
-        : null,
-      activeSubscriptions: await (async () => {
-        const list = await this.prisma.subscription.findMany({
-          where: { userId: order.userId, active: true },
-          include: { plan: true },
-        });
-        const now = new Date();
-        return list
-          .filter((s) => s.expiryDate >= now)
-          .map((s) => ({
-            id: s.id,
-            planName: s.plan.name,
-            remainingPickups: s.remainingPickups,
-            maxPickups: s.totalMaxPickups ?? s.plan.maxPickups,
-            usedKg: Number(s.usedKg),
-            usedItemsCount: s.usedItemsCount,
-            kgLimit: s.plan.kgLimit != null ? Number(s.plan.kgLimit) : null,
-            itemsLimit: s.plan.itemsLimit ?? null,
-            expiryDate: s.expiryDate,
-          }));
-      })(),
-      subscriptionUsage: order.subscriptionUsages?.length
-        ? {
-            deductedPickups: order.subscriptionUsages[0].deductedPickups,
-            deductedKg: Number(order.subscriptionUsages[0].deductedKg),
-            deductedItemsCount: order.subscriptionUsages[0].deductedItemsCount,
-          }
-        : null,
+      subscription: null,
+      activeSubscriptions: [],
+      subscriptionUsage: null,
       invoices: order.invoices.map((inv) => ({
         id: inv.id,
         type: inv.type,
@@ -858,14 +802,19 @@ export class PrismaOrdersRepo implements OrdersRepo {
         comments: inv.comments ?? null,
         issuedAt: inv.issuedAt,
         pdfUrl: inv.pdfUrl,
-        subscriptionUsageKg: (inv as { subscriptionUsageKg?: unknown }).subscriptionUsageKg != null ? Number((inv as { subscriptionUsageKg: unknown }).subscriptionUsageKg) : null,
-        subscriptionUsageItems: (inv as { subscriptionUsageItems?: number | null }).subscriptionUsageItems ?? null,
-        newSubscriptionSnapshotJson: (inv as { newSubscriptionSnapshotJson?: unknown }).newSubscriptionSnapshotJson ?? undefined,
+        subscriptionUsageKg: null,
+        subscriptionUsageItems: null,
+        newSubscriptionSnapshotJson: undefined,
         brandingSnapshotJson: (inv as { brandingSnapshotJson?: unknown }).brandingSnapshotJson ?? undefined,
-        items: (inv as { items?: Array<{ type: string; name: string; quantity: unknown; unitPrice: number; amount: number; catalogItemId?: string | null; segmentCategoryId?: string | null; serviceCategoryId?: string | null }> }).items?.map((i) => ({
+        items: (inv as { items?: Array<{ type: string; name: string; quantity: unknown; clothesCount?: unknown; unitPrice: number; amount: number; catalogItemId?: string | null; segmentCategoryId?: string | null; serviceCategoryId?: string | null }> }).items?.map((i) => ({
           type: i.type,
           name: i.name,
           quantity: Number(i.quantity),
+          clothesCount: (() => {
+            if (i.clothesCount == null || i.clothesCount === '') return null;
+            const n = Number(i.clothesCount as string | number);
+            return Number.isFinite(n) ? n : null;
+          })(),
           unitPrice: i.unitPrice,
           amount: i.amount,
           ...(i.catalogItemId != null && { catalogItemId: i.catalogItemId }),

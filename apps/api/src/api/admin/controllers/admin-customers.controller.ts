@@ -15,7 +15,7 @@ import { PatchCustomerDto } from '../dto/patch-customer.dto';
 
 @Controller('admin/customers')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.ADMIN, Role.PARTIAL_ADMIN, Role.OPS, Role.BILLING, AGENT_ROLE)
+@Roles(Role.ADMIN, Role.OPS, Role.BILLING, AGENT_ROLE)
 export class AdminCustomersController {
   constructor(private readonly adminCustomersService: AdminCustomersService) {}
 
@@ -64,7 +64,7 @@ export class AdminCustomersController {
   }
 
   @Get(':userId/payments')
-  @Roles(Role.ADMIN, Role.PARTIAL_ADMIN, Role.OPS, Role.BILLING, AGENT_ROLE)
+  @Roles(Role.ADMIN, Role.OPS, Role.BILLING, AGENT_ROLE)
   async getPayments(
     @Param('userId') userId: string,
     @Query('branchId') branchIdQuery: string | undefined,
@@ -74,18 +74,10 @@ export class AdminCustomersController {
     return this.adminCustomersService.getPayments(userId, branchId);
   }
 
-  @Get(':userId/subscription-orders')
-  @Roles(Role.ADMIN, Role.PARTIAL_ADMIN, Role.OPS, Role.BILLING, AGENT_ROLE)
-  async getSubscriptionOrders(@Param('userId') userId: string, @Req() req: { user: AuthUser }) {
-    const branchId = resolveScopedBranchId(req.user);
-    return this.adminCustomersService.getSubscriptionOrders(userId, branchId);
-  }
-
   @Get(':userId')
-  @Roles(Role.ADMIN, Role.PARTIAL_ADMIN, Role.OPS, Role.BILLING, AGENT_ROLE)
-  async get(@Param('userId') userId: string, @Req() req: { user: AuthUser }) {
-    const branchId = resolveScopedBranchId(req.user);
-    return this.adminCustomersService.get(userId, branchId);
+  @Roles(Role.ADMIN, Role.OPS, Role.BILLING, AGENT_ROLE)
+  async get(@Param('userId') userId: string) {
+    return this.adminCustomersService.get(userId);
   }
 
   @Patch(':userId')

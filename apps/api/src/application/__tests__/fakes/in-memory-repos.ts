@@ -456,6 +456,9 @@ export function createFakeServiceAreaRepo(
     async isServiceable(pincode: string): Promise<boolean> {
       return areas.some((a) => a.pincode === pincode && a.active);
     },
+    async isPincodeActiveForBranch(pincode: string, branchId: string): Promise<boolean> {
+      return areas.some((a) => a.pincode === pincode && a.branchId === branchId && a.active);
+    },
     async listAll(): Promise<ServiceAreaRecord[]> {
       return areas.map(clone);
     },

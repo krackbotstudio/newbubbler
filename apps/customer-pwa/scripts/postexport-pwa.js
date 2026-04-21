@@ -8,6 +8,10 @@ const mobileRoot = path.join(appRoot, '..', 'customer-mobile');
 const mobileAssets = path.join(mobileRoot, 'assets');
 const repoRoot = path.join(appRoot, '..', '..');
 
+/** Align static PWA shell with `apps/customer-mobile/src/customerTheme.ts` defaults (pre-JS / install). */
+const PWA_THEME_COLOR = '#C2185B';
+const PWA_AUTH_BLEED_BG = '#3d0f3d';
+
 function ensureDir(p) {
   if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
 }
@@ -130,8 +134,8 @@ async function main() {
     start_url: './',
     scope: './',
     display: 'standalone',
-    background_color: '#3d0f3d',
-    theme_color: '#7a2d7a',
+    background_color: PWA_AUTH_BLEED_BG,
+    theme_color: PWA_THEME_COLOR,
     icons: [
       { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },
       { src: '/icon-512.png', sizes: '512x512', type: 'image/png' },
@@ -207,10 +211,13 @@ self.addEventListener('fetch', (event) => {
     const beforeManifest = indexHtml;
     indexHtml = indexHtml.replace(
       /<link rel="icon"[^>]*\/>\s*/m,
-      (m) => `${m}\n  <link rel="manifest" href="/manifest.json" />\n  <meta name="theme-color" content="#7a2d7a" />\n`
+      (m) => `${m}\n  <link rel="manifest" href="/manifest.json" />\n  <meta name="theme-color" content="${PWA_THEME_COLOR}" />\n`
     );
     if (indexHtml === beforeManifest) {
-      indexHtml = indexHtml.replace('</head>', '  <link rel="manifest" href="/manifest.json" />\n  <meta name="theme-color" content="#7a2d7a" />\n</head>');
+      indexHtml = indexHtml.replace(
+        '</head>',
+        `  <link rel="manifest" href="/manifest.json" />\n  <meta name="theme-color" content="${PWA_THEME_COLOR}" />\n</head>`
+      );
     }
   }
 
@@ -243,14 +250,14 @@ self.addEventListener('fetch', (event) => {
         min-height: 100%;
         min-height: 100dvh;
         height: 100%;
-        background-color: #3d0f3d;
+        background-color: ${PWA_AUTH_BLEED_BG};
       }
       #root {
         min-height: 100%;
         min-height: 100dvh;
         display: flex;
         flex: 1;
-        background-color: #3d0f3d;
+        background-color: ${PWA_AUTH_BLEED_BG};
       }
     </style>
 </head>`

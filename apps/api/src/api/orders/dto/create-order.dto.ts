@@ -3,22 +3,21 @@ import { Type } from 'class-transformer';
 import { ServiceType } from '@shared/enums';
 
 export class CreateOrderDto {
-  /** Order type: INDIVIDUAL (default) or SUBSCRIPTION (use existing subscription; purchase first in customer console). */
+  /** Order type: INDIVIDUAL (default). */
   @IsOptional()
-  @IsIn(['INDIVIDUAL', 'SUBSCRIPTION'])
-  orderType?: 'INDIVIDUAL' | 'SUBSCRIPTION';
+  @IsIn(['INDIVIDUAL'])
+  orderType?: 'INDIVIDUAL';
 
   /** Single service (backward compat). Required when services/selectedServices not provided and orderType is INDIVIDUAL. */
-  @ValidateIf((o) => o.orderType !== 'SUBSCRIPTION' && !o.services?.length && !o.selectedServices?.length)
+  @ValidateIf((o) => !o.services?.length && !o.selectedServices?.length)
   @IsEnum(ServiceType)
   serviceType?: ServiceType;
 
-  /** Multi-select services. Required for INDIVIDUAL; not used for SUBSCRIPTION. */
+  /** Multi-select services. Required for INDIVIDUAL. */
   @IsOptional()
   @IsArray()
   @ArrayMinSize(1, { message: 'At least one service is required for individual booking' })
   @IsEnum(ServiceType, { each: true })
-  @ValidateIf((o) => o.orderType !== 'SUBSCRIPTION')
   services?: ServiceType[];
 
   /** Alias for services. */
@@ -26,7 +25,6 @@ export class CreateOrderDto {
   @IsArray()
   @ArrayMinSize(1, { message: 'At least one service is required for individual booking' })
   @IsEnum(ServiceType, { each: true })
-  @ValidateIf((o) => o.orderType !== 'SUBSCRIPTION')
   selectedServices?: ServiceType[];
 
   @IsString()
@@ -42,11 +40,6 @@ export class CreateOrderDto {
   @Type(() => Number)
   @IsNumber()
   estimatedWeightKg?: number;
-
-  /** Required when orderType is SUBSCRIPTION (use existing subscription). Must be purchased first in customer console. */
-  @IsOptional()
-  @IsString()
-  subscriptionId?: string;
 
   /** Individual orders: branch that serves the address pincode (required when multiple branches serve the same pincode). */
   @IsOptional()

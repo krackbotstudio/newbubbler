@@ -24,6 +24,7 @@ import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Notifications from 'expo-notifications';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import krackbotLogo from './assets/krackbot-logo.png';
@@ -60,6 +61,7 @@ import {
   getPublicCarousel,
   carouselImageFullUrl,
   listPriceList,
+  listAvailableBranches,
   registerPushToken,
   type BackendAddress,
   type CustomerPriceListItem,
@@ -68,18 +70,18 @@ import {
   type OrderDetail,
   type OrderInvoice,
   type BranchForPincodeOption,
-  type ActiveSubscriptionItem,
-  type PastSubscriptionItem,
-  getSubscriptionDetail,
-  type SubscriptionDetailResponse,
 } from './src/api';
-import { getStoredToken, setStoredToken, clearStoredToken } from './src/authStorage';
+import { getStoredToken, setStoredToken, clearStoredToken, getStoredBranchId, setStoredBranchId } from './src/authStorage';
+import { buildCustomerThemeFromBranch } from './src/customerTheme';
+import { createCustomerAppStyles, AUTH_SCREEN_BACKGROUND } from './src/appStyles';
+
+/** Phone / OTP login backdrop — dark blue gradient (matches AUTH_SCREEN_BACKGROUND). */
+const AUTH_SCREEN_GRADIENT = ['#2563eb', '#1e40af', '#0f172a'] as const;
 import { SERVICE_TYPES, type ServiceTypeId } from './src/types';
 import { parseLatLngFromMapsUrl, reverseGeocodeAddress } from './src/googlePlaces';
 
-type Step = 'phone' | 'otp' | 'profile' | 'done';
-type HomeScreen = 'home' | 'branches' | 'subscriptionDetail' | 'addresses' | 'addAddress' | 'areaRequestSent' | 'bookPickup' | 'myOrders' | 'orderDetail' | 'profile';
-type OrderFilter = 'all' | 'walk_in' | 'individual' | 'subscription';
+type Step = 'phone' | 'otp' | 'profile' | 'selectBranch' | 'done';
+type HomeScreen = 'home' | 'priceList' | 'addresses' | 'addAddress' | 'areaRequestSent' | 'bookPickup' | 'myOrders' | 'orderDetail' | 'profile';
 type BookingStep = 'services' | 'address' | 'branch' | 'date' | 'time' | 'confirm';
 
 const SERVICE_ICON_SOURCE: Record<ServiceTypeId, any> = {
@@ -100,9 +102,6 @@ Notifications.setNotificationHandler({
     shouldShowList: true,
   }),
 });
-
-/** Darkest login gradient stop — fills safe areas, edge-to-edge gaps, and PWA/browser overscan. */
-const AUTH_SCREEN_BACKGROUND = '#3d0f3d';
 
 function orderStatusLabel(status: string): string {
   const s = (status || '').toUpperCase().replace(/-/g, '_');
@@ -131,6 +130,25 @@ function serviceTypeDisplayLabel(serviceType: string): string {
     ADD_ONS: 'Add-ons',
   };
   return (map[s] ?? String(serviceType)).replace(/_/g, ' ');
+}
+
+/** Admin `CatalogItemIcon` preset keys → MaterialCommunityIcons glyph names (Expo). */
+const CATALOG_ICON_KEY_TO_MCI: Record<string, string> = {
+  'tshirt-crew': 'tshirt-crew',
+  'human-male': 'human-male',
+  'human-female': 'human-female',
+  hoodie: 'tshirt-crew-outline',
+  'coat-rack': 'hanger',
+  'human-child': 'human-child',
+  'washing-machine': 'washing-machine',
+  'tumble-dryer': 'tumble-dryer',
+  'plus-circle': 'plus-circle',
+};
+
+function catalogPresetMciName(icon: string | null | undefined): string {
+  const i = (icon ?? '').trim();
+  if (!i || i.startsWith('http') || i.startsWith('/')) return 'tshirt-crew';
+  return CATALOG_ICON_KEY_TO_MCI[i] ?? 'tshirt-crew';
 }
 
 /** YYYY-MM-DD in local time (avoids UTC off-by-one when user selects e.g. 25 Feb). */
@@ -198,9 +216,12 @@ export default function App() {
   const [bookingSelectedBranchId, setBookingSelectedBranchId] = useState<string | null>(null);
   const [bookingSuccessOrderId, setBookingSuccessOrderId] = useState<string | null>(null);
   const [orders, setOrdersList] = useState<OrderSummary[]>([]);
+  /** All-branch order list for switch-branch modal chips (main `orders` may be branch-filtered). */
+  const [ordersUnscoped, setOrdersUnscoped] = useState<OrderSummary[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [orderDetail, setOrderDetail] = useState<OrderDetail | null>(null);
+  const [orderDetailLoading, setOrderDetailLoading] = useState(false);
   const [orderInvoices, setOrderInvoices] = useState<OrderInvoice[]>([]);
   const [invoiceError, setInvoiceError] = useState<string | null>(null);
 
@@ -208,30 +229,102 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [meData, setMeData] = useState<{ activeSubscriptions: ActiveSubscriptionItem[]; pastSubscriptions: PastSubscriptionItem[] } | null>(null);
-  /** Selected saved address on Branches tab (pincode used to list branches). */
-  const [branchesAddressId, setBranchesAddressId] = useState<string | null>(null);
-  const [branchesForPincode, setBranchesForPincode] = useState<BranchForPincodeOption[]>([]);
-  const [branchesListLoading, setBranchesListLoading] = useState(false);
-  const [selectedSubscriptionId, setSelectedSubscriptionId] = useState<string | null>(null);
-  const [subscriptionDetail, setSubscriptionDetail] = useState<SubscriptionDetailResponse | null>(null);
-  const [subscriptionDetailLoading, setSubscriptionDetailLoading] = useState(false);
-  const [subscriptionInvoicePreviewUri, setSubscriptionInvoicePreviewUri] = useState<string | null>(null);
   const [notificationsModalVisible, setNotificationsModalVisible] = useState(false);
-  const [priceListModalVisible, setPriceListModalVisible] = useState(false);
   const [priceListLoading, setPriceListLoading] = useState(false);
   const [priceListError, setPriceListError] = useState<string | null>(null);
   const [priceListItems, setPriceListItems] = useState<CustomerPriceListItem[]>([]);
-  const [subscriptionInvoiceLoading, setSubscriptionInvoiceLoading] = useState(false);
-  const [subscriptionInvoiceError, setSubscriptionInvoiceError] = useState<string | null>(null);
-  const [orderFilter, setOrderFilter] = useState<OrderFilter>('all');
-  const [bookingSubscriptionId, setBookingSubscriptionId] = useState<string | null>(null);
-  const [bookingSubscriptionValidFrom, setBookingSubscriptionValidFrom] = useState<string | null>(null);
-  const [bookingSubscriptionValidTill, setBookingSubscriptionValidTill] = useState<string | null>(null);
-  /** Ref so address step knows we came from subscription even if state was reset (e.g. hot reload). */
-  const bookingFromSubscriptionRef = useRef(false);
+  const [priceListSearchQuery, setPriceListSearchQuery] = useState('');
   const [returnToBookPickupAddress, setReturnToBookPickupAddress] = useState(false);
   const [editingAddressId, setEditingAddressId] = useState<string | null>(null);
+  /** Branch selected for theming, catalog price list, and order filtering. */
+  const [customerContextBranch, setCustomerContextBranch] = useState<BranchForPincodeOption | null>(null);
+  const [customerBranchesList, setCustomerBranchesList] = useState<BranchForPincodeOption[]>([]);
+  const [branchSearchQuery, setBranchSearchQuery] = useState('');
+  /** 6-digit pincode filter on Choose branch (public serviceability/branches). */
+  const [branchPincodeQuery, setBranchPincodeQuery] = useState('');
+  const [branchesPincodeFilteredList, setBranchesPincodeFilteredList] = useState<BranchForPincodeOption[] | null>(null);
+  const [branchPincodeLoading, setBranchPincodeLoading] = useState(false);
+  const [branchMenuVisible, setBranchMenuVisible] = useState(false);
+
+  const themeColors = useMemo(
+    () => buildCustomerThemeFromBranch(customerContextBranch),
+    [
+      customerContextBranch?.id ?? '',
+      customerContextBranch?.primaryColor ?? '',
+      customerContextBranch?.secondaryColor ?? '',
+    ],
+  );
+  const colors = themeColors;
+  const styles = useMemo(() => createCustomerAppStyles(themeColors), [themeColors]);
+
+  const priceListDisplayItems = useMemo(() => {
+    const q = priceListSearchQuery.trim().toLowerCase();
+    if (!q) return priceListItems;
+    return priceListItems.filter((item) => {
+      if (item.name.toLowerCase().includes(q)) return true;
+      return item.lines.some(
+        (line) =>
+          line.segment.toLowerCase().includes(q) ||
+          line.service.toLowerCase().includes(q) ||
+          `${line.priceRupees}`.includes(q),
+      );
+    });
+  }, [priceListItems, priceListSearchQuery]);
+
+  const filteredCustomerBranches = useMemo(() => {
+    const base =
+      branchesPincodeFilteredList !== null ? branchesPincodeFilteredList : customerBranchesList;
+    const q = branchSearchQuery.trim().toLowerCase();
+    if (!q) return base;
+    return base.filter((b) => (b.name ?? '').toLowerCase().includes(q));
+  }, [customerBranchesList, branchSearchQuery, branchesPincodeFilteredList]);
+
+  useEffect(() => {
+    if (step !== 'selectBranch') return;
+    setBranchSearchQuery('');
+    setBranchPincodeQuery('');
+    setBranchesPincodeFilteredList(null);
+    setBranchPincodeLoading(false);
+  }, [step]);
+
+  useEffect(() => {
+    if (step !== 'selectBranch') return;
+    const pc = branchPincodeQuery.replace(/\D/g, '').slice(0, 6);
+    if (pc.length !== 6) {
+      setBranchesPincodeFilteredList(null);
+      setBranchPincodeLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setBranchPincodeLoading(true);
+    const tid = setTimeout(() => {
+      void (async () => {
+        try {
+          const { branches } = await getBranchesForPincode(pc);
+          if (!cancelled) setBranchesPincodeFilteredList(branches);
+        } catch {
+          if (!cancelled) setBranchesPincodeFilteredList([]);
+        } finally {
+          if (!cancelled) setBranchPincodeLoading(false);
+        }
+      })();
+    }, 400);
+    return () => {
+      cancelled = true;
+      clearTimeout(tid);
+    };
+  }, [branchPincodeQuery, step]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof document === 'undefined') return;
+    let meta = document.querySelector('meta[name="theme-color"]') as HTMLMetaElement | null;
+    if (!meta) {
+      meta = document.createElement('meta');
+      meta.setAttribute('name', 'theme-color');
+      document.head.appendChild(meta);
+    }
+    meta.setAttribute('content', colors.navBarDark);
+  }, [colors.navBarDark]);
 
   useEffect(() => {
     const sub = Dimensions.addEventListener('change', ({ window }) => {
@@ -255,6 +348,15 @@ export default function App() {
     [addresses]
   );
 
+  const savedAddressesPinKey = useMemo(
+    () => savedAddresses.map((a) => `${a.id}:${(a.pincode || '').replace(/\D/g, '').slice(0, 6)}`).join('|'),
+    [savedAddresses],
+  );
+
+  /** Pincode (6 digits) → whether current header branch serves it (booking address step). */
+  const [pincodeServedByContextBranch, setPincodeServedByContextBranch] = useState<Record<string, boolean>>({});
+  const [pincodeServeCheckLoading, setPincodeServeCheckLoading] = useState(false);
+
   /** Address IDs that have at least one active order (not DELIVERED/CANCELLED). Used to block edit/delete. */
   const addressIdsWithActiveOrder = useMemo(() => {
     const active = orders.filter((o) => {
@@ -269,31 +371,9 @@ export default function App() {
     return ids;
   }, [orders]);
 
-  /** Address IDs that have an active subscription. Used to block edit/delete (address cannot be changed while subscription is active). */
-  const addressIdsWithActiveSubscription = useMemo(() => {
-    const ids = new Set<string>();
-    (meData?.activeSubscriptions ?? []).forEach((s) => {
-      const aid = (s as ActiveSubscriptionItem).addressId;
-      if (aid) ids.add(aid);
-    });
-    return ids;
-  }, [meData?.activeSubscriptions]);
-
-  /** Subscription IDs that have an active order (not DELIVERED/CANCELLED). User cannot start a new booking with these until the order is complete. */
-  const subscriptionIdsWithActiveOrder = useMemo(() => {
-    const ids = new Set<string>();
-    orders.forEach((o) => {
-      const s = (o.status || '').toUpperCase();
-      if (s !== 'DELIVERED' && s !== 'CANCELLED' && o.subscriptionId) {
-        ids.add(o.subscriptionId);
-      }
-    });
-    return ids;
-  }, [orders]);
-
-  /** Notifications derived from orders and subscriptions (booking confirmed, picked up, invoice, payment, delivered, subscription activated). */
+  /** Notifications derived from orders (booking confirmed, picked up, invoice, payment, delivered). */
   const notificationsList = useMemo(() => {
-    type Notif = { id: string; title: string; body: string; sortDate: string; orderId?: string; subscriptionId?: string };
+    type Notif = { id: string; title: string; body: string; sortDate: string; orderId?: string };
     const list: Notif[] = [];
     const statusToTitle: Record<string, string> = {
       BOOKING_CONFIRMED: 'Booking confirmed',
@@ -318,33 +398,39 @@ export default function App() {
         list.push({ id: `order-${o.id}-ack`, title: 'Acknowledgement invoice available', body: orderLabel, sortDate: created, orderId: o.id });
       }
     });
-    (meData?.activeSubscriptions ?? []).forEach((sub) => {
-      list.push({
-        id: `sub-${sub.id}`,
-        title: 'Subscription activated',
-        body: sub.planName || 'Plan',
-        sortDate: sub.validityStartDate || sub.validTill || '',
-        subscriptionId: sub.id,
-      });
-    });
     list.sort((a, b) => (a.sortDate > b.sortDate ? -1 : a.sortDate < b.sortDate ? 1 : 0));
     return list;
-  }, [orders, meData?.activeSubscriptions]);
+  }, [orders]);
 
-  const openPriceListModal = useCallback(async () => {
-    setPriceListModalVisible(true);
-    if (!token) return;
+  /** Load branches for the logged-in customer; pick stored or single branch, else require explicit selection. */
+  const resolveCustomerBranchStep = useCallback(async (authToken: string): Promise<'selectBranch' | 'done'> => {
+    let branches: BranchForPincodeOption[] = [];
     try {
-      setPriceListLoading(true);
-      setPriceListError(null);
-      const rows = await listPriceList(token);
-      setPriceListItems(rows);
-    } catch (e) {
-      setPriceListError(e instanceof Error ? e.message : 'Failed to load price list');
-    } finally {
-      setPriceListLoading(false);
+      const res = await listAvailableBranches(authToken);
+      branches = res.branches ?? [];
+    } catch {
+      branches = [];
     }
-  }, [token]);
+    setCustomerBranchesList(branches);
+    if (branches.length === 0) {
+      setCustomerContextBranch(null);
+      return 'done';
+    }
+    if (branches.length === 1) {
+      const only = branches[0];
+      setCustomerContextBranch(only);
+      await setStoredBranchId(only.id);
+      return 'done';
+    }
+    const storedId = await getStoredBranchId();
+    const match = storedId ? branches.find((b) => b.id === storedId) : null;
+    if (match) {
+      setCustomerContextBranch(match);
+      return 'done';
+    }
+    setCustomerContextBranch(null);
+    return 'selectBranch';
+  }, []);
 
   /** Prefill houseNo, streetArea, city for edit: use stored fields when present, else parse from addressLine. */
   const prefillAddressFields = useCallback((a: BackendAddress) => {
@@ -361,12 +447,23 @@ export default function App() {
     };
   }, []);
 
+  const formatAddressListLine = useCallback((a: BackendAddress) => {
+    const h = String(a.houseNo ?? '').trim();
+    const s = String(a.streetArea ?? '').trim();
+    const c = String(a.city ?? '').trim();
+    if (h || s || c) return [h, s, c].filter(Boolean).join(', ');
+    return String(a.addressLine ?? '').trim();
+  }, []);
+
   const [welcomeBranding, setWelcomeBranding] = useState<PublicBrandingResponse | null>(null);
   const [acceptedTermsAndPrivacy, setAcceptedTermsAndPrivacy] = useState(false);
   const [legalModalContent, setLegalModalContent] = useState<{ title: string; body: string } | null>(null);
   const [deleteAccountModalVisible, setDeleteAccountModalVisible] = useState(false);
   const [userPhone, setUserPhone] = useState<string>('');
   const [carouselImageUrls, setCarouselImageUrls] = useState<string[]>([]);
+  /** False until the first carousel request for the current home+branch context finishes (no bundled banner flash). */
+  const [carouselReady, setCarouselReady] = useState(false);
+  const carouselLoadedKeyRef = useRef<string | null>(null);
   const [homeRefreshing, setHomeRefreshing] = useState(false);
   const carouselScrollRef = useRef<ScrollView>(null);
   const carouselPageRef = useRef(0);
@@ -477,28 +574,61 @@ export default function App() {
   }, [step]);
 
   const fetchCarousel = useCallback(() => {
-    getPublicCarousel().then((r) => setCarouselImageUrls(r.imageUrls ?? []));
-  }, []);
+    return getPublicCarousel(customerContextBranch?.id ?? null).then((r) => {
+      setCarouselImageUrls(r.imageUrls ?? []);
+    });
+  }, [customerContextBranch?.id]);
 
   useEffect(() => {
-    if (step === 'done' && homeScreen === 'home') {
-      fetchCarousel();
+    if (step !== 'done' || homeScreen !== 'home') return;
+    const key = customerContextBranch?.id ?? '__global__';
+    let cancelled = false;
+    const skipLoadingSplash = carouselLoadedKeyRef.current === key;
+
+    if (!skipLoadingSplash) {
+      setCarouselReady(false);
     }
-  }, [step, homeScreen, fetchCarousel]);
+
+    fetchCarousel()
+      .catch(() => {
+        if (!cancelled) setCarouselImageUrls([]);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          carouselLoadedKeyRef.current = key;
+          setCarouselReady(true);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [step, homeScreen, fetchCarousel, customerContextBranch?.id]);
+
+  useEffect(() => {
+    if (step !== 'done') {
+      carouselLoadedKeyRef.current = null;
+      setCarouselImageUrls([]);
+      setCarouselReady(false);
+    }
+  }, [step]);
 
   useEffect(() => {
     carouselPageRef.current = 0;
-  }, [carouselImageUrls.length]);
+    if (step === 'done' && homeScreen === 'home') {
+      carouselScrollRef.current?.scrollTo({ x: 0, animated: false });
+    }
+  }, [carouselImageUrls.join('\u0001'), customerContextBranch?.id, step, homeScreen]);
 
   const onHomeRefresh = useCallback(() => {
     setHomeRefreshing(true);
-    Promise.all([getPublicCarousel(), getPublicBranding()])
+    Promise.all([getPublicCarousel(customerContextBranch?.id ?? null), getPublicBranding()])
       .then(([carouselRes, branding]) => {
         setCarouselImageUrls(carouselRes.imageUrls ?? []);
         setWelcomeBranding(branding);
       })
       .finally(() => setHomeRefreshing(false));
-  }, []);
+  }, [customerContextBranch?.id]);
 
   useEffect(() => {
     if (step !== 'done' || homeScreen !== 'home') return;
@@ -509,7 +639,7 @@ export default function App() {
 
   useEffect(() => {
     if (step !== 'done' || homeScreen !== 'home') return;
-    const total = carouselImageUrls.length > 0 ? carouselImageUrls.length : 3;
+    const total = carouselReady && carouselImageUrls.length > 0 ? carouselImageUrls.length : 0;
     if (total <= 1) return;
     const winW = appScreenWidth;
     const id = setInterval(() => {
@@ -521,7 +651,7 @@ export default function App() {
       });
     }, 5000);
     return () => clearInterval(id);
-  }, [step, homeScreen, carouselImageUrls.length]);
+  }, [step, homeScreen, carouselReady, carouselImageUrls.length]);
 
   const fetchAddresses = useCallback(async () => {
     if (!token) return;
@@ -551,7 +681,7 @@ export default function App() {
     setAddStreetArea([result.street, result.area].filter(Boolean).join(', '));
     setAddCity(result.city);
     setAddPincode(result.pincode);
-    setAddAddressLine(result.addressLine);
+    setAddAddressLine('');
   }, []);
 
   useEffect(() => {
@@ -571,7 +701,9 @@ export default function App() {
       if (typeof d.streetArea === 'string') setAddStreetArea(d.streetArea);
       if (typeof d.city === 'string') setAddCity(d.city);
       if (typeof d.pincode === 'string') setAddPincode(d.pincode.replace(/\D/g, '').slice(0, 6));
-      if (typeof d.addressLine === 'string') setAddAddressLine(d.addressLine);
+      if (typeof d.addressLine === 'string' && d.addressLine.trim()) {
+        setAddStreetArea((prev) => prev.trim() || d.addressLine!.trim());
+      }
       if (typeof d.googleUrl === 'string') setAddGoogleUrl(d.googleUrl);
       setError(null);
     };
@@ -621,12 +753,6 @@ export default function App() {
   }, [step, homeScreen, token, fetchAddresses]);
 
   useEffect(() => {
-    if (step === 'done' && homeScreen === 'branches' && token) {
-      fetchAddresses();
-    }
-  }, [step, homeScreen, token, fetchAddresses]);
-
-  useEffect(() => {
     if (step === 'done' && homeScreen === 'bookPickup' && bookingStep === 'address' && token) {
       fetchAddresses();
     }
@@ -636,37 +762,104 @@ export default function App() {
     if (!token) return;
     setOrdersLoading(true);
     try {
-      const list = await listOrders(token);
+      const list = await listOrders(token, customerContextBranch?.id ?? null);
       setOrdersList(list);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load orders');
     } finally {
       setOrdersLoading(false);
     }
-  }, [token]);
+  }, [token, customerContextBranch?.id]);
+
+  /** Ongoing orders per branch (post-login picker uses scoped `orders`; modal uses `ordersUnscoped`). */
+  const activeOrderCountByBranchId = useMemo(() => {
+    const source = branchMenuVisible ? ordersUnscoped : orders;
+    const map = new Map<string, number>();
+    for (const o of source) {
+      const st = (o.status || '').toUpperCase();
+      if (st === 'DELIVERED' || st === 'CANCELLED') continue;
+      const bid = (o as OrderSummary & { branchId?: string | null }).branchId?.trim();
+      if (!bid) continue;
+      map.set(bid, (map.get(bid) ?? 0) + 1);
+    }
+    return map;
+  }, [orders, ordersUnscoped, branchMenuVisible]);
+
+  useEffect(() => {
+    if (step === 'selectBranch' && token) {
+      void fetchOrders();
+    }
+  }, [step, token, fetchOrders]);
+
+  useEffect(() => {
+    if (!token || !branchMenuVisible) return;
+    let cancelled = false;
+    listOrders(token, null)
+      .then((list) => {
+        if (!cancelled) setOrdersUnscoped(Array.isArray(list) ? list : []);
+      })
+      .catch(() => {
+        if (!cancelled) setOrdersUnscoped([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token, branchMenuVisible]);
 
   useEffect(() => {
     if (step === 'done' && (homeScreen === 'home' || homeScreen === 'myOrders' || homeScreen === 'addresses') && token) {
       fetchOrders();
     }
-  }, [step, homeScreen, token, fetchOrders]);
+  }, [step, homeScreen, token, customerContextBranch?.id, fetchOrders]);
 
   useEffect(() => {
-    if (step === 'done' && homeScreen === 'orderDetail' && token && selectedOrderId) {
-      fetchAddresses();
-      (async () => {
-        try {
-          const [order, invoices] = await Promise.all([
-            getOrder(token, selectedOrderId),
-            listOrderInvoices(token, selectedOrderId),
-          ]);
-          setOrderDetail(order);
-          setOrderInvoices(invoices);
-        } catch (err) {
+    if (step !== 'done' || homeScreen !== 'orderDetail' || !token || !selectedOrderId) {
+      setOrderDetailLoading(false);
+      return;
+    }
+    const orderId = selectedOrderId.trim();
+    let cancelled = false;
+    fetchAddresses();
+    setOrderDetailLoading(true);
+    setError(null);
+    setInvoiceError(null);
+    setOrderInvoices([]);
+    (async () => {
+      try {
+        const order = await getOrder(token, orderId);
+        if (cancelled) return;
+        const embedded = Array.isArray(order.invoices) ? order.invoices : null;
+        const { invoices: _drop, ...orderForDetail } = order;
+        setOrderDetail(orderForDetail as OrderDetail);
+        if (embedded) {
+          setOrderInvoices(embedded);
+          setInvoiceError(null);
+        } else {
+          try {
+            const invoices = await listOrderInvoices(token, orderId);
+            if (!cancelled) {
+              setOrderInvoices(invoices);
+              setInvoiceError(null);
+            }
+          } catch (invErr) {
+            if (!cancelled) {
+              setOrderInvoices([]);
+              setInvoiceError(invErr instanceof Error ? invErr.message : 'Failed to load invoices');
+            }
+          }
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setOrderDetail(null);
           setError(err instanceof Error ? err.message : 'Failed to load order');
         }
-      })();
-    }
+      } finally {
+        if (!cancelled) setOrderDetailLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [step, homeScreen, token, selectedOrderId, fetchAddresses]);
 
   // When an order is completed and paid, ask the customer for rating feedback (once per order).
@@ -747,77 +940,49 @@ export default function App() {
     }
   }, [token, selectedOrderId, feedbackRating, feedbackComment]);
 
-  const fetchSubscriptionsData = useCallback(async () => {
-    if (!token) return;
-    try {
-      const meRes = await getMe(token);
-      setMeData({
-        activeSubscriptions: meRes.activeSubscriptions ?? [],
-        pastSubscriptions: meRes.pastSubscriptions ?? [],
-      });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load account');
-    }
-  }, [token]);
+  useEffect(() => {
+    setPriceListSearchQuery('');
+  }, [customerContextBranch?.id]);
 
   useEffect(() => {
-    if (step === 'done' && (homeScreen === 'branches' || homeScreen === 'bookPickup') && token) {
-      fetchSubscriptionsData();
-    }
-  }, [step, homeScreen, token, fetchSubscriptionsData]);
-
-  // Default Branches tab address to first saved address when none selected
-  useEffect(() => {
-    if (homeScreen === 'branches' && savedAddresses.length > 0 && branchesAddressId == null) {
-      setBranchesAddressId(savedAddresses[0].id);
-    }
-  }, [homeScreen, savedAddresses.length, branchesAddressId]);
-
-  // Fetch subscription detail when user opens subscription detail screen
-  useEffect(() => {
-    if (homeScreen !== 'subscriptionDetail' || !selectedSubscriptionId || !token) return;
-    let cancelled = false;
-    setSubscriptionDetailLoading(true);
-    setSubscriptionDetail(null);
-    getSubscriptionDetail(token, selectedSubscriptionId)
-      .then((d) => {
-        if (!cancelled) {
-          setSubscriptionDetail(d ?? null);
-          setSubscriptionDetailLoading(false);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) { setSubscriptionDetail(null); setSubscriptionDetailLoading(false); }
-      });
-    return () => { cancelled = true; };
-  }, [homeScreen, selectedSubscriptionId, token]);
-
-  // Load branches for selected address pincode on Branches tab
-  useEffect(() => {
-    if (homeScreen !== 'branches' || branchesAddressId == null) {
-      setBranchesForPincode([]);
-      return;
-    }
-    const addr = savedAddresses.find((a) => a.id === branchesAddressId);
-    const pin = addr?.pincode?.trim();
-    if (!pin) {
-      setBranchesForPincode([]);
+    if (step !== 'done' || homeScreen !== 'priceList' || !token || !customerContextBranch?.id) {
+      setPriceListLoading(false);
       return;
     }
     let cancelled = false;
-    setBranchesListLoading(true);
-    getBranchesForPincode(pin)
-      .then((res) => {
-        if (!cancelled) setBranchesForPincode(res.branches ?? []);
+    setPriceListLoading(true);
+    setPriceListError(null);
+    listPriceList(token, customerContextBranch.id)
+      .then((rows) => {
+        if (!cancelled) setPriceListItems(rows);
       })
-      .catch(() => {
-        if (!cancelled) setBranchesForPincode([]);
+      .catch((e) => {
+        if (!cancelled) setPriceListError(e instanceof Error ? e.message : 'Failed to load price list');
       })
       .finally(() => {
-        if (!cancelled) setBranchesListLoading(false);
+        if (!cancelled) setPriceListLoading(false);
       });
-    return () => { cancelled = true; };
-  }, [homeScreen, branchesAddressId, savedAddresses]);
+    return () => {
+      cancelled = true;
+    };
+  }, [step, homeScreen, token, customerContextBranch?.id]);
+
+  /** Refresh price list when app returns to foreground (matches admin/catalog updates without stale UI). */
+  useEffect(() => {
+    if (step !== 'done' || homeScreen !== 'priceList' || !token || !customerContextBranch?.id) return;
+    const branchId = customerContextBranch.id;
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next !== 'active') return;
+      listPriceList(token, branchId)
+        .then((rows) => {
+          setPriceListItems(rows);
+        })
+        .catch(() => {
+          /* keep last good list */
+        });
+    });
+    return () => sub.remove();
+  }, [step, homeScreen, token, customerContextBranch?.id]);
 
   // Startup: verify API connection and log result (no silent failures)
   useEffect(() => {
@@ -862,7 +1027,8 @@ export default function App() {
         setEmail(me.user.email ?? '');
         setUserPhone(me.user.phone ?? '');
         if (me.user.name || me.user.email) {
-          setStep('done');
+          const nextStep = await resolveCustomerBranchStep(storedToken);
+          if (!cancelled) setStep(nextStep);
         } else {
           setStep('profile');
         }
@@ -889,7 +1055,7 @@ export default function App() {
       cancelled = true;
       clearTimeout(timeoutId);
     };
-  }, []);
+  }, [resolveCustomerBranchStep]);
 
   const validatePhone = (combined: string): string | null => {
     const digits = combined.replace(/\D/g, '');
@@ -922,7 +1088,8 @@ export default function App() {
         setEmail(me.user.email ?? '');
         setUserPhone(me.user.phone ?? '');
         if (me.user.name || me.user.email) {
-          setStep('done');
+          const nextStep = await resolveCustomerBranchStep(storedToken);
+          setStep(nextStep);
         } else {
           setStep('profile');
         }
@@ -994,7 +1161,8 @@ export default function App() {
       setEmail(me.user.email ?? '');
       setUserPhone(me.user.phone ?? '');
       if (me.user.name || me.user.email) {
-        setStep('done');
+        const nextStep = await resolveCustomerBranchStep(newToken);
+        setStep(nextStep);
       } else {
         setStep('profile');
       }
@@ -1016,7 +1184,8 @@ export default function App() {
         name: nameTrim || undefined,
         email: emailTrim || undefined,
       });
-      setStep('done');
+      const nextStep = await resolveCustomerBranchStep(token);
+      setStep(nextStep);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save profile.');
     } finally {
@@ -1034,7 +1203,8 @@ export default function App() {
     setLoading(true);
     try {
       if (nameTrim) await updateMe(token, { name: nameTrim });
-      setStep('done');
+      const nextStep = await resolveCustomerBranchStep(token);
+      setStep(nextStep);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to skip.');
     } finally {
@@ -1048,6 +1218,8 @@ export default function App() {
     try {
       await clearStoredToken();
       setToken(null);
+      setCustomerContextBranch(null);
+      setCustomerBranchesList([]);
       setCountryCode('+91');
       setMobile('');
       setOtp('');
@@ -1076,10 +1248,15 @@ export default function App() {
       setServiceability(null);
       return;
     }
+    const branchId = customerContextBranch?.id ?? null;
+    if (!branchId) {
+      setServiceability(null);
+      return;
+    }
     setCheckingServiceability(true);
     setServiceability(null);
     try {
-      const result = await checkServiceability(pc);
+      const result = await checkServiceability(pc, branchId);
       setServiceability({ serviceable: result.serviceable, message: result.message });
     } catch {
       setServiceability({ serviceable: false, message: 'Could not check serviceability' });
@@ -1098,7 +1275,54 @@ export default function App() {
     if (lastCheckedPincodeRef.current === pc) return;
     lastCheckedPincodeRef.current = pc;
     checkPincodeServiceability();
-  }, [addPincode]);
+  }, [addPincode, customerContextBranch?.id]);
+
+  useEffect(() => {
+    lastCheckedPincodeRef.current = null;
+  }, [customerContextBranch?.id]);
+
+  useEffect(() => {
+    if (homeScreen !== 'bookPickup' || bookingStep !== 'address' || !customerContextBranch?.id) {
+      setPincodeServedByContextBranch({});
+      setPincodeServeCheckLoading(false);
+      return;
+    }
+    const branchId = customerContextBranch.id;
+    const unique = [
+      ...new Set(
+        savedAddresses
+          .map((a) => (a.pincode || '').replace(/\D/g, '').slice(0, 6))
+          .filter((pc) => pc.length === 6),
+      ),
+    ];
+    if (unique.length === 0) {
+      setPincodeServedByContextBranch({});
+      setPincodeServeCheckLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setPincodeServeCheckLoading(true);
+    void (async () => {
+      const next: Record<string, boolean> = {};
+      await Promise.all(
+        unique.map(async (pc) => {
+          try {
+            const r = await checkServiceability(pc, branchId);
+            next[pc] = !!r.serviceable;
+          } catch {
+            next[pc] = false;
+          }
+        }),
+      );
+      if (!cancelled) {
+        setPincodeServedByContextBranch(next);
+        setPincodeServeCheckLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [homeScreen, bookingStep, customerContextBranch?.id, savedAddressesPinKey]);
 
   const handleSaveAddress = async () => {
     setError(null);
@@ -1123,10 +1347,9 @@ export default function App() {
       setError('Please add Google Maps link.');
       return;
     }
-    const addressLineParts = [houseNo, streetArea, addAddressLine.trim(), city].filter(Boolean);
-    const builtAddressLine = addressLineParts.length > 0 ? addressLineParts.join(', ') : addAddressLine.trim();
+    const builtAddressLine = [houseNo, streetArea, city].filter(Boolean).join(', ');
     if (!builtAddressLine) {
-      setError('Please enter full address.');
+      setError('Please enter house, street & area, and city.');
       return;
     }
     const pc = addPincode.trim().replace(/\D/g, '').slice(0, 6);
@@ -1193,10 +1416,10 @@ export default function App() {
   };
 
   const handleDeleteAddress = (addressId: string) => {
-    if (addressIdsWithActiveOrder.has(addressId) || addressIdsWithActiveSubscription.has(addressId)) {
+    if (addressIdsWithActiveOrder.has(addressId)) {
       Alert.alert(
         'Cannot delete',
-        'This address has active orders or an active plan. Complete or cancel orders and wait for the plan to end before deleting.',
+        'This address has active orders. Complete or cancel those orders before deleting the address.',
         [{ text: 'OK' }]
       );
       return;
@@ -1232,19 +1455,30 @@ export default function App() {
   };
 
   const handleBookingAddressSelect = (addr: BackendAddress) => {
+    setError(null);
+    const pc = (addr.pincode || '').replace(/\D/g, '').slice(0, 6);
+    const ctxBranchId = customerContextBranch?.id ?? null;
+    if (ctxBranchId && pc.length === 6) {
+      const served = pincodeServedByContextBranch[pc];
+      if (served === false) {
+        setError(
+          customerBranchesList.length > 1
+            ? "This address is not in your current branch's service area. Switch branch or add an address served by this branch."
+            : "This address is not in this branch's service area. Add an address with a served pincode.",
+        );
+        return;
+      }
+      if (pincodeServeCheckLoading && served === undefined) {
+        setError('Checking service areas. Please wait a moment.');
+        return;
+      }
+    }
     setBookingAddressId(addr.id);
     setBookingAddress(addr);
     setBookingDate('');
     setBookingTimeSlot('');
     setSlotAvailability(null);
     setBookingBranches([]);
-    const subId = bookingSubscriptionId;
-    if (subId) {
-      const sub = meData?.activeSubscriptions?.find((s) => s.id === subId);
-      setBookingSelectedBranchId(sub?.branchId ?? null);
-      setBookingStep('date');
-      return;
-    }
     void (async () => {
       setBookingBranchesLoading(true);
       setError(null);
@@ -1259,8 +1493,15 @@ export default function App() {
           setBookingSelectedBranchId(branches[0].id);
           setBookingStep('date');
         } else {
-          setBookingSelectedBranchId(null);
-          setBookingStep('branch');
+          const ctxId = customerContextBranch?.id ?? null;
+          const ctxServesPincode = ctxId ? branches.some((b) => b.id === ctxId) : false;
+          if (ctxServesPincode) {
+            setBookingSelectedBranchId(ctxId);
+            setBookingStep('date');
+          } else {
+            setBookingSelectedBranchId(null);
+            setBookingStep('branch');
+          }
         }
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Could not load branches for this area.');
@@ -1343,8 +1584,7 @@ export default function App() {
 
   const handleConfirmBooking = async () => {
     if (!token || !bookingAddressId || !bookingDate || !bookingTimeSlot) return;
-    const isSubscriptionBooking = !!bookingSubscriptionId;
-    if (!isSubscriptionBooking && selectedServiceIds.length === 0) {
+    if (selectedServiceIds.length === 0) {
       setError('Please select at least one service.');
       return;
     }
@@ -1355,10 +1595,8 @@ export default function App() {
         addressId: bookingAddressId,
         pickupDate: bookingDate,
         timeWindow: bookingTimeSlot,
-        orderType: isSubscriptionBooking ? 'SUBSCRIPTION' : 'INDIVIDUAL',
-        subscriptionId: bookingSubscriptionId ?? undefined,
         selectedServices: selectedServiceIds,
-        branchId: isSubscriptionBooking ? undefined : bookingSelectedBranchId ?? undefined,
+        branchId: bookingSelectedBranchId ?? undefined,
       });
       setBookingSuccessOrderId(orderId);
       setHomeScreen('bookPickup');
@@ -1371,10 +1609,6 @@ export default function App() {
       setSlotAvailability(null);
       setBookingBranches([]);
       setBookingSelectedBranchId(null);
-      bookingFromSubscriptionRef.current = false;
-      setBookingSubscriptionId(null);
-      setBookingSubscriptionValidFrom(null);
-      setBookingSubscriptionValidTill(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Booking failed');
     } finally {
@@ -1385,7 +1619,8 @@ export default function App() {
   const handleAreaRequest = async () => {
     setError(null);
     const pc = addPincode.trim().replace(/\D/g, '').slice(0, 6);
-    if (pc.length !== 6 || !addAddressLine.trim()) {
+    const line = [addHouseNo, addStreetArea, addCity].map((s) => s.trim()).filter(Boolean).join(', ');
+    if (pc.length !== 6 || !line) {
       setError('Enter pincode and address first.');
       return;
     }
@@ -1393,7 +1628,7 @@ export default function App() {
     try {
       await submitAreaRequest({
         pincode: pc,
-        addressLine: addAddressLine.trim(),
+        addressLine: line,
         customerName: name || undefined,
         customerPhone: phone.trim() || undefined,
         customerEmail: email || undefined,
@@ -1407,7 +1642,7 @@ export default function App() {
     }
   };
 
-  const authFullBleedBackdrop = initializing || step === 'phone' || step === 'otp';
+  const authFullBleedBackdrop = initializing || step === 'phone' || step === 'otp' || step === 'selectBranch';
 
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof document === 'undefined') return;
@@ -1457,7 +1692,7 @@ export default function App() {
     content = (
       <View style={styles.phoneAuthRoot}>
         <LinearGradient
-          colors={['#7a2d7a', '#5c1a5c', '#3d0f3d']}
+          colors={[...AUTH_SCREEN_GRADIENT]}
           style={StyleSheet.absoluteFillObject}
         />
         <View style={styles.phoneAuthBody}>
@@ -1519,7 +1754,7 @@ export default function App() {
                 >
                   <View style={styles.checkboxRow}>
                     <View style={[styles.termsCheckbox, acceptedTermsAndPrivacy && styles.termsCheckboxChecked]}>
-                      {acceptedTermsAndPrivacy ? <MaterialIcons name="check" size={16} color={colors.white} /> : null}
+                      {acceptedTermsAndPrivacy ? <MaterialIcons name="check" size={16} color={colors.onPrimary} /> : null}
                     </View>
                     <Text style={styles.checkboxLabel}>
                       I accept the{' '}
@@ -1577,7 +1812,7 @@ export default function App() {
     content = (
       <View style={styles.welcomeScreenOuter}>
         <LinearGradient
-          colors={['#7a2d7a', '#5c1a5c', '#3d0f3d']}
+          colors={[...AUTH_SCREEN_GRADIENT]}
           style={StyleSheet.absoluteFillObject}
         />
         <View style={styles.welcomeCard}>
@@ -1650,7 +1885,7 @@ export default function App() {
           onPress={handleSkipProfile}
           disabled={loading}
         >
-          <Text style={styles.textButtonText}>Skip for now → Go to Home</Text>
+          <Text style={styles.textButtonText}>Skip for now → Continue</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.textButton}
@@ -1659,6 +1894,136 @@ export default function App() {
         >
           <Text style={styles.textButtonText}>Log out</Text>
         </TouchableOpacity>
+      </View>
+    );
+  } else if (step === 'selectBranch') {
+    content = (
+      <View style={styles.branchPickerScreenOuter}>
+        <LinearGradient colors={[...AUTH_SCREEN_GRADIENT]} style={StyleSheet.absoluteFillObject} />
+        <ScrollView
+          style={styles.branchSelectScroll}
+          contentContainerStyle={styles.branchSelectScrollContent}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View style={styles.welcomeCard}>
+            <Text style={styles.title}>Choose your branch</Text>
+            <Text style={styles.subtitle}>
+              Your price list, app colours, and order list follow the branch you pick. You can change this later from the top bar. Search by name or by 6-digit pincode to see which branches serve your area.
+            </Text>
+            {error ? <Text style={styles.error}>{error}</Text> : null}
+
+            <Text style={[styles.muted, { fontSize: 13, fontWeight: '600', marginBottom: 4 }]}>Search by branch name</Text>
+            <TextInput
+              style={[styles.input, styles.branchSearchInput]}
+              placeholder="Type a branch name…"
+              placeholderTextColor={colors.textSecondary}
+              value={branchSearchQuery}
+              onChangeText={setBranchSearchQuery}
+              autoCorrect={false}
+              autoCapitalize="none"
+              accessibilityLabel="Search branches by name"
+            />
+
+            <Text style={[styles.muted, { fontSize: 13, fontWeight: '600', marginBottom: 4, marginTop: 4 }]}>Search by pincode</Text>
+            <TextInput
+              style={[styles.input, styles.branchPincodeInput]}
+              placeholder="6-digit pincode — who serves this area?"
+              placeholderTextColor={colors.textSecondary}
+              value={branchPincodeQuery}
+              onChangeText={(t) => setBranchPincodeQuery(t.replace(/\D/g, '').slice(0, 6))}
+              keyboardType="number-pad"
+              maxLength={6}
+              accessibilityLabel="Search branches by pincode"
+            />
+            {branchPincodeQuery.length > 0 && branchPincodeQuery.replace(/\D/g, '').length < 6 ? (
+              <Text style={[styles.muted, { marginBottom: 8 }]}>Enter all 6 digits to see branches for that pincode.</Text>
+            ) : null}
+            {branchPincodeLoading ? <Text style={[styles.muted, { marginBottom: 8 }]}>Looking up branches…</Text> : null}
+
+            {customerBranchesList.length === 0 && branchesPincodeFilteredList === null ? (
+              <>
+                <Text style={[styles.muted, { marginTop: 12 }]}>
+                  We could not find any branches linked to your saved addresses yet. Use pincode search above to see who serves your area, continue to add an address, or contact support if this looks wrong.
+                </Text>
+                <TouchableOpacity
+                  style={[styles.button, { marginTop: 16 }]}
+                  onPress={() => {
+                    setError(null);
+                    setStep('done');
+                    setHomeScreen('home');
+                  }}
+                >
+                  <Text style={styles.buttonText}>Continue</Text>
+                </TouchableOpacity>
+              </>
+            ) : null}
+
+            {customerBranchesList.length > 0 || branchesPincodeFilteredList !== null ? (
+              <>
+                {filteredCustomerBranches.length === 0 ? (
+                  <Text style={[styles.muted, { marginTop: 8 }]}>
+                    {branchesPincodeFilteredList &&
+                    branchPincodeQuery.replace(/\D/g, '').length === 6 &&
+                    !branchPincodeLoading &&
+                    branchesPincodeFilteredList.length === 0
+                      ? 'No branches serve this pincode yet.'
+                      : 'No branches match your search.'}
+                  </Text>
+                ) : (
+                  filteredCustomerBranches.map((b) => {
+                    const rawLogoUri = brandingLogoFullUrl(b.logoUrl?.trim() ? b.logoUrl : null);
+                    const logoUri =
+                      rawLogoUri && b.updatedAt
+                        ? `${rawLogoUri}${rawLogoUri.includes('?') ? '&' : '?'}v=${encodeURIComponent(b.updatedAt)}`
+                        : rawLogoUri;
+                    const initial = (b.name?.trim()?.[0] ?? '?').toUpperCase();
+                    const activeN = activeOrderCountByBranchId.get(b.id) ?? 0;
+                    return (
+                      <TouchableOpacity
+                        key={b.id}
+                        style={[styles.addressCard, styles.branchPickerRow, { marginBottom: 10 }]}
+                        onPress={async () => {
+                          setError(null);
+                          try {
+                            await setStoredBranchId(b.id);
+                            setCustomerContextBranch(b);
+                            setStep('done');
+                            setHomeScreen('home');
+                          } catch (e) {
+                            setError(e instanceof Error ? e.message : 'Could not save branch');
+                          }
+                        }}
+                        activeOpacity={0.85}
+                      >
+                        {logoUri ? (
+                          <Image source={{ uri: logoUri }} style={styles.branchPickerLogo} resizeMode="contain" />
+                        ) : (
+                          <View style={styles.branchPickerLogoInitial}>
+                            <Text style={styles.branchPickerLogoInitialText}>{initial}</Text>
+                          </View>
+                        )}
+                        <Text style={[styles.addressLabel, styles.branchPickerName]} numberOfLines={2}>
+                          {b.name}
+                        </Text>
+                        {activeN > 0 ? (
+                          <View style={styles.branchActiveOrdersChip}>
+                            <Text style={styles.branchActiveOrdersChipText} numberOfLines={1}>
+                              {activeN === 1 ? '1 active order' : `${activeN} active orders`}
+                            </Text>
+                          </View>
+                        ) : null}
+                        <MaterialIcons name="chevron-right" size={22} color={colors.primary} />
+                      </TouchableOpacity>
+                    );
+                  })
+                )}
+              </>
+            ) : null}
+            <TouchableOpacity style={[styles.textButton, { marginTop: 8 }]} onPress={handleLogout} disabled={loading}>
+              <Text style={styles.textButtonText}>Log out</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
       </View>
     );
   } else if (step === 'done') {
@@ -1675,7 +2040,7 @@ export default function App() {
               <Text style={styles.muted}>No addresses yet. Add one below.</Text>
             ) : (
               savedAddresses.map((a) => {
-                const hasActiveOrderOrPlan = addressIdsWithActiveOrder.has(a.id) || addressIdsWithActiveSubscription.has(a.id);
+                const hasActiveOrder = addressIdsWithActiveOrder.has(a.id);
                 return (
                   <View key={a.id} style={styles.addressCardRow}>
                     <View style={{ flex: 1 }}>
@@ -1686,19 +2051,19 @@ export default function App() {
                             <Text style={styles.defaultAddressTagText}>Default</Text>
                           </View>
                         ) : null}
-                        {hasActiveOrderOrPlan ? (
+                        {hasActiveOrder ? (
                           <View style={[styles.defaultAddressTag, { backgroundColor: '#f59e0b' }]}>
-                            <Text style={styles.defaultAddressTagText}>Active order or plan</Text>
+                            <Text style={styles.defaultAddressTagText}>Active order</Text>
                           </View>
                         ) : null}
                       </View>
                       <Text style={styles.addressLine}>{a.addressLine}</Text>
                       <Text style={styles.addressPincode}>Pincode: {a.pincode}</Text>
-                        {hasActiveOrderOrPlan ? (
-                          <Text style={[styles.muted, { marginTop: 4, fontSize: 12 }]}>Edit and delete are disabled until orders and active plans at this address are completed or cancelled.</Text>
+                        {hasActiveOrder ? (
+                          <Text style={[styles.muted, { marginTop: 4, fontSize: 12 }]}>Edit and delete are disabled until active orders at this address are completed or cancelled.</Text>
                         ) : null}
                     </View>
-                    {!hasActiveOrderOrPlan && (
+                    {!hasActiveOrder && (
                       <>
                         <TouchableOpacity
                           style={styles.editAddressButton}
@@ -1706,7 +2071,7 @@ export default function App() {
                             setError(null);
                             setEditingAddressId(a.id);
                             setAddAddressLabel(a.label || '');
-                            setAddAddressLine(a.addressLine || '');
+                            setAddAddressLine('');
                             const prefill = prefillAddressFields(a);
                             setAddHouseNo(prefill.houseNo);
                             setAddStreetArea(prefill.streetArea);
@@ -1714,7 +2079,7 @@ export default function App() {
                             setAddPincode(a.pincode || '');
                             setAddGoogleUrl(a.googleMapUrl || '');
                             setAddIsDefault(a.isDefault ?? false);
-                            setServiceability({ serviceable: true });
+                            setServiceability(null);
                             setReturnToBookPickupAddress(false);
                             setHomeScreen('addAddress');
                           }}
@@ -1824,13 +2189,6 @@ export default function App() {
               placeholder="City"
               value={addCity}
               onChangeText={setAddCity}
-            />
-            <TextInput
-              style={styles.input}
-              placeholder="Full address (optional; auto-filled from map)"
-              value={addAddressLine}
-              onChangeText={setAddAddressLine}
-              multiline
             />
             <TextInput
               style={styles.input}
@@ -1978,10 +2336,6 @@ export default function App() {
                     setError('Please select at least one service.');
                     return;
                   }
-                  bookingFromSubscriptionRef.current = false;
-                  setBookingSubscriptionId(null);
-                  setBookingSubscriptionValidFrom(null);
-                  setBookingSubscriptionValidTill(null);
                   setBookingSelectedBranchId(null);
                   setBookingBranches([]);
                   setBookingStep('address');
@@ -1991,61 +2345,6 @@ export default function App() {
                 <Text style={styles.buttonText}>Continue → Address</Text>
               </TouchableOpacity>
 
-              {(meData?.activeSubscriptions?.length ?? 0) > 0 ? (
-                <View style={{ marginTop: 24 }}>
-                  <Text style={[styles.subtitle, { fontWeight: '600', marginBottom: 6 }]}>Active plans</Text>
-                  <Text style={[styles.muted, { marginBottom: 12 }]}>
-                    Tap a plan to book a slot (address is locked for the subscription). You cannot book again with a plan that already has an order in progress.
-                  </Text>
-                  {(meData?.activeSubscriptions ?? []).map((sub) => {
-                    const subAddressId = (sub as ActiveSubscriptionItem).addressId ?? null;
-                    const addressLabel = (sub as ActiveSubscriptionItem).addressLabel ?? (subAddressId
-                      ? (savedAddresses.find((a) => a.id === subAddressId)?.label || 'Address')
-                      : 'Address');
-                    const hasActiveOrder = subscriptionIdsWithActiveOrder.has(sub.id);
-                    return (
-                    <TouchableOpacity
-                      key={sub.id}
-                      style={[
-                        styles.activePlanTile,
-                        { marginBottom: 12 },
-                        hasActiveOrder && { opacity: 0.7, backgroundColor: colors.borderLight },
-                      ]}
-                      onPress={hasActiveOrder ? undefined : () => {
-                        setError(null);
-                        bookingFromSubscriptionRef.current = true;
-                        setBookingSubscriptionId(sub.id);
-                        setBookingSelectedBranchId((sub as ActiveSubscriptionItem).branchId ?? null);
-                        setBookingSubscriptionValidFrom(sub.validityStartDate?.slice(0, 10) ?? null);
-                        setBookingSubscriptionValidTill(sub.validTill?.slice(0, 10) ?? null);
-                        setBookingAddressId(subAddressId);
-                        setBookingAddress(null);
-                        setBookingStep('date');
-                      }}
-                      activeOpacity={hasActiveOrder ? 1 : 0.8}
-                      disabled={hasActiveOrder}
-                    >
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                        <Text style={styles.activePlanTileTitle}>{sub.planName ?? 'Plan'}</Text>
-                        <View style={[styles.defaultAddressTag, { backgroundColor: colors.primaryLight }]}>
-                          <Text style={styles.defaultAddressTagText}>{addressLabel}</Text>
-                        </View>
-                      </View>
-                      <Text style={styles.activePlanTileSubtext}>
-                        {sub.remainingPickups}/{sub.maxPickups} pickups left
-                        {sub.validTill ? ` · Valid till ${sub.validTill.slice(0, 10)}` : ''}
-                      </Text>
-                      {hasActiveOrder && (
-                        <Text style={[styles.muted, { marginTop: 6, fontSize: 12 }]}>
-                          You have an active order with this plan. Complete or wait for it before booking again.
-                        </Text>
-                      )}
-                    </TouchableOpacity>
-                  );
-                  })}
-                </View>
-              ) : null}
-
               <TouchableOpacity style={styles.textButton} onPress={() => { setError(null); setHomeScreen('home'); }}>
                 <Text style={styles.textButtonText}>Cancel</Text>
               </TouchableOpacity>
@@ -2053,165 +2352,151 @@ export default function App() {
           </ScrollView>
         );
       } else if (bookingStep === 'address') {
-        const isSubscriptionBooking = !!bookingSubscriptionId || bookingFromSubscriptionRef.current;
-        const subscriptionAddressLocked = isSubscriptionBooking && !!bookingAddressId;
         content = (
           <ScrollView style={styles.scroll} contentContainerStyle={[styles.scrollContent, styles.scrollContentNoTopPadding]}>
             <View style={styles.card}>
-              <Text style={styles.title}>{isSubscriptionBooking ? 'Subscription pickup address' : 'Select address'}</Text>
-              <Text style={styles.subtitle}>
-                {subscriptionAddressLocked
-                  ? 'This subscription is tied to the address below. Tap "Next" to choose date & time.'
-                  : isSubscriptionBooking
-                    ? 'Tap "Next" below to choose date & time.'
-                    : 'Choose a saved address for pickup, or add one.'}
-              </Text>
+              <Text style={styles.title}>Select address</Text>
+              <Text style={styles.subtitle}>Choose a saved address for pickup, or add one.</Text>
+              {customerContextBranch ? (
+                <Text style={[styles.muted, { marginBottom: 8 }]}>
+                  {`Only addresses in ${customerContextBranch.name}'s active service area can be used. `}
+                  {customerBranchesList.length > 1
+                    ? 'Others are marked — use Switch branch or open the branch menu in the header.'
+                    : 'Others are marked — add a new address this branch serves.'}
+                </Text>
+              ) : null}
               {error && <Text style={styles.error}>{error}</Text>}
+              {pincodeServeCheckLoading && savedAddresses.length > 0 && customerContextBranch?.id ? (
+                <Text style={[styles.muted, { marginBottom: 8 }]}>Checking addresses against this branch…</Text>
+              ) : null}
               {bookingBranchesLoading ? (
                 <Text style={[styles.muted, { marginBottom: 8 }]}>Finding branches for your pincode…</Text>
               ) : null}
-              {subscriptionAddressLocked && bookingAddressId && !savedAddresses.find((a) => a.id === bookingAddressId) ? (
-                <View style={[styles.addressCard, { marginBottom: 12 }]}>
-                  <Text style={styles.muted}>This subscription is tied to an address that is no longer in your list. Pickup and bills will still be for that address. Tap Continue to select date & time.</Text>
-                  <TouchableOpacity
-                    style={[styles.button, { marginTop: 12 }]}
-                    onPress={() => {
-                      setError(null);
-                      if (bookingSubscriptionId) {
-                        const sub = meData?.activeSubscriptions?.find((s) => s.id === bookingSubscriptionId);
-                        setBookingSelectedBranchId(sub?.branchId ?? null);
-                      }
-                      setBookingStep('date');
-                    }}
-                  >
-                    <Text style={styles.buttonText}>Continue → Date</Text>
-                  </TouchableOpacity>
-                </View>
-              ) : savedAddresses.length === 0 ? (
+              {savedAddresses.length === 0 ? (
                 <Text style={styles.muted}>No addresses yet. Add one below to continue.</Text>
               ) : (
-                savedAddresses
-                  .filter((a) => !subscriptionAddressLocked || a.id === bookingAddressId)
-                  .map((a) => (
-                  <View key={a.id} style={styles.addressCardRow}>
-                    <TouchableOpacity
-                      style={{ flex: 1 }}
-                      onPress={() => {
-                        if (subscriptionAddressLocked && a.id === bookingAddressId) {
-                          setError(null);
-                          if (bookingSubscriptionId) {
-                            const sub = meData?.activeSubscriptions?.find((s) => s.id === bookingSubscriptionId);
-                            setBookingSelectedBranchId(sub?.branchId ?? null);
-                          }
-                          setBookingStep('date');
-                        } else if (!subscriptionAddressLocked) {
-                          handleBookingAddressSelect(a);
-                        }
-                      }}
-                      activeOpacity={0.8}
-                    >
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                        <Text style={styles.addressLabel}>{a.label || 'Address'}</Text>
-                        {a.isDefault ? (
-                          <View style={styles.defaultAddressTag}>
-                            <Text style={styles.defaultAddressTagText}>Default</Text>
-                          </View>
-                        ) : null}
-                        {subscriptionAddressLocked && a.id === bookingAddressId ? (
-                          <View style={styles.defaultAddressTag}>
-                            <Text style={styles.defaultAddressTagText}>Subscription address</Text>
-                          </View>
-                        ) : null}
+                savedAddresses.map((a) => {
+                  const pc = (a.pincode || '').replace(/\D/g, '').slice(0, 6);
+                  const ctxId = customerContextBranch?.id ?? null;
+                  const hasBranchContext = !!ctxId && pc.length === 6;
+                  const served = !hasBranchContext ? true : pincodeServedByContextBranch[pc];
+                  const notServed = hasBranchContext && served === false;
+                  const checkingThis = hasBranchContext && pincodeServeCheckLoading && served === undefined;
+                  return (
+                    <View key={a.id} style={{ alignSelf: 'stretch', marginBottom: 8 }}>
+                      <View
+                        style={[
+                          styles.addressCardRow,
+                          notServed && styles.addressCardRowNotServed,
+                          { marginBottom: 0 },
+                        ]}
+                      >
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                          <TouchableOpacity
+                            disabled={notServed}
+                            style={{ flex: 1 }}
+                            onPress={() => handleBookingAddressSelect(a)}
+                            activeOpacity={notServed ? 1 : 0.8}
+                          >
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                              <Text style={styles.addressLabel}>{a.label || 'Address'}</Text>
+                              {a.isDefault ? (
+                                <View style={styles.defaultAddressTag}>
+                                  <Text style={styles.defaultAddressTagText}>Default</Text>
+                                </View>
+                              ) : null}
+                            </View>
+                            <Text style={styles.addressLine}>{formatAddressListLine(a)}</Text>
+                            <Text style={styles.addressPincode}>Pincode: {a.pincode}</Text>
+                            {checkingThis ? (
+                              <Text style={[styles.muted, { marginTop: 4, fontSize: 12 }]}>Checking this branch…</Text>
+                            ) : null}
+                          </TouchableOpacity>
+                          {notServed ? (
+                            <>
+                              <Text style={styles.addressNotServedLabel}>
+                                Not served by {customerContextBranch?.name ?? 'this branch'}
+                              </Text>
+                              {customerBranchesList.length <= 1 ? (
+                                <Text style={[styles.muted, { marginTop: 4, fontSize: 12 }]}>
+                                  Add an address whose pincode this branch serves.
+                                </Text>
+                              ) : null}
+                            </>
+                          ) : null}
+                        </View>
+                        <>
+                          <TouchableOpacity
+                            style={styles.editAddressButton}
+                            onPress={() => {
+                              setError(null);
+                              setEditingAddressId(a.id);
+                              setAddAddressLabel(a.label || '');
+                              setAddAddressLine('');
+                              const prefill = prefillAddressFields(a);
+                              setAddHouseNo(prefill.houseNo);
+                              setAddStreetArea(prefill.streetArea);
+                              setAddCity(prefill.city);
+                              setAddPincode(a.pincode || '');
+                              setAddGoogleUrl(a.googleMapUrl || '');
+                              setAddIsDefault(a.isDefault ?? false);
+                              setServiceability(null);
+                              setReturnToBookPickupAddress(true);
+                              setHomeScreen('addAddress');
+                            }}
+                          >
+                            <MaterialIcons name="edit" size={20} color={colors.primary} />
+                            <Text style={styles.editAddressButtonText}>Edit</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={styles.deleteAddressButton}
+                            onPress={() => handleDeleteAddress(a.id)}
+                          >
+                            <MaterialIcons name="delete-outline" size={20} color={colors.error} />
+                            <Text style={styles.deleteAddressButtonText}>Delete</Text>
+                          </TouchableOpacity>
+                        </>
                       </View>
-                      <Text style={styles.addressLine}>{a.addressLine}</Text>
-                      <Text style={styles.addressPincode}>Pincode: {a.pincode}</Text>
-                    </TouchableOpacity>
-                    {!subscriptionAddressLocked && (
-                      <>
+                      {notServed && customerBranchesList.length > 1 ? (
                         <TouchableOpacity
-                          style={styles.editAddressButton}
+                          style={[styles.button, styles.buttonPrimary, { marginTop: 12, alignSelf: 'stretch' }]}
                           onPress={() => {
-                            setEditingAddressId(a.id);
-                            setAddAddressLabel(a.label || '');
-                            setAddAddressLine(a.addressLine || '');
-                            const prefill = prefillAddressFields(a);
-                            setAddHouseNo(prefill.houseNo);
-                            setAddStreetArea(prefill.streetArea);
-                            setAddCity(prefill.city);
-                            setAddPincode(a.pincode || '');
-                            setAddGoogleUrl(a.googleMapUrl || '');
-                            setAddIsDefault(a.isDefault ?? false);
-                            setServiceability({ serviceable: true });
-                            setReturnToBookPickupAddress(true);
-                            setHomeScreen('addAddress');
+                            setError(null);
+                            setBranchMenuVisible(true);
                           }}
+                          activeOpacity={0.9}
                         >
-                          <MaterialIcons name="edit" size={20} color={colors.primary} />
-                          <Text style={styles.editAddressButtonText}>Edit</Text>
+                          <Text style={styles.buttonText}>Switch branch</Text>
                         </TouchableOpacity>
-                        <TouchableOpacity
-                          style={styles.deleteAddressButton}
-                          onPress={() => handleDeleteAddress(a.id)}
-                        >
-                          <MaterialIcons name="delete-outline" size={20} color={colors.error} />
-                          <Text style={styles.deleteAddressButtonText}>Delete</Text>
-                        </TouchableOpacity>
-                      </>
-                    )}
-                  </View>
-                ))
+                      ) : null}
+                    </View>
+                  );
+                })
               )}
-              {(isSubscriptionBooking || subscriptionAddressLocked) ? (
-                <TouchableOpacity
-                  style={[styles.button, styles.buttonPrimary, { marginTop: 16 }]}
-                  onPress={() => {
-                    setError(null);
-                    if (bookingSubscriptionId) {
-                      const sub = meData?.activeSubscriptions?.find((s) => s.id === bookingSubscriptionId);
-                      setBookingSelectedBranchId(sub?.branchId ?? null);
-                    }
-                    setBookingStep('date');
-                  }}
-                >
-                  <Text style={styles.buttonText}>Next: Select date & time</Text>
-                </TouchableOpacity>
-              ) : null}
-              {!(isSubscriptionBooking || subscriptionAddressLocked) ? (
-                <TouchableOpacity
-                  style={[styles.buttonSecondary, { marginTop: savedAddresses.length > 0 ? 12 : 8 }]}
-                  onPress={() => {
-                    setError(null);
-                    setEditingAddressId(null);
-                    setAddAddressLabel('');
-                    setAddAddressLine('');
-                    setAddHouseNo('');
-                    setAddStreetArea('');
-                    setAddCity('');
-                    setAddPincode('');
-                    setAddGoogleUrl('');
-                    setServiceability(null);
-                    setReturnToBookPickupAddress(true);
-                    setHomeScreen('addAddress');
-                  }}
-                >
-                  <Text style={styles.buttonSecondaryText}>+ Add address</Text>
-                </TouchableOpacity>
-              ) : null}
+              <TouchableOpacity
+                style={[styles.buttonSecondary, { marginTop: savedAddresses.length > 0 ? 12 : 8 }]}
+                onPress={() => {
+                  setError(null);
+                  setEditingAddressId(null);
+                  setAddAddressLabel('');
+                  setAddAddressLine('');
+                  setAddHouseNo('');
+                  setAddStreetArea('');
+                  setAddCity('');
+                  setAddPincode('');
+                  setAddGoogleUrl('');
+                  setServiceability(null);
+                  setReturnToBookPickupAddress(true);
+                  setHomeScreen('addAddress');
+                }}
+              >
+                <Text style={styles.buttonSecondaryText}>+ Add address</Text>
+              </TouchableOpacity>
               <TouchableOpacity
                 style={styles.textButton}
                 onPress={() => {
                   setError(null);
-                  if (bookingSubscriptionId) {
-                    bookingFromSubscriptionRef.current = false;
-                    setHomeScreen('branches');
-                    setBookingSubscriptionId(null);
-                    setBookingSubscriptionValidFrom(null);
-                    setBookingSubscriptionValidTill(null);
-                    setBookingAddressId(null);
-                    setBookingAddress(null);
-                  } else {
-                    setBookingStep('services');
-                  }
+                  setBookingStep('services');
                 }}
               >
                 <Text style={styles.textButtonText}>Back</Text>
@@ -2276,35 +2561,12 @@ export default function App() {
       } else if (bookingStep === 'date') {
         const today = new Date();
         const todayDateOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-        let minDate = todayDateOnly;
-        let maxDate: Date | undefined;
-        if (bookingSubscriptionId && (bookingSubscriptionValidFrom || bookingSubscriptionValidTill)) {
-          if (bookingSubscriptionValidFrom) {
-            const validFromDate = new Date(bookingSubscriptionValidFrom + 'T12:00:00');
-            if (validFromDate > minDate) minDate = validFromDate;
-          }
-          if (bookingSubscriptionValidTill) {
-            maxDate = new Date(bookingSubscriptionValidTill + 'T23:59:59');
-          }
-        }
-        const minDateKey = toLocalDateKey(minDate);
-        const maxDateKey = maxDate ? toLocalDateKey(maxDate) : undefined;
+        const minDate = todayDateOnly;
         content = (
           <ScrollView style={styles.scroll} contentContainerStyle={[styles.scrollContent, styles.scrollContentNoTopPadding]}>
             <View style={styles.card}>
               <Text style={styles.title}>Select date</Text>
-              <Text style={styles.subtitle}>
-                {bookingSubscriptionId && (bookingSubscriptionValidFrom || bookingSubscriptionValidTill)
-                  ? 'Pick a date within your subscription validity.'
-                  : 'Pick a date for pickup (we\'ll show available time slots).'}
-              </Text>
-              {bookingSubscriptionId && (bookingSubscriptionValidFrom || bookingSubscriptionValidTill) ? (
-                <Text style={[styles.muted, { marginTop: 4 }]}>
-                  Valid from {bookingSubscriptionValidFrom ? new Date(bookingSubscriptionValidFrom + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '–'}
-                  {' to '}
-                  {bookingSubscriptionValidTill ? new Date(bookingSubscriptionValidTill + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '–'}
-                </Text>
-              ) : null}
+              <Text style={styles.subtitle}>Pick a date for pickup (we'll show available time slots).</Text>
               {error && <Text style={styles.error}>{error}</Text>}
               <>
                 <TouchableOpacity
@@ -2345,7 +2607,6 @@ export default function App() {
                         <TouchableOpacity
                           onPress={() => {
                             const next = new Date(webCalendarMonth.getFullYear(), webCalendarMonth.getMonth() + 1, 1);
-                            if (maxDate && next > new Date(maxDate.getFullYear(), maxDate.getMonth(), 1)) return;
                             setWebCalendarMonth(next);
                             const address = bookingAddress ?? (bookingAddressId ? savedAddresses.find((a) => a.id === bookingAddressId) : null);
                             if (address?.pincode) void loadWebHolidayDates(next, address.pincode, bookingSelectedBranchId);
@@ -2374,7 +2635,7 @@ export default function App() {
                             if (!c.day) return <View key={c.key} style={styles.webCalendarDayCell} />;
                             const dt = new Date(y, m, c.day);
                             const dateKey = toLocalDateKey(dt);
-                            const isOutOfRange = dt < minDate || (maxDate ? dt > maxDate : false);
+                            const isOutOfRange = dt < minDate;
                             const isHoliday = !!webHolidayDates[dateKey];
                             const isDisabled = isOutOfRange || isHoliday;
                             const isSelected = bookingDate === dateKey;
@@ -2426,14 +2687,17 @@ export default function App() {
               <TouchableOpacity
                 style={styles.textButton}
                 onPress={() => {
-                  setBookingStep(bookingBranches.length > 1 && !bookingSubscriptionId ? 'branch' : 'address');
+                  const ctxId = customerContextBranch?.id ?? null;
+                  const skippedBranchPicker =
+                    bookingBranches.length > 1 &&
+                    !!ctxId &&
+                    bookingBranches.some((b) => b.id === ctxId);
+                  setBookingStep(skippedBranchPicker ? 'address' : bookingBranches.length > 1 ? 'branch' : 'address');
                   setBookingDate('');
                   setSlotAvailability(null);
                   setWebDatePickerVisible(false);
-                  if (!bookingSubscriptionId) {
-                    setBookingSelectedBranchId(null);
-                    if (bookingBranches.length <= 1) setBookingBranches([]);
-                  }
+                  setBookingSelectedBranchId(null);
+                  if (bookingBranches.length <= 1) setBookingBranches([]);
                 }}
               >
                 <Text style={styles.textButtonText}>Back</Text>
@@ -2478,7 +2742,6 @@ export default function App() {
           </ScrollView>
         );
       } else if (bookingStep === 'confirm') {
-        const isSub = !!bookingSubscriptionId;
         const formattedConfirmDate = (() => {
           if (!bookingDate) return '—';
           const d = new Date(`${bookingDate}T12:00:00`);
@@ -2502,9 +2765,7 @@ export default function App() {
         })();
         const confirmAddressMain = bookingAddress?.label || '—';
         const confirmAddressLine = [bookingAddress?.addressLine, bookingAddress?.pincode].filter(Boolean).join(', ');
-        const confirmServicesLabel = isSub
-          ? 'Booking with subscription'
-          : selectedServiceIds.map((id) => SERVICE_TYPES.find((s) => s.id === id)?.label ?? id).join(', ');
+        const confirmServicesLabel = selectedServiceIds.map((id) => SERVICE_TYPES.find((s) => s.id === id)?.label ?? id).join(', ');
         const confirmBranchLabel =
           slotAvailability?.branchName ??
           (bookingSelectedBranchId ? bookingBranches.find((b) => b.id === bookingSelectedBranchId)?.name : null);
@@ -2555,217 +2816,89 @@ export default function App() {
       } else {
         content = null;
       }
-    } else if (homeScreen === 'branches') {
-      const selectedBranchesAddress = branchesAddressId ? savedAddresses.find((a) => a.id === branchesAddressId) : null;
+    } else if (homeScreen === 'priceList') {
       content = (
         <ScrollView style={styles.scroll} contentContainerStyle={[styles.scrollContent, styles.scrollContentNoTopPadding]}>
           <View style={styles.plansPageWrapper}>
-            <Text style={styles.title}>Branches</Text>
-            <Text style={[styles.subtitle, styles.plansSubtitleOneLine]} numberOfLines={2}>
-              Select an address to see branches that serve your pincode.
+            <Text style={styles.title}>Price list</Text>
+            <Text style={[styles.subtitle, styles.plansSubtitleOneLine]} numberOfLines={3}>
+              {customerContextBranch
+                ? `Catalog prices for ${customerContextBranch.name}.`
+                : 'Choose a branch from the menu above to load prices for that location.'}
             </Text>
-            {error ? <Text style={styles.error}>{error}</Text> : null}
-
-            {savedAddresses.length > 0 ? (
-              <View style={styles.plansAddressSection}>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ flexDirection: 'row', gap: 8, paddingVertical: 4 }}>
-                  {savedAddresses.map((a) => (
-                    <TouchableOpacity
-                      key={a.id}
-                      onPress={() => { setBranchesAddressId(a.id); }}
-                      style={[
-                        styles.orderFilterChip,
-                        branchesAddressId === a.id && styles.orderFilterChipActive,
-                        { marginRight: 0 },
-                      ]}
-                      activeOpacity={0.8}
-                    >
-                      <Text style={[styles.orderFilterChipText, branchesAddressId === a.id && styles.orderFilterChipTextActive]} numberOfLines={1}>
-                        {a.label || 'Address'}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
+            {!customerContextBranch ? (
+              <Text style={[styles.muted, { marginBottom: 16 }]}>Use the branch selector on the top left after you have at least one served address.</Text>
+            ) : priceListLoading ? (
+              <View style={styles.priceListState}>
+                <ActivityIndicator size="small" color={colors.primary} />
+                <Text style={styles.notificationsEmptySubtext}>Loading catalog prices…</Text>
               </View>
-            ) : (
-              <View style={{ marginBottom: 12 }}>
-                <Text style={[styles.muted, { marginBottom: 8 }]}>
-                  You don't have any addresses yet. Add one to see which branches serve your area.
+            ) : priceListError ? (
+              <View style={styles.priceListState}>
+                <Text style={styles.error}>{priceListError}</Text>
+              </View>
+            ) : priceListItems.length === 0 ? (
+              <View style={styles.priceListState}>
+                <Text style={styles.notificationsEmptyText}>No prices to show yet</Text>
+                <Text style={styles.notificationsEmptySubtext}>
+                  Ask your branch to add catalog items and segment prices in the admin portal.
                 </Text>
-                <TouchableOpacity
-                  style={[styles.buttonSecondary, { marginRight: 0 }]}
-                  onPress={() => {
-                    setError(null);
-                    setHomeScreen('addresses');
-                    fetchAddresses();
-                  }}
-                >
-                  <Text style={styles.buttonSecondaryText}>+ Add address</Text>
-                </TouchableOpacity>
               </View>
-            )}
-
-            {selectedBranchesAddress?.pincode ? (
-              <Text style={[styles.muted, { marginBottom: 12 }]}>Pincode: {selectedBranchesAddress.pincode}</Text>
-            ) : null}
-
-            {savedAddresses.length === 0 ? (
-              <Text style={[styles.muted, { marginBottom: 16 }]}>Add an address in Profile → My addresses to see branches for your area.</Text>
-            ) : branchesListLoading ? (
-              <Text style={[styles.muted, { marginBottom: 16 }]}>Loading branches…</Text>
-            ) : branchesForPincode.length === 0 ? (
-              <Text style={[styles.muted, { marginBottom: 16 }]}>No branches listed for this pincode.</Text>
             ) : (
-              branchesForPincode.map((b) => {
-                const rawLogoUri = brandingLogoFullUrl(b.logoUrl?.trim() ? b.logoUrl : null);
-                const logoUri =
-                  rawLogoUri && b.updatedAt
-                    ? `${rawLogoUri}${rawLogoUri.includes('?') ? '&' : '?'}v=${encodeURIComponent(b.updatedAt)}`
-                    : rawLogoUri;
-                const initial = (b.name?.trim()?.[0] ?? '?').toUpperCase();
-                return (
-                  <View key={b.id} style={[styles.addressCard, styles.branchPickerRow, { marginBottom: 10 }]}>
-                    {logoUri ? (
-                      <Image source={{ uri: logoUri }} style={styles.branchPickerLogo} resizeMode="contain" />
-                    ) : (
-                      <View style={styles.branchPickerLogoInitial}>
-                        <Text style={styles.branchPickerLogoInitialText}>{initial}</Text>
-                      </View>
-                    )}
-                    <Text style={[styles.addressLabel, styles.branchPickerName]} numberOfLines={2}>
-                      {b.name}
-                    </Text>
-                  </View>
-                );
-              })
-            )}
-          </View>
-        </ScrollView>
-      );
-    } else if (homeScreen === 'subscriptionDetail') {
-      content = (
-        <ScrollView style={styles.scroll} contentContainerStyle={[styles.scrollContent, styles.scrollContentNoTopPadding]}>
-          <View style={styles.card}>
-            <TouchableOpacity style={styles.textButton} onPress={() => { setHomeScreen('branches'); setSelectedSubscriptionId(null); setSubscriptionDetail(null); }}>
-              <Text style={styles.textButtonText}>← Back to Branches</Text>
-            </TouchableOpacity>
-            {subscriptionDetailLoading ? (
-              <Text style={styles.muted}>Loading…</Text>
-            ) : subscriptionDetail ? (
               <>
-                <Text style={styles.title}>{subscriptionDetail.planName ?? 'Plan'}</Text>
-                <View style={[styles.defaultAddressTag, { alignSelf: 'flex-start', marginVertical: 8, backgroundColor: subscriptionDetail.active ? colors.primary : '#6b7280' }]}>
-                  <Text style={styles.defaultAddressTagText}>{subscriptionDetail.active ? 'Active' : 'Inactive'}</Text>
-                </View>
-                <Text style={styles.subtitle}>
-                  {subscriptionDetail.remainingPickups}/{subscriptionDetail.maxPickups} pickups left
-                  {subscriptionDetail.remainingKg != null ? ` · ${subscriptionDetail.remainingKg} kg left` : ''}
-                  {subscriptionDetail.remainingItems != null ? ` · ${subscriptionDetail.remainingItems} items left` : ''}
-                </Text>
-                <Text style={styles.muted}>Valid till {subscriptionDetail.validTill.slice(0, 10)}</Text>
-                <View style={{ marginTop: 16, marginBottom: 8 }}>
-                  <Text style={[styles.subtitle, { fontWeight: '600' }]}>Payment</Text>
-                  <Text style={subscriptionDetail.paymentStatus === 'PAID' ? styles.orderAmountPaid : styles.muted}>
-                    {subscriptionDetail.paymentStatus === 'PAID' ? 'Paid' : 'Not paid'}
-                  </Text>
-                  <Text style={[styles.muted, { fontSize: 12, marginTop: 4 }]}>
-                    {subscriptionDetail.paymentStatus === 'PAID' ? 'Admin has confirmed payment for this subscription.' : 'Payment will show as Paid once admin confirms it.'}
-                  </Text>
-                </View>
-                {subscriptionDetail.invoice ? (
-                  <>
-                    {subscriptionInvoiceError ? (
-                      <Text style={[styles.error, { marginTop: 8 }]}>{subscriptionInvoiceError}</Text>
-                    ) : null}
-                    <TouchableOpacity
-                      style={[styles.button, { marginTop: 8 }]}
-                      onPress={async () => {
-                        if (!token) return;
-                        try {
-                          setSubscriptionInvoiceError(null);
-                          setSubscriptionInvoiceLoading(true);
-                          const base64 = await fetchInvoicePdfBase64(subscriptionDetail.invoice!.id, token);
-                          const dir = FileSystem.cacheDirectory ?? FileSystem.documentDirectory;
-                          const fileUri = `${dir}subscription-invoice-${subscriptionDetail.invoice!.id}-${Date.now()}.pdf`;
-                          await FileSystem.writeAsStringAsync(fileUri, base64, {
-                            encoding: FileSystem.EncodingType.Base64,
-                          });
-                          setSubscriptionInvoicePreviewUri(fileUri);
-                        } catch (e) {
-                          setSubscriptionInvoiceError((e as Error).message);
-                        } finally {
-                          setSubscriptionInvoiceLoading(false);
-                        }
-                      }}
-                      disabled={subscriptionInvoiceLoading}
-                    >
-                      {subscriptionInvoiceLoading ? (
-                        <ActivityIndicator size="small" color={colors.white} />
-                      ) : (
-                        <Text style={styles.buttonText}>Preview invoice</Text>
-                      )}
-                    </TouchableOpacity>
-                    {subscriptionInvoicePreviewUri ? (
-                      <View style={{ marginTop: 16 }}>
-                        <Text style={[styles.subtitle, { fontWeight: '600', marginBottom: 8 }]}>Invoice preview</Text>
-                        <View style={styles.invoicePreviewContainer}>
-                          <WebView
-                            source={{ uri: subscriptionInvoicePreviewUri }}
-                            style={styles.invoicePreviewWebView}
-                          />
+                <TextInput
+                  style={[styles.input, styles.priceListSearchInput]}
+                  placeholder="Search by item, segment, or service…"
+                  placeholderTextColor={colors.textSecondary}
+                  value={priceListSearchQuery}
+                  onChangeText={setPriceListSearchQuery}
+                  autoCorrect={false}
+                  autoCapitalize="none"
+                />
+                {priceListDisplayItems.length === 0 ? (
+                  <View style={styles.priceListState}>
+                    <Text style={styles.notificationsEmptyText}>No matching items</Text>
+                    <Text style={styles.notificationsEmptySubtext}>Try a different search term.</Text>
+                  </View>
+                ) : (
+                  priceListDisplayItems.map((item) => {
+                    const iconUri = item.icon && (item.icon.startsWith('http') || item.icon.startsWith('/'))
+                      ? brandingLogoFullUrl(item.icon)
+                      : null;
+                    return (
+                      <View key={item.itemId} style={styles.priceListItemCard}>
+                        <View style={styles.priceListItemHeader}>
+                          {iconUri ? (
+                            <Image source={{ uri: iconUri }} style={styles.priceListItemIcon} />
+                          ) : (
+                            <View style={styles.priceListItemIconFallback}>
+                              <MaterialCommunityIcons
+                                name={catalogPresetMciName(item.icon) as any}
+                                size={18}
+                                color={colors.primary}
+                              />
+                            </View>
+                          )}
+                          <Text style={styles.priceListItemName}>{item.name}</Text>
                         </View>
-                        <View style={styles.invoiceActions}>
-                          <TouchableOpacity
-                            style={[styles.invoiceCta, styles.invoiceCtaDownload]}
-                            onPress={() => Linking.openURL(subscriptionInvoicePreviewUri)}
-                          >
-                            <Text style={styles.invoiceCtaText}>Download</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            style={[styles.invoiceCta, styles.invoiceCtaDownload]}
-                            onPress={async () => {
-                              try {
-                                const PrintModule = await import('expo-print').catch(() => null);
-                                const Print = PrintModule && (PrintModule.default ?? PrintModule);
-                                if (Print?.printAsync) await Print.printAsync({ uri: subscriptionInvoicePreviewUri });
-                                else setSubscriptionInvoiceError('Print is not available.');
-                              } catch (e) {
-                                setSubscriptionInvoiceError((e as Error).message);
-                              }
-                            }}
-                          >
-                            <Text style={styles.invoiceCtaText}>Print</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            style={[styles.invoiceCta, styles.invoiceCtaShare]}
-                            onPress={async () => {
-                              try {
-                                const available = await Sharing.isAvailableAsync();
-                                if (available) {
-                                  await Sharing.shareAsync(subscriptionInvoicePreviewUri, {
-                                    mimeType: 'application/pdf',
-                                    dialogTitle: 'Share subscription invoice',
-                                  });
-                                } else {
-                                  setSubscriptionInvoiceError('Sharing is not available on this device.');
-                                }
-                              } catch (e) {
-                                setSubscriptionInvoiceError((e as Error).message);
-                              }
-                            }}
-                          >
-                            <Text style={[styles.invoiceCtaText, { color: colors.white }]}>Share</Text>
-                          </TouchableOpacity>
+                        <View style={styles.priceListLines}>
+                          {item.lines.map((line, idx) => (
+                            <View
+                              key={`${item.itemId}-${line.segment}-${line.service}-${idx}`}
+                              style={styles.priceListLineRow}
+                            >
+                              <Text style={styles.priceListLineLabel}>
+                                {line.segment}: {line.service}
+                              </Text>
+                              <Text style={styles.priceListLinePrice}>₹{line.priceRupees}</Text>
+                            </View>
+                          ))}
                         </View>
                       </View>
-                    ) : null}
-                  </>
-                ) : (
-                  <Text style={styles.muted}>Invoice not available.</Text>
+                    );
+                  })
                 )}
               </>
-            ) : (
-              <Text style={styles.muted}>Could not load plan details.</Text>
             )}
           </View>
         </ScrollView>
@@ -2781,12 +2914,6 @@ export default function App() {
       });
       const sortedOrders = [...ongoing, ...completed];
       function utilisationSummary(o: OrderSummary): string {
-        const typ = (o as OrderSummary & { orderType?: string }).orderType;
-        if (typ === 'SUBSCRIPTION' && (o.subscriptionUsageKg != null || o.subscriptionUsageItems != null)) {
-          const kg = o.subscriptionUsageKg != null ? `${o.subscriptionUsageKg} kg` : '';
-          const items = o.subscriptionUsageItems != null ? `${o.subscriptionUsageItems} items` : '';
-          return [kg, items].filter(Boolean).join(' · ') || 'Subscription';
-        }
         return (o.serviceType || '').split(',').map((s) => serviceTypeDisplayLabel(s.trim())).filter(Boolean).join(', ') || '—';
       }
       content = (
@@ -2802,12 +2929,15 @@ export default function App() {
             ) : (
               sortedOrders.map((o) => {
                 const src = (o as OrderSummary & { orderSource?: string | null }).orderSource;
-                const typ = (o as OrderSummary & { orderType?: string }).orderType;
-                const typeLabel = src === 'WALK_IN' ? 'Walk-in' : typ === 'SUBSCRIPTION' ? 'Subscription' : 'Online';
+                const typeLabel = src === 'WALK_IN' ? 'Walk-in' : 'Online';
+                const statusUpper = (o.status || '').toUpperCase();
+                const isOngoing = statusUpper !== 'DELIVERED' && statusUpper !== 'CANCELLED';
+                const paySt = String(o.paymentStatus || '').toUpperCase();
+                const isPaid = paySt === 'CAPTURED' || paySt === 'PAID';
                 return (
                   <TouchableOpacity
                     key={o.id}
-                    style={[styles.addressCard, styles.orderTileCard, { marginBottom: 8 }]}
+                    style={isOngoing ? styles.orderListActiveCard : [styles.addressCard, styles.orderTileCard, { marginBottom: 8 }]}
                     onPress={() => {
                       setSelectedOrderId(o.id);
                       setOrderDetail(null);
@@ -2816,33 +2946,68 @@ export default function App() {
                     }}
                   >
                     <View style={styles.orderTileHeader}>
-                      <Text style={[styles.addressLabel, styles.orderTileOrderId]}>#{o.id}</Text>
-                      <View style={styles.orderTileTag}>
-                        <Text style={styles.orderTileTagText}>{typeLabel}</Text>
+                      <Text
+                        style={
+                          isOngoing
+                            ? [styles.activeOrderId, { flex: 1, minWidth: 0, marginBottom: 0 }]
+                            : [styles.addressLabel, styles.orderTileOrderId]
+                        }
+                        numberOfLines={1}
+                      >
+                        #{o.id}
+                      </Text>
+                      <View style={isOngoing ? [styles.activeOrderTag, { marginTop: 0, marginBottom: 0 }] : styles.orderTileTag}>
+                        <Text style={isOngoing ? styles.activeOrderTagText : styles.orderTileTagText}>{typeLabel}</Text>
                       </View>
                     </View>
-                    <Text style={styles.addressLine}>{String(o.pickupDate).slice(0, 10)} {o.timeWindow}</Text>
-                    <Text style={[styles.addressLine, { marginTop: 2, fontSize: 13 }]}>
+                    <Text style={isOngoing ? styles.orderListActiveSecondary : styles.addressLine}>
+                      {String(o.pickupDate).slice(0, 10)} {o.timeWindow}
+                    </Text>
+                    <Text style={isOngoing ? styles.orderListActiveUtil : [styles.addressLine, { marginTop: 2, fontSize: 13 }]}>
                       Utilisation: {utilisationSummary(o)}
                     </Text>
-                    {o.paymentStatus === 'CAPTURED' ? (
-                      <View style={styles.orderAmountPaidRow}>
-                        <View style={styles.paidTickCircle}>
-                          <MaterialIcons name="check" size={14} color={colors.white} />
+                    {isPaid ? (
+                      <View style={isOngoing ? styles.activeOrderPaidRow : styles.orderAmountPaidRow}>
+                        <View style={isOngoing ? styles.activeOrderPaidTickCircle : styles.paidTickCircle}>
+                          <MaterialIcons
+                            name="check"
+                            size={isOngoing ? 10 : 14}
+                            color={isOngoing ? colors.primary : colors.onPrimary}
+                          />
                         </View>
-                        <Text style={styles.orderAmountPaid}>
+                        <Text style={isOngoing ? styles.activeOrderPaidText : styles.orderAmountPaid}>
                           Paid{o.amountToPayPaise != null && o.amountToPayPaise > 0 ? `: ₹${(o.amountToPayPaise / 100).toFixed(2)}` : ''}
                         </Text>
                       </View>
                     ) : o.paymentStatus === 'FAILED' ? (
-                      <Text style={styles.error}>Payment failed</Text>
+                      <Text style={isOngoing ? styles.activeOrderPaymentFailed : styles.error}>Payment failed</Text>
                     ) : o.amountToPayPaise != null && o.amountToPayPaise > 0 ? (
-                      <Text style={styles.orderAmount}>Amount to pay: ₹{(o.amountToPayPaise / 100).toFixed(2)}</Text>
+                      <Text style={isOngoing ? styles.activeOrderToPay : styles.orderAmount}>
+                        {isOngoing ? 'To pay: ' : 'Amount to pay: '}₹{(o.amountToPayPaise / 100).toFixed(2)}
+                      </Text>
                     ) : null}
                     <View style={styles.orderTileStatusRow}>
-                      <Text style={[styles.orderTileStatusText, o.status === 'CANCELLED' && styles.orderTileStatusCancelled]}>
-                        {orderStatusLabel(o.status)}
-                      </Text>
+                      {isOngoing ? (
+                        <View
+                          style={[
+                            styles.activeOrderStatusChip,
+                            o.status === 'CANCELLED' && { backgroundColor: 'rgba(254, 226, 226, 0.95)' },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.activeOrderStatusChipText,
+                              o.status === 'CANCELLED' && styles.activeOrderStatusChipTextCancelled,
+                            ]}
+                          >
+                            {orderStatusLabel(o.status)}
+                          </Text>
+                        </View>
+                      ) : (
+                        <Text style={[styles.orderTileStatusText, o.status === 'CANCELLED' && styles.orderTileStatusCancelled]}>
+                          {orderStatusLabel(o.status)}
+                        </Text>
+                      )}
                     </View>
                   </TouchableOpacity>
                 );
@@ -2856,7 +3021,10 @@ export default function App() {
         <ScrollView style={styles.scroll} contentContainerStyle={[styles.scrollContent, styles.scrollContentNoTopPadding]}>
           <View style={styles.card}>
             <Text style={styles.title}>Order #{selectedOrderId}</Text>
-            {error && <Text style={styles.error}>{error}</Text>}
+            {error && !orderDetail ? <Text style={styles.error}>{error}</Text> : null}
+            {orderDetailLoading && !orderDetail ? (
+              <Text style={styles.muted}>Loading…</Text>
+            ) : null}
             {orderDetail ? (
               <>
                 {(() => {
@@ -2910,7 +3078,8 @@ export default function App() {
                 })()}
                 {(() => {
                   const finalInv = orderInvoices.find((i) => i.type === 'FINAL');
-                  const isPaid = orderDetail.paymentStatus === 'CAPTURED';
+                  const pay = String(orderDetail.paymentStatus || '').toUpperCase();
+                  const isPaid = pay === 'CAPTURED' || pay === 'PAID';
                   if (finalInv) {
                     if (isPaid) {
                       return (
@@ -2922,7 +3091,7 @@ export default function App() {
                         >
                           <View style={styles.orderAmountPaidRow}>
                             <View style={styles.paidTickCircleOnGreen}>
-                              <MaterialIcons name="check" size={14} color={colors.white} />
+                              <MaterialIcons name="check" size={14} color={colors.onPrimary} />
                             </View>
                             <Text style={styles.amountPaidLabelOnGradient}>Amount paid</Text>
                           </View>
@@ -2949,7 +3118,7 @@ export default function App() {
                       >
                         <View style={styles.orderAmountPaidRow}>
                           <View style={styles.paidTickCircleOnGreen}>
-                            <MaterialIcons name="check" size={14} color={colors.white} />
+                            <MaterialIcons name="check" size={14} color={colors.onPrimary} />
                           </View>
                           <Text style={styles.amountPaidLabelOnGradient}>Payment status</Text>
                         </View>
@@ -2968,6 +3137,7 @@ export default function App() {
                   const invoicesToShow = hasFinal
                     ? orderInvoices.filter((i) => i.type === 'FINAL')
                     : orderInvoices;
+                  if (invoiceError) return null;
                   return invoicesToShow.length === 0 ? (
                     <Text style={styles.muted}>No invoices yet.</Text>
                   ) : (
@@ -3065,10 +3235,8 @@ export default function App() {
                 }
                 )()}
               </>
-            ) : (
-              <Text style={styles.muted}>Loading…</Text>
-            )}
-            <TouchableOpacity style={styles.textButton} onPress={() => { setHomeScreen('myOrders'); setSelectedOrderId(null); setOrderDetail(null); setInvoiceError(null); fetchOrders(); }}>
+            ) : null}
+            <TouchableOpacity style={styles.textButton} onPress={() => { setHomeScreen('myOrders'); setSelectedOrderId(null); setOrderDetail(null); setOrderDetailLoading(false); setInvoiceError(null); setError(null); fetchOrders(); }}>
               <Text style={styles.textButtonText}>Back to Orders</Text>
             </TouchableOpacity>
           </View>
@@ -3193,12 +3361,7 @@ export default function App() {
       // Full width; height is adjustable (ratio of width, e.g. 0.5 = half, 9/16 ≈ 0.56 for banner)
       const carouselHeightRatio = 9 / 16;
       const carouselHeight = Math.round(winWidth * carouselHeightRatio);
-      const bannerImages = [
-        require('./assets/banners/banner1.png'),
-        require('./assets/banners/banner2.png'),
-        require('./assets/banners/banner3.png'),
-      ];
-      const showApiCarousel = carouselImageUrls.length > 0;
+      const showApiCarousel = carouselReady && carouselImageUrls.length > 0;
       content = (
         <View style={styles.homeLayout}>
           <ScrollView
@@ -3225,22 +3388,28 @@ export default function App() {
                   carouselPageRef.current = idx;
                 }}
               >
-                {showApiCarousel
-                  ? carouselImageUrls.map((url, index) => (
-                      <View key={index} style={[styles.carouselSlide, { width: winWidth, height: carouselHeight }]}>
-                        <Image source={{ uri: carouselImageFullUrl(url) }} style={styles.carouselImage} resizeMode="cover" />
-                      </View>
-                    ))
-                  : bannerImages.map((src, index) => (
-                      <View key={index} style={[styles.carouselSlide, { width: winWidth, height: carouselHeight }]}>
-                        <Image source={src} style={styles.carouselImage} resizeMode="cover" />
-                      </View>
-                    ))}
+                {!carouselReady ? (
+                  <View style={[styles.carouselSlide, { width: winWidth, height: carouselHeight }]}>
+                    <View style={styles.carouselPlaceholderInner}>
+                      <ActivityIndicator size="large" color={colors.primary} />
+                    </View>
+                  </View>
+                ) : showApiCarousel ? (
+                  carouselImageUrls.map((url, index) => (
+                    <View key={index} style={[styles.carouselSlide, { width: winWidth, height: carouselHeight }]}>
+                      <Image source={{ uri: carouselImageFullUrl(url) }} style={styles.carouselImage} resizeMode="cover" />
+                    </View>
+                  ))
+                ) : (
+                  <View style={[styles.carouselSlide, { width: winWidth, height: carouselHeight }]}>
+                    <View style={styles.carouselPlaceholderInner} />
+                  </View>
+                )}
               </ScrollView>
             </View>
             <View style={[styles.card, styles.homeWelcomeCard]}>
               <Text style={styles.title}>Welcome{ name ? `, ${name}` : ''}</Text>
-              <Text style={styles.subtitle}>Use the menu below to book a pickup, see branches for your area, view orders, or manage your profile.</Text>
+              <Text style={styles.subtitle}>Use the menu below to book a pickup, browse prices for your branch, view orders, or manage your profile.</Text>
               {error && <Text style={styles.error}>{error}</Text>}
             </View>
             {token && (() => {
@@ -3259,9 +3428,9 @@ export default function App() {
                     >
                       {activeOrders.map((o) => {
                         const src = (o as OrderSummary & { orderSource?: string | null }).orderSource;
-                        const typ = (o as OrderSummary & { orderType?: string }).orderType;
-                        const typeLabel = src === 'WALK_IN' ? 'Walk-in' : typ === 'SUBSCRIPTION' ? 'Subscription' : 'Online';
-                        const isPaid = o.paymentStatus === 'CAPTURED';
+                        const typeLabel = src === 'WALK_IN' ? 'Walk-in' : 'Online';
+                        const paySt = String(o.paymentStatus || '').toUpperCase();
+                        const isPaid = paySt === 'CAPTURED' || paySt === 'PAID';
                         return (
                           <TouchableOpacity
                             key={o.id}
@@ -3288,7 +3457,7 @@ export default function App() {
                                 {isPaid ? (
                                   <View style={styles.activeOrderPaidRow}>
                                     <View style={styles.activeOrderPaidTickCircle}>
-                                      <MaterialIcons name="check" size={10} color={colors.white} />
+                                      <MaterialIcons name="check" size={10} color={colors.primary} />
                                     </View>
                                     <Text style={styles.activeOrderPaidText}>Paid{o.amountToPayPaise != null && o.amountToPayPaise > 0 ? ` ₹${(o.amountToPayPaise / 100).toFixed(2)}` : ''}</Text>
                                   </View>
@@ -3299,7 +3468,21 @@ export default function App() {
                                 ) : null}
                               </View>
                               <View style={styles.activeOrderCardStatus}>
-                                <Text style={[styles.activeOrderStatus, o.status === 'CANCELLED' && styles.orderTileStatusCancelled]}>{orderStatusLabel(o.status)}</Text>
+                                <View
+                                  style={[
+                                    styles.activeOrderStatusChip,
+                                    o.status === 'CANCELLED' && { backgroundColor: 'rgba(254, 226, 226, 0.95)' },
+                                  ]}
+                                >
+                                  <Text
+                                    style={[
+                                      styles.activeOrderStatusChipText,
+                                      o.status === 'CANCELLED' && styles.activeOrderStatusChipTextCancelled,
+                                    ]}
+                                  >
+                                    {orderStatusLabel(o.status)}
+                                  </Text>
+                                </View>
                               </View>
                             </View>
                           </TouchableOpacity>
@@ -3347,31 +3530,94 @@ export default function App() {
           {showBottomNav ? (
             <View style={[styles.mainWithNav, isDesktopWeb && styles.mainWithNavDesktop, isDesktopWeb && { width: desktopMobileFrameWidth }]}>
               <View style={styles.topNavBar}>
-                <View style={styles.topNavLogo}>
-                  {welcomeBranding?.logoUrl ? (
-                    <Image
-                      key={welcomeBranding.logoUrl}
-                      source={{ uri: brandingLogoFullUrl(welcomeBranding.logoUrl) ?? '' }}
-                      style={styles.topNavLogoImage}
-                      resizeMode="contain"
-                      accessibilityLabel="Logo"
-                    />
-                  ) : (
-                    <Text style={styles.topNavLogoText} numberOfLines={1}>
-                      {welcomeBranding?.businessName?.slice(0, 2)?.toUpperCase() ?? 'We'}
-                    </Text>
-                  )}
-                </View>
-                <View style={styles.topNavActions}>
+                {customerBranchesList.length > 1 ? (
                   <TouchableOpacity
-                    style={styles.topNavPriceListButton}
-                    onPress={() => {
-                      void openPriceListModal();
-                    }}
-                    accessibilityLabel="Price list"
+                    style={styles.topNavBranchTrigger}
+                    onPress={() => setBranchMenuVisible(true)}
+                    activeOpacity={0.75}
+                    accessibilityRole="button"
+                    accessibilityLabel="Choose branch"
                   >
-                    <Text style={styles.topNavPriceListButtonText}>Price list</Text>
+                    {customerContextBranch ? (
+                      (() => {
+                        const b = customerContextBranch;
+                        const rawLogoUri = brandingLogoFullUrl(b.logoUrl?.trim() ? b.logoUrl : null);
+                        const logoUri =
+                          rawLogoUri && b.updatedAt
+                            ? `${rawLogoUri}${rawLogoUri.includes('?') ? '&' : '?'}v=${encodeURIComponent(b.updatedAt)}`
+                            : rawLogoUri;
+                        const initial = (b.name?.trim()?.[0] ?? '?').toUpperCase();
+                        return (
+                          <>
+                            {logoUri ? (
+                              <Image source={{ uri: logoUri }} style={styles.topNavBranchLogoSmall} resizeMode="contain" />
+                            ) : (
+                              <View style={styles.topNavBranchLogoSmallInitial}>
+                                <Text style={styles.topNavBranchLogoSmallInitialText}>{initial}</Text>
+                              </View>
+                            )}
+                            <Text style={styles.topNavBranchNameText} numberOfLines={1}>
+                              {b.name}
+                            </Text>
+                            <MaterialIcons name="keyboard-arrow-down" size={24} color={colors.textSecondary} />
+                          </>
+                        );
+                      })()
+                    ) : (
+                      <>
+                        <MaterialIcons name="storefront" size={26} color={colors.primary} />
+                        <Text style={styles.topNavBranchNameText} numberOfLines={1}>
+                          Select branch
+                        </Text>
+                        <MaterialIcons name="keyboard-arrow-down" size={24} color={colors.textSecondary} />
+                      </>
+                    )}
                   </TouchableOpacity>
+                ) : customerContextBranch ? (
+                  <View style={[styles.topNavBranchTrigger, styles.topNavBranchTriggerStatic]} accessibilityLabel="Current branch">
+                    {(() => {
+                      const b = customerContextBranch;
+                      const rawLogoUri = brandingLogoFullUrl(b.logoUrl?.trim() ? b.logoUrl : null);
+                      const logoUri =
+                        rawLogoUri && b.updatedAt
+                          ? `${rawLogoUri}${rawLogoUri.includes('?') ? '&' : '?'}v=${encodeURIComponent(b.updatedAt)}`
+                          : rawLogoUri;
+                      const initial = (b.name?.trim()?.[0] ?? '?').toUpperCase();
+                      return (
+                        <>
+                          {logoUri ? (
+                            <Image source={{ uri: logoUri }} style={styles.topNavBranchLogoSmall} resizeMode="contain" />
+                          ) : (
+                            <View style={styles.topNavBranchLogoSmallInitial}>
+                              <Text style={styles.topNavBranchLogoSmallInitialText}>{initial}</Text>
+                            </View>
+                          )}
+                          <Text style={styles.topNavBranchNameText} numberOfLines={1}>
+                            {b.name}
+                          </Text>
+                          <MaterialIcons name="keyboard-arrow-down" size={24} color={colors.textSecondary} />
+                        </>
+                      );
+                    })()}
+                  </View>
+                ) : (
+                  <View style={styles.topNavLogo}>
+                    {welcomeBranding?.logoUrl ? (
+                      <Image
+                        key={welcomeBranding.logoUrl}
+                        source={{ uri: brandingLogoFullUrl(welcomeBranding.logoUrl) ?? '' }}
+                        style={styles.topNavLogoImage}
+                        resizeMode="contain"
+                        accessibilityLabel="Logo"
+                      />
+                    ) : (
+                      <Text style={styles.topNavLogoText} numberOfLines={1}>
+                        {welcomeBranding?.businessName?.slice(0, 2)?.toUpperCase() ?? 'We'}
+                      </Text>
+                    )}
+                  </View>
+                )}
+                <View style={styles.topNavActions}>
                   <TouchableOpacity
                     style={styles.topNavBell}
                     onPress={() => {
@@ -3396,11 +3642,11 @@ export default function App() {
                       <Text style={[styles.navItemText, homeScreen === 'home' && styles.navItemTextActive]} numberOfLines={1}>Home</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
-                      style={[styles.navItem, (homeScreen === 'branches' || homeScreen === 'subscriptionDetail') && styles.navItemActive]}
-                      onPress={() => { setError(null); setHomeScreen('branches'); setSelectedSubscriptionId(null); setSubscriptionDetail(null); }}
+                      style={[styles.navItem, homeScreen === 'priceList' && styles.navItemActive]}
+                      onPress={() => { setError(null); setHomeScreen('priceList'); }}
                     >
-                      <MaterialIcons name="storefront" size={24} color={(homeScreen === 'branches' || homeScreen === 'subscriptionDetail') ? colors.white : colors.navBarIcon} />
-                      <Text style={[styles.navItemText, (homeScreen === 'branches' || homeScreen === 'subscriptionDetail') && styles.navItemTextActive]} numberOfLines={1}>Branches</Text>
+                      <MaterialIcons name="list-alt" size={24} color={homeScreen === 'priceList' ? colors.white : colors.navBarIcon} />
+                      <Text style={[styles.navItemText, homeScreen === 'priceList' && styles.navItemTextActive]} numberOfLines={1}>Prices</Text>
                     </TouchableOpacity>
                   </View>
                   <View style={styles.navCenterSlot} pointerEvents="box-none">
@@ -3408,10 +3654,6 @@ export default function App() {
                       style={styles.navBookNowButton}
                       onPress={() => {
                         setError(null);
-                        bookingFromSubscriptionRef.current = false;
-                        setBookingSubscriptionId(null);
-                        setBookingSubscriptionValidFrom(null);
-                        setBookingSubscriptionValidTill(null);
                         setBookingStep('services');
                         setSelectedServiceIds([]);
                         setBookingAddressId(null);
@@ -3423,7 +3665,7 @@ export default function App() {
                         fetchOrders();
                       }}
                     >
-                      <MaterialIcons name="event-available" size={30} color={colors.white} />
+                      <MaterialIcons name="event-available" size={30} color={colors.onPrimary} />
                     </TouchableOpacity>
                     <Text style={styles.navBookNowLabel} numberOfLines={1}>Book Now</Text>
                   </View>
@@ -3522,85 +3764,91 @@ export default function App() {
           </View>
         </Modal>
         <Modal
-          visible={priceListModalVisible}
+          visible={branchMenuVisible}
           animationType="fade"
           transparent
-          onRequestClose={() => setPriceListModalVisible(false)}
+          onRequestClose={() => setBranchMenuVisible(false)}
         >
           <View style={styles.notificationsModalOverlay}>
-            <TouchableWithoutFeedback onPress={() => setPriceListModalVisible(false)}>
+            <TouchableWithoutFeedback onPress={() => setBranchMenuVisible(false)}>
               <View style={StyleSheet.absoluteFill} />
             </TouchableWithoutFeedback>
             <View style={styles.notificationsModalCard}>
               <View style={styles.notificationsModalHeader}>
                 <View style={styles.notificationsModalTitleRow}>
                   <View style={styles.notificationsModalBellIcon}>
-                    <MaterialIcons name="list-alt" size={20} color={colors.primary} />
+                    <MaterialIcons name="storefront" size={20} color={colors.primary} />
                   </View>
-                  <Text style={styles.notificationsModalTitle}>Price list</Text>
+                  <Text style={styles.notificationsModalTitle}>Switch branch</Text>
                 </View>
                 <TouchableOpacity
-                  onPress={() => setPriceListModalVisible(false)}
+                  onPress={() => setBranchMenuVisible(false)}
                   style={styles.notificationsModalCloseBtn}
                   hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                 >
                   <MaterialIcons name="close" size={22} color={colors.primary} />
                 </TouchableOpacity>
               </View>
-              {priceListLoading ? (
-                <View style={styles.priceListState}>
-                  <ActivityIndicator size="small" color={colors.primary} />
-                  <Text style={styles.notificationsEmptySubtext}>Loading catalog prices...</Text>
-                </View>
-              ) : priceListError ? (
-                <View style={styles.priceListState}>
-                  <Text style={styles.error}>{priceListError}</Text>
-                </View>
-              ) : priceListItems.length === 0 ? (
-                <View style={styles.priceListState}>
-                  <Text style={styles.notificationsEmptyText}>No price lines found</Text>
-                  <Text style={styles.notificationsEmptySubtext}>Please check again later.</Text>
-                </View>
-              ) : (
-                <ScrollView
-                  style={styles.notificationsListScroll}
-                  contentContainerStyle={styles.priceListContent}
-                  showsVerticalScrollIndicator={true}
-                >
-                  {priceListItems.map((item) => {
-                    const iconUri = item.icon && (item.icon.startsWith('http') || item.icon.startsWith('/'))
-                      ? brandingLogoFullUrl(item.icon)
-                      : null;
-                    return (
-                      <View key={item.itemId} style={styles.priceListItemCard}>
-                        <View style={styles.priceListItemHeader}>
-                          {iconUri ? (
-                            <Image source={{ uri: iconUri }} style={styles.priceListItemIcon} />
-                          ) : (
-                            <View style={styles.priceListItemIconFallback}>
-                              <MaterialIcons name="local-laundry-service" size={16} color={colors.primary} />
-                            </View>
-                          )}
-                          <Text style={styles.priceListItemName}>{item.name}</Text>
-                        </View>
-                        <View style={styles.priceListLines}>
-                          {item.lines.map((line, idx) => (
-                            <View
-                              key={`${item.itemId}-${line.segment}-${line.service}-${idx}`}
-                              style={styles.priceListLineRow}
-                            >
-                              <Text style={styles.priceListLineLabel}>
-                                {line.segment} - {line.service}
+              <ScrollView
+                style={styles.notificationsListScroll}
+                contentContainerStyle={styles.notificationsListContent}
+                showsVerticalScrollIndicator
+              >
+                {customerBranchesList.map((b) => {
+                  const selected = customerContextBranch?.id === b.id;
+                  const rawLogoUri = brandingLogoFullUrl(b.logoUrl?.trim() ? b.logoUrl : null);
+                  const logoUri =
+                    rawLogoUri && b.updatedAt
+                      ? `${rawLogoUri}${rawLogoUri.includes('?') ? '&' : '?'}v=${encodeURIComponent(b.updatedAt)}`
+                      : rawLogoUri;
+                  const initial = (b.name?.trim()?.[0] ?? '?').toUpperCase();
+                  const activeN = activeOrderCountByBranchId.get(b.id) ?? 0;
+                  return (
+                    <TouchableOpacity
+                      key={b.id}
+                      style={styles.notificationRow}
+                      onPress={async () => {
+                        try {
+                          await setStoredBranchId(b.id);
+                          setCustomerContextBranch(b);
+                          setBranchMenuVisible(false);
+                          if (token) void fetchOrders();
+                        } catch (e) {
+                          setError(e instanceof Error ? e.message : 'Could not save branch');
+                        }
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 }}>
+                        {logoUri ? (
+                          <Image source={{ uri: logoUri }} style={styles.topNavBranchLogoSmall} resizeMode="contain" />
+                        ) : (
+                          <View style={styles.topNavBranchLogoSmallInitial}>
+                            <Text style={styles.topNavBranchLogoSmallInitialText}>{initial}</Text>
+                          </View>
+                        )}
+                        <View style={[styles.notificationRowContent, { flexDirection: 'row', alignItems: 'center', gap: 8 }]}>
+                          <Text style={[styles.notificationRowTitle, { flex: 1, minWidth: 0 }]} numberOfLines={2}>
+                            {b.name}
+                          </Text>
+                          {activeN > 0 ? (
+                            <View style={styles.branchActiveOrdersChip}>
+                              <Text style={styles.branchActiveOrdersChipText} numberOfLines={1}>
+                                {activeN === 1 ? '1 active order' : `${activeN} active orders`}
                               </Text>
-                              <Text style={styles.priceListLinePrice}>Rs {line.priceRupees.toFixed(2)}</Text>
                             </View>
-                          ))}
+                          ) : null}
                         </View>
                       </View>
-                    );
-                  })}
-                </ScrollView>
-              )}
+                      {selected ? (
+                        <MaterialIcons name="check-circle" size={22} color={colors.primary} />
+                      ) : (
+                        <MaterialIcons name="chevron-right" size={22} color={colors.primary} />
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
             </View>
           </View>
         </Modal>
@@ -3656,9 +3904,6 @@ export default function App() {
                               setOrderDetail(null);
                               setOrderInvoices([]);
                               setHomeScreen('orderDetail');
-                            } else if (n.subscriptionId) {
-                              setSelectedSubscriptionId(n.subscriptionId);
-                              setHomeScreen('subscriptionDetail');
                             }
                           }}
                           activeOpacity={0.6}
@@ -3768,1871 +4013,3 @@ export default function App() {
   );
 }
 
-// Theme: Magenta primary + 5 light pink elevation backgrounds
-const colors = {
-  primary: '#C2185B',
-  primaryLight: '#F8BBD9',
-  primaryDark: '#880E4F',
-  navBarDark: '#6A0D3E',
-  navBarIcon: 'rgba(255,255,255,0.75)',
-  elevation0: '#FFF5F9',
-  elevation1: '#FFEDF4',
-  elevation2: '#FFE4EE',
-  elevation3: '#FFDAE8',
-  elevation4: '#FFD0E2',
-  elevation5: '#FFC6DC',
-  white: '#FFFFFF',
-  text: '#1a1a2e',
-  textSecondary: '#6b7280',
-  border: '#F5C6DC',
-  borderLight: '#FFE0EB',
-  error: '#b91c1c',
-  success: '#166534',
-  successBg: '#f0fdf4',
-  successBorder: '#bbf7d0',
-};
-
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: colors.elevation1,
-  },
-  safeAreaTransparent: {
-    backgroundColor: 'transparent',
-  },
-  authLoadingShell: {
-    flex: 1,
-    width: '100%',
-    alignSelf: 'stretch',
-    backgroundColor: AUTH_SCREEN_BACKGROUND,
-  },
-  authLoadingTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#F6EAF4',
-  },
-  topNavBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    minHeight: 48,
-    backgroundColor: colors.elevation0,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.borderLight,
-  },
-  topNavLogo: {
-    width: 120,
-    height: 36,
-    justifyContent: 'center',
-  },
-  topNavLogoImage: {
-    width: 120,
-    height: 36,
-  },
-  topNavLogoText: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: colors.primary,
-  },
-  topNavBell: {
-    padding: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  topNavActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  topNavPriceListButton: {
-    height: 34,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: colors.primary,
-    paddingHorizontal: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.primaryLight,
-  },
-  topNavPriceListButtonText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: colors.primaryDark,
-  },
-  container: {
-    flex: 1,
-    paddingHorizontal: 0,
-    justifyContent: 'center',
-  },
-  containerWithNav: {
-    justifyContent: 'flex-start',
-  },
-  containerAuthBleed: {
-    flex: 1,
-    width: '100%',
-    backgroundColor: 'transparent',
-  },
-  mainWithNav: {
-    flex: 1,
-  },
-  mainWithNavDesktop: {
-    flex: 1,
-    width: '100%',
-    maxWidth: 920,
-    alignSelf: 'center',
-  },
-  authShellDesktop: {
-    flex: 1,
-    width: '100%',
-    maxWidth: 560,
-    alignSelf: 'center',
-  },
-  contentArea: {
-    flex: 1,
-    backgroundColor: colors.elevation1,
-  },
-  homeLayout: {
-    flex: 1,
-    backgroundColor: colors.elevation1,
-  },
-  homeMainScroll: {
-    flex: 1,
-  },
-  homeScrollContent: {
-    backgroundColor: colors.elevation1,
-    paddingBottom: 20,
-  },
-  homeWelcomeCard: {
-    marginTop: 4,
-  },
-  bottomNavWrapper: {
-    paddingHorizontal: 16,
-    paddingBottom: 28,
-    paddingTop: 8,
-    alignItems: 'center',
-    backgroundColor: colors.elevation0,
-  },
-  bottomNav: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: colors.navBarDark,
-    borderRadius: 28,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    height: 80,
-    width: '100%',
-    maxWidth: 480,
-    alignSelf: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.25,
-    shadowRadius: 16,
-    elevation: 12,
-    position: 'relative',
-  },
-  navSideGroupLeft: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-start',
-    columnGap: 12,
-  },
-  navSideGroupRight: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    columnGap: 12,
-  },
-  navItem: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 4,
-    gap: 4,
-    minWidth: 56,
-  },
-  navItemActive: {
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.14)',
-    marginHorizontal: 2,
-    marginVertical: 2,
-  },
-  navItemText: {
-    fontSize: 11,
-    color: colors.navBarIcon,
-    fontWeight: '500',
-  },
-  navItemTextActive: {
-    color: colors.white,
-    fontWeight: '600',
-  },
-  navCenterSlot: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 0,
-    bottom: 0,
-    alignItems: 'center',
-    justifyContent: 'flex-start',
-    paddingTop: 0,
-  },
-  navBookNowButton: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: colors.primary,
-    borderWidth: 6,
-    borderColor: colors.white,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: -32,
-  },
-  navBookNowLabel: {
-    fontSize: 10,
-    color: colors.white,
-    fontWeight: '700',
-    marginTop: 4,
-  },
-  centered: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  card: {
-    borderRadius: 18,
-    padding: 24,
-    marginHorizontal: 12,
-    backgroundColor: colors.elevation3,
-    shadowColor: colors.primaryDark,
-    shadowOpacity: 0.08,
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 12,
-    elevation: 3,
-  },
-  activeOrdersSection: {
-    marginTop: 4,
-    marginBottom: 12,
-  },
-  noActiveOrdersWrapper: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  noActiveOrdersText: {
-    fontSize: 16,
-    color: colors.textSecondary,
-    fontWeight: '500',
-  },
-  activeOrdersTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: colors.text,
-    marginHorizontal: 12,
-    marginBottom: 12,
-  },
-  activeOrdersScroll: {
-    paddingHorizontal: 12,
-    gap: 12,
-    flexDirection: 'row',
-    paddingRight: 24,
-  },
-  activeOrderCard: {
-    width: 200,
-    minHeight: 160,
-    padding: 14,
-    borderRadius: 12,
-    backgroundColor: colors.elevation3,
-    borderWidth: 1,
-    borderColor: colors.borderLight,
-    flexDirection: 'column',
-    alignItems: 'stretch',
-  },
-  activeOrderCardLeft: {
-    flex: 1,
-    minWidth: 0,
-    justifyContent: 'flex-start',
-  },
-  activeOrderCardStatus: {
-    marginTop: 8,
-    alignSelf: 'flex-start',
-  },
-  activeOrderCardTop: {
-    flex: 1,
-    minHeight: 0,
-  },
-  activeOrderCardPayment: {
-    marginTop: 8,
-  },
-  activeOrderCardRight: {
-    justifyContent: 'flex-end',
-    alignItems: 'flex-end',
-    alignSelf: 'stretch',
-    paddingLeft: 8,
-    minWidth: 100,
-  },
-  activeOrderId: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: colors.text,
-    marginBottom: 6,
-  },
-  activeOrderTag: {
-    alignSelf: 'flex-start',
-    backgroundColor: colors.primary,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 10,
-    marginTop: 4,
-    marginBottom: 6,
-  },
-  activeOrderTagText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: colors.white,
-  },
-  activeOrderServiceLine: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: colors.text,
-    marginBottom: 2,
-  },
-  activeOrderDateLine: {
-    fontSize: 11,
-    color: colors.textSecondary,
-  },
-  activeOrderPaidTickCircle: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  activeOrderPaidRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  activeOrderPaidText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: colors.primary,
-  },
-  activeOrderPaymentFailed: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: colors.error,
-    marginBottom: 4,
-  },
-  activeOrderToPay: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: colors.success,
-    marginBottom: 4,
-  },
-  activeOrderMeta: {
-    fontSize: 11,
-    color: colors.textSecondary,
-    marginTop: 4,
-  },
-  activeOrderStatus: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: colors.primary,
-  },
-  welcomeScreenOuter: {
-    flex: 1,
-    width: '100%',
-    alignSelf: 'stretch',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 24,
-    backgroundColor: AUTH_SCREEN_BACKGROUND,
-  },
-  phoneAuthRoot: {
-    flex: 1,
-    width: '100%',
-    alignSelf: 'stretch',
-    backgroundColor: AUTH_SCREEN_BACKGROUND,
-  },
-  phoneAuthBody: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 20,
-  },
-  phoneAuthCard: {
-    width: '100%',
-    maxWidth: Platform.OS === 'web' ? 560 : 420,
-    alignSelf: 'center',
-    backgroundColor: '#FFD0E2',
-    borderRadius: 26,
-    paddingHorizontal: 24,
-    paddingTop: 20,
-    paddingBottom: 14,
-    shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 12,
-    elevation: 4,
-    minHeight: Platform.OS === 'web' ? 560 : 0,
-  },
-  phoneAuthLogoWrap: {
-    width: '100%',
-    height: Platform.OS === 'web' ? 220 : 110,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 18,
-  },
-  phoneAuthLogo: {
-    width: Platform.OS === 'web' ? 220 : 230,
-    height: '100%',
-  },
-  phoneAuthLogoFallback: {
-    width: Platform.OS === 'web' ? 220 : 230,
-    height: '100%',
-    borderRadius: 20,
-    backgroundColor: colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  phoneAuthLogoFallbackText: {
-    fontSize: 42,
-    fontWeight: '700',
-    color: colors.white,
-    letterSpacing: 1,
-  },
-  phoneAuthInputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'stretch',
-    width: '100%',
-    minWidth: 0,
-    marginTop: 0,
-  },
-  phoneAuthCountryCodeInput: {
-    width: 62,
-    minWidth: 62,
-    maxWidth: 62,
-    marginRight: 6,
-    marginBottom: 0,
-    paddingHorizontal: 6,
-    textAlign: 'center',
-    flexShrink: 0,
-    height: 52,
-  },
-  phoneAuthMobileInput: {
-    flex: 1,
-    minWidth: 0,
-    marginBottom: 0,
-    height: 52,
-  },
-  phoneAuthTermsBlock: {
-    marginTop: 12,
-    marginBottom: 14,
-  },
-  phoneAuthSubmitBtn: {
-    marginTop: 0,
-  },
-  phoneAuthCreditRow: {
-    marginTop: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  welcomeCard: {
-    borderRadius: 26,
-    paddingHorizontal: 24,
-    paddingTop: 20,
-    paddingBottom: 14,
-    marginHorizontal: 0,
-    backgroundColor: '#FFD0E2',
-    shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 12,
-    elevation: 4,
-    alignSelf: 'center',
-    width: '100%',
-    maxWidth: Platform.OS === 'web' ? 560 : 420,
-    minHeight: 0,
-  },
-  welcomeHeader: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 10,
-  },
-  welcomeLogoFrame: {
-    width: '100%',
-    height: Platform.OS === 'web' ? 220 : 110,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-  },
-  welcomeLogo: {
-    width: Platform.OS === 'web' ? 220 : 230,
-    height: '100%',
-    marginBottom: 0,
-  },
-  welcomeLogoPlaceholder: {
-    width: Platform.OS === 'web' ? 220 : 230,
-    height: '100%',
-    borderRadius: 20,
-    backgroundColor: colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 0,
-  },
-  welcomeLogoPlaceholderText: {
-    fontSize: 42,
-    fontWeight: '700',
-    color: colors.white,
-    letterSpacing: 1,
-  },
-  welcomeSubtitle: {
-    fontSize: 15,
-    color: colors.textSecondary,
-    textAlign: 'center',
-  },
-  termsPrivacyBlock: {
-    marginTop: 12,
-    marginBottom: Platform.OS === 'web' ? 8 : 8,
-  },
-  checkboxRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
-  },
-  checkboxRowTouchable: {
-    alignSelf: 'stretch',
-  },
-  checkboxTouchTarget: {
-    padding: 4,
-    margin: -4,
-  },
-  termsCheckbox: {
-    width: 22,
-    height: 22,
-    borderWidth: 2,
-    borderColor: colors.primary,
-    borderRadius: 4,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 2,
-  },
-  termsCheckboxChecked: {
-    backgroundColor: colors.primary,
-  },
-  checkboxLabel: {
-    flex: 1,
-    fontSize: 14,
-    color: colors.text,
-    lineHeight: 20,
-  },
-  linkText: {
-    color: colors.primary,
-    fontWeight: '600',
-    textDecorationLine: 'underline',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    padding: 24,
-  },
-  modalCard: {
-    backgroundColor: colors.white,
-    borderRadius: 12,
-    padding: 20,
-    maxHeight: '80%',
-  },
-  modalButtonRow: {
-    flexDirection: 'row',
-    marginTop: 16,
-  },
-  modalButton: {
-    flex: 1,
-  },
-  modalButtonSpacer: {
-    width: 12,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: colors.text,
-    marginBottom: 12,
-  },
-  modalScroll: {
-    maxHeight: 400,
-  },
-  modalScrollContent: {
-    paddingBottom: 16,
-  },
-  modalBody: {
-    fontSize: 14,
-    color: colors.text,
-    lineHeight: 22,
-  },
-  notificationsModalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'center',
-    padding: 24,
-  },
-  notificationsModalCard: {
-    backgroundColor: colors.elevation1,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: colors.borderLight,
-    maxHeight: '80%',
-    overflow: 'hidden',
-    paddingBottom: 16,
-    shadowColor: colors.primaryDark,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.1,
-    shadowRadius: 16,
-    elevation: 8,
-  },
-  notificationsModalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.borderLight,
-    backgroundColor: colors.elevation0,
-  },
-  notificationsModalTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  notificationsModalBellIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.primaryLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  notificationsModalTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: colors.text,
-  },
-  notificationsModalCloseBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.elevation2,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: colors.borderLight,
-  },
-  notificationsEmptyState: {
-    alignItems: 'center',
-    paddingVertical: 40,
-    paddingHorizontal: 24,
-  },
-  notificationsEmptyIconWrap: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: colors.elevation2,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
-  },
-  notificationsEmptyText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.textSecondary,
-    marginBottom: 4,
-  },
-  notificationsEmptySubtext: {
-    fontSize: 13,
-    color: colors.textSecondary,
-  },
-  notificationsListScroll: {
-    maxHeight: 360,
-    flexGrow: 0,
-  },
-  notificationsListContent: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 24,
-  },
-  notificationRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 12,
-    marginBottom: 6,
-    borderRadius: 12,
-    backgroundColor: colors.elevation2,
-    borderWidth: 1,
-    borderColor: colors.borderLight,
-  },
-  notificationRowContent: {
-    flex: 1,
-    minWidth: 0,
-  },
-  notificationRowTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: colors.text,
-  },
-  notificationRowBody: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
-  notificationRowTime: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    marginTop: 4,
-  },
-  priceListState: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 28,
-    gap: 10,
-  },
-  priceListContent: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 24,
-    gap: 10,
-  },
-  priceListItemCard: {
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.borderLight,
-    backgroundColor: colors.elevation2,
-    padding: 12,
-  },
-  priceListItemHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginBottom: 10,
-  },
-  priceListItemIcon: {
-    width: 26,
-    height: 26,
-    borderRadius: 6,
-  },
-  priceListItemIconFallback: {
-    width: 26,
-    height: 26,
-    borderRadius: 6,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.primaryLight,
-  },
-  priceListItemName: {
-    flex: 1,
-    fontSize: 15,
-    fontWeight: '700',
-    color: colors.text,
-  },
-  priceListLines: {
-    gap: 6,
-  },
-  priceListLineRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-    borderRadius: 8,
-    backgroundColor: colors.elevation0,
-    borderWidth: 1,
-    borderColor: colors.borderLight,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-  priceListLineLabel: {
-    flex: 1,
-    fontSize: 13,
-    color: colors.text,
-  },
-  priceListLinePrice: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: colors.primaryDark,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: '700',
-    marginBottom: 8,
-    color: colors.text,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    marginBottom: 16,
-  },
-  orderDetailRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    marginBottom: 16,
-    gap: 8,
-  },
-  orderDetailLabel: {
-    fontSize: 14,
-    color: colors.textSecondary,
-  },
-  orderDetailValue: {
-    fontSize: 14,
-    color: '#000000',
-    flex: 1,
-  },
-  statusChip: {
-    backgroundColor: colors.primaryLight,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: colors.primary,
-  },
-  statusChipText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.primaryDark,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: colors.borderLight,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
-    marginBottom: 12,
-    backgroundColor: colors.elevation2,
-  },
-  inputLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.text,
-    marginBottom: 6,
-  },
-  inputReadOnly: {
-    backgroundColor: colors.elevation1,
-    color: colors.textSecondary,
-  },
-  /** Login phone row: keep both fields inside the card on narrow widths (e.g. Galaxy Z Fold). */
-  phoneInputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'stretch',
-    width: '100%',
-    minWidth: 0,
-    marginTop: 6,
-    marginBottom: 0,
-  },
-  countryCodeInput: {
-    width: 62,
-    minWidth: 62,
-    maxWidth: 62,
-    marginRight: 6,
-    marginBottom: 0,
-    paddingHorizontal: 6,
-    textAlign: 'center',
-    flexShrink: 0,
-    height: 52,
-  },
-  mobileInput: {
-    flex: 1,
-    minWidth: 0,
-    marginBottom: 0,
-    height: 52,
-  },
-  datePickerButton: {
-    justifyContent: 'center',
-    borderColor: colors.primaryLight,
-    borderWidth: 1,
-    borderRadius: 10,
-    backgroundColor: colors.white,
-  },
-  datePickerButtonText: {
-    fontSize: 16,
-    color: colors.primary,
-    fontWeight: '700',
-  },
-  datePickerPlaceholder: {
-    fontSize: 16,
-    color: colors.textSecondary,
-  },
-  webCalendarBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.20)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 10,
-  },
-  webCalendarCard: {
-    backgroundColor: colors.white,
-    borderRadius: 14,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: colors.primaryLight,
-    width: '100%',
-    maxWidth: 340,
-    maxHeight: 460,
-  },
-  webCalendarHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 10,
-  },
-  webCalendarTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: colors.primaryDark,
-  },
-  webCalendarNavBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.elevation2,
-  },
-  webCalendarNavText: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: colors.primaryDark,
-  },
-  webCalendarWeekRow: {
-    flexDirection: 'row',
-    marginBottom: 4,
-  },
-  webCalendarWeekText: {
-    flex: 1,
-    textAlign: 'center',
-    color: colors.textSecondary,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  webCalendarDaysGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-  },
-  webCalendarDayCell: {
-    width: '14.2857%',
-    aspectRatio: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 8,
-    marginBottom: 2,
-  },
-  webCalendarDayText: {
-    fontSize: 14,
-    color: colors.text,
-    fontWeight: '500',
-  },
-  webCalendarDaySelected: {
-    backgroundColor: colors.primary,
-  },
-  webCalendarDayTextSelected: {
-    color: colors.white,
-    fontWeight: '700',
-  },
-  webCalendarHolidayDay: {
-    backgroundColor: '#fff1f2',
-  },
-  webCalendarHolidayText: {
-    color: '#dc2626',
-    fontWeight: '700',
-  },
-  webCalendarDayDisabled: {
-    opacity: 0.55,
-  },
-  button: {
-    backgroundColor: colors.primary,
-    borderRadius: 8,
-    paddingVertical: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  buttonPrimary: {
-    backgroundColor: colors.primary,
-    borderRadius: 12,
-    paddingVertical: 12,
-    marginTop: 2,
-  },
-  rowButton: {
-    flex: 1,
-  },
-  buttonDisabled: {
-    opacity: 0.7,
-  },
-  buttonText: {
-    color: colors.white,
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  buttonSecondary: {
-    borderRadius: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 8,
-    backgroundColor: colors.elevation2,
-  },
-  buttonSecondaryText: {
-    color: colors.text,
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  textButton: {
-    marginTop: 12,
-    alignItems: 'center',
-  },
-  textButtonText: {
-    color: colors.textSecondary,
-    fontSize: 14,
-    textDecorationLine: 'underline',
-  },
-  profileLogoutButton: {
-    marginTop: 24,
-    borderColor: colors.error,
-  },
-  profileLogoutText: {
-    color: colors.error,
-    fontWeight: '600',
-  },
-  profileAccountSettingsRow: {
-    marginTop: 4,
-  },
-  profileAccountSettingItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 0,
-    gap: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.borderLight,
-  },
-  profileAccountSettingText: {
-    fontSize: 15,
-    color: colors.text,
-    fontWeight: '500',
-  },
-  error: {
-    color: colors.error,
-    marginBottom: 8,
-    fontSize: 13,
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 4,
-  },
-  orderFilterRow: {
-    flexDirection: 'row',
-    flexWrap: 'nowrap',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 12,
-  },
-  orderFilterChip: {
-    flex: 1,
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    borderRadius: 20,
-    borderWidth: 2,
-    borderColor: colors.borderLight,
-    backgroundColor: colors.elevation2,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minWidth: 0,
-  },
-  orderFilterChipActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  orderFilterChipText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: colors.textSecondary,
-  },
-  orderFilterChipTextActive: {
-    color: colors.white,
-  },
-  plansTabToggle: {
-    flexDirection: 'row',
-    width: '100%',
-    marginBottom: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.elevation2,
-    padding: 3,
-  },
-  plansTabToggleSegment: {
-    flex: 1,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  plansTabToggleSegmentActive: {
-    backgroundColor: colors.primaryLight,
-    borderWidth: 1,
-    borderColor: colors.primary,
-  },
-  plansTabToggleText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.textSecondary,
-  },
-  plansTabToggleTextActive: {
-    color: colors.primaryDark,
-  },
-  scroll: {
-    flex: 1,
-    backgroundColor: colors.elevation1,
-  },
-  scrollContent: {
-    flexGrow: 1,
-    paddingHorizontal: 0,
-    paddingVertical: 24,
-    paddingBottom: 48,
-    backgroundColor: colors.elevation1,
-  },
-  scrollContentNoTopPadding: {
-    paddingTop: 0,
-  },
-  confirmScrollContent: {
-    paddingBottom: 120,
-  },
-  confirmSummaryCard: {
-    borderWidth: 1,
-    borderColor: colors.borderLight,
-    backgroundColor: colors.elevation0,
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 8,
-  },
-  confirmSummaryLabel: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    fontWeight: '600',
-    marginBottom: 4,
-    textTransform: 'uppercase',
-    letterSpacing: 0.3,
-  },
-  confirmSummaryLabelInline: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    fontWeight: '600',
-  },
-  confirmSummaryValue: {
-    fontSize: 16,
-    color: colors.text,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  confirmSummarySubValue: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    marginBottom: 10,
-    lineHeight: 20,
-  },
-  confirmMetaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: colors.primaryLight,
-    borderRadius: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    marginBottom: 8,
-  },
-  confirmSummaryHighlight: {
-    fontSize: 15,
-    color: colors.primary,
-    fontWeight: '700',
-  },
-  floatingSubmitWrapper: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 32,
-    alignItems: 'center',
-  },
-  floatingSubmitButton: {
-    backgroundColor: colors.primary,
-    paddingVertical: 18,
-    paddingHorizontal: 48,
-    borderRadius: 28,
-    minWidth: 200,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.35,
-    shadowRadius: 12,
-    elevation: 12,
-  },
-  floatingSubmitText: {
-    color: colors.white,
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  carouselWrapper: {
-    width: '100%',
-    alignSelf: 'stretch',
-    marginBottom: 4,
-  },
-  carouselContent: {
-    paddingVertical: 0,
-    paddingHorizontal: 0,
-  },
-  carouselSlide: {
-    overflow: 'hidden',
-    backgroundColor: colors.elevation2,
-    alignSelf: 'stretch',
-  },
-  carouselImage: {
-    width: '100%',
-    height: '100%',
-  },
-  tileGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-    marginBottom: 16,
-  },
-  serviceTile: {
-    width: '47%',
-    minHeight: 88,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: colors.borderLight,
-    backgroundColor: colors.elevation2,
-    padding: 16,
-    justifyContent: 'center',
-  },
-  serviceTileSelected: {
-    borderColor: colors.primary,
-    backgroundColor: colors.elevation3,
-  },
-  serviceIcon: {
-    fontSize: 28,
-    marginBottom: 6,
-  },
-  serviceIconImage: {
-    width: 42,
-    height: 42,
-    marginBottom: 8,
-    resizeMode: 'contain',
-  },
-  serviceLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.textSecondary,
-  },
-  serviceLabelSelected: {
-    color: colors.text,
-  },
-  muted: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    marginBottom: 8,
-  },
-  creditNote: {
-    marginTop: 0,
-    fontSize: 12,
-    color: colors.textSecondary,
-    textAlign: 'left',
-    flexShrink: 1,
-  },
-  creditRow: {
-    marginTop: 'auto',
-    paddingTop: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  creditRowOnDark: {
-    marginTop: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  creditNoteOnDark: {
-    marginTop: 0,
-    fontSize: 11,
-    color: '#F6EAF4',
-    textAlign: 'left',
-    flexShrink: 1,
-  },
-  creditLogo: {
-    width: 22,
-    height: 22,
-  },
-  addressCard: {
-    padding: 12,
-    backgroundColor: colors.elevation2,
-    borderRadius: 8,
-    marginBottom: 10,
-  },
-  branchPickerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  branchPickerLogo: {
-    width: 48,
-    height: 48,
-    borderRadius: 10,
-    backgroundColor: colors.white,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  branchPickerLogoInitial: {
-    width: 48,
-    height: 48,
-    borderRadius: 10,
-    backgroundColor: colors.primaryLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  branchPickerLogoInitialText: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: colors.primaryDark,
-  },
-  branchPickerName: {
-    flex: 1,
-    marginBottom: 0,
-  },
-  activePlanTile: {
-    paddingVertical: 20,
-    paddingHorizontal: 20,
-    backgroundColor: colors.elevation2,
-    borderRadius: 12,
-  },
-  activePlanTileTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: colors.text,
-  },
-  activePlanTileSubtext: {
-    fontSize: 15,
-    color: colors.textSecondary,
-    marginTop: 6,
-  },
-  plansPageWrapper: {
-    marginHorizontal: 12,
-    padding: 24,
-  },
-  contentPageWrapper: {
-    marginHorizontal: 12,
-    padding: 24,
-  },
-  plansSubtitleOneLine: {
-    marginBottom: 8,
-  },
-  availablePlansScroll: {
-    marginHorizontal: -36,
-    marginBottom: 16,
-  },
-  availablePlansScrollContent: {
-    paddingLeft: 36,
-    paddingRight: 0,
-  },
-  availablePlanTile: {
-    width: 260,
-    height: 180,
-    marginRight: 12,
-    overflow: 'hidden',
-  },
-  availablePlanTileInner: {
-    flex: 1,
-    padding: 14,
-    borderRadius: 12,
-    justifyContent: 'space-between',
-  },
-  availablePlanTilePurchased: {
-    backgroundColor: colors.primaryLight,
-  },
-  availablePlanTileTitleLight: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: colors.white,
-  },
-  availablePlanTileDescLight: {
-    fontSize: 13,
-    color: 'rgba(255,255,255,0.95)',
-    marginBottom: 4,
-  },
-  availablePlanTileMetaLight: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.9)',
-  },
-  availablePlansHeaderRow: {
-    flexDirection: 'row',
-    flexWrap: 'nowrap',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-    gap: 8,
-  },
-  availablePlansTitle: {
-    fontWeight: '600',
-    flexShrink: 0,
-    color: '#000000',
-  },
-  availablePlansBranchTag: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    fontWeight: '500',
-    flexShrink: 0,
-  },
-  plansAddressSection: {
-    marginBottom: 12,
-  },
-  plansAddressSectionHighlight: {
-    backgroundColor: colors.primaryLight,
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: colors.primary,
-  },
-  addressCardRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    backgroundColor: colors.elevation2,
-    borderRadius: 8,
-    marginBottom: 8,
-  },
-  editAddressButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingVertical: 8,
-    paddingLeft: 12,
-  },
-  editAddressButtonText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.primary,
-  },
-  defaultAddressTag: {
-    backgroundColor: colors.primaryLight,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  defaultAddressTagText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: colors.primaryDark,
-  },
-  deleteAddressButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingVertical: 8,
-    paddingLeft: 8,
-  },
-  deleteAddressButtonText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.error,
-  },
-  googleMapsOpenRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    backgroundColor: colors.elevation2,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.borderLight,
-  },
-  googleMapsOpenText: {
-    flex: 1,
-    fontSize: 15,
-    fontWeight: '600',
-    color: colors.primary,
-  },
-  googleMapsModalContainer: {
-    flex: 1,
-    backgroundColor: colors.elevation0,
-  },
-  googleMapsModalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.borderLight,
-    backgroundColor: colors.elevation1,
-  },
-  googleMapsModalTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: colors.text,
-  },
-  googleMapsCloseBtn: {
-    padding: 4,
-  },
-  googleMapsWebView: {
-    flex: 1,
-    backgroundColor: colors.elevation0,
-  },
-  googleMapsModalFooter: {
-    padding: 16,
-    paddingBottom: 24,
-    borderTopWidth: 1,
-    borderTopColor: colors.borderLight,
-    backgroundColor: colors.elevation1,
-  },
-  orderTileCard: {
-    position: 'relative',
-  },
-  orderTileHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: 8,
-    marginBottom: 4,
-  },
-  orderTileOrderId: {
-    flex: 1,
-    minWidth: 0,
-    fontSize: 13,
-  },
-  orderTileTag: {
-    backgroundColor: colors.primary,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    flexShrink: 0,
-  },
-  orderTileTagText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: colors.white,
-  },
-  orderTileStatusRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    marginTop: 8,
-  },
-  orderTileStatusText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: colors.primary,
-  },
-  orderTileStatusCancelled: {
-    color: colors.error,
-  },
-  addressLabel: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: colors.text,
-    marginBottom: 4,
-  },
-  orderAmount: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.success,
-    marginTop: 6,
-  },
-  orderAmountPaidRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 6,
-  },
-  paidTickCircle: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  orderAmountPaid: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.primary,
-  },
-  amountToPayBox: {
-    marginTop: 16,
-    marginBottom: 8,
-    padding: 16,
-    backgroundColor: colors.successBg,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.successBorder,
-  },
-  amountToPayLabel: {
-    fontSize: 14,
-    color: colors.success,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  amountToPayValue: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#14532d',
-  },
-  amountPaidBox: {
-    marginTop: 16,
-    marginBottom: 8,
-    padding: 16,
-    backgroundColor: colors.elevation3,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.primaryLight,
-  },
-  amountPaidBoxGradient: {
-    marginTop: 16,
-    marginBottom: 8,
-    padding: 16,
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  paidTickCircleOnGreen: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: 'rgba(255,255,255,0.25)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  amountPaidLabelOnGradient: {
-    fontSize: 14,
-    color: colors.white,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  amountPaidValueOnGradient: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: colors.white,
-  },
-  amountPaidMutedOnGradient: {
-    fontSize: 13,
-    color: 'rgba(255,255,255,0.85)',
-    marginTop: 4,
-  },
-  amountPaidLabel: {
-    fontSize: 14,
-    color: colors.primary,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  amountPaidValue: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: colors.primaryDark,
-  },
-  invoiceRow: {
-    marginBottom: 12,
-  },
-  invoiceTypeLabel: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: colors.text,
-    marginBottom: 10,
-    textTransform: 'uppercase',
-  },
-  invoiceItemRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 6,
-    paddingVertical: 4,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.elevation2,
-  },
-  invoiceItemIcon: {
-    width: 24,
-    height: 24,
-    marginRight: 8,
-    borderRadius: 4,
-  },
-  invoiceItemName: {
-    flex: 1,
-    fontSize: 14,
-    color: colors.textSecondary,
-    marginRight: 12,
-  },
-  invoiceItemNameNoIcon: {},
-  invoiceItemAmount: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.text,
-  },
-  invoiceTotals: {
-    marginTop: 8,
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: colors.borderLight,
-  },
-  invoiceTotalRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  invoiceTotalLabel: {
-    fontSize: 14,
-    color: colors.textSecondary,
-  },
-  invoiceTotalValue: {
-    fontSize: 14,
-    color: colors.textSecondary,
-  },
-  invoiceTotalRowFinal: {
-    marginTop: 6,
-    marginBottom: 0,
-    paddingTop: 6,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-  },
-  invoiceTotalLabelFinal: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: colors.text,
-  },
-  invoiceTotalValueFinal: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: colors.text,
-  },
-  invoiceActions: {
-    flexDirection: 'row',
-    marginTop: 10,
-    gap: 10,
-  },
-  invoicePreviewContainer: {
-    height: 360,
-    borderRadius: 8,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: colors.borderLight,
-    backgroundColor: colors.elevation2,
-  },
-  invoicePreviewWebView: {
-    flex: 1,
-  },
-  invoiceCta: {
-    flex: 1,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 44,
-  },
-  invoiceCtaDownload: {
-    backgroundColor: colors.elevation2,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  invoiceCtaShare: {
-    backgroundColor: colors.primary,
-  },
-  invoiceCtaText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: colors.text,
-  },
-  addressLine: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    marginBottom: 2,
-  },
-  addressPincode: {
-    fontSize: 13,
-    color: colors.textSecondary,
-  },
-  link: {
-    fontSize: 12,
-    color: colors.primary,
-    marginTop: 4,
-  },
-  serviceabilityBox: {
-    marginTop: 12,
-    padding: 12,
-    borderRadius: 8,
-    backgroundColor: colors.successBg,
-    borderWidth: 1,
-    borderColor: colors.successBorder,
-  },
-  serviceabilityBoxNotServiceable: {
-    backgroundColor: '#fef2f2',
-    borderColor: '#fecaca',
-  },
-  serviceableText: {
-    fontSize: 14,
-    color: colors.success,
-    fontWeight: '500',
-  },
-  notServiceableText: {
-    fontSize: 14,
-    color: colors.error,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  notServiceableSubtext: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    marginBottom: 10,
-  },
-  areaRequestButton: {
-    marginTop: 4,
-  },
-  checkRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-    paddingVertical: 4,
-    minHeight: 44,
-  },
-  checkbox: {
-    fontSize: 28,
-    marginRight: 12,
-    minWidth: 36,
-    minHeight: 36,
-    textAlignVertical: 'center',
-  },
-  checkLabel: {
-    fontSize: 16,
-    color: colors.text,
-    flex: 1,
-  },
-});

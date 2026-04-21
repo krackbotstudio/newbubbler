@@ -6,8 +6,8 @@ import { createFinalInvoiceDraft } from '../../../application/invoices/create-fi
 import { generateAndStoreInvoicePdf } from '../../../application/invoices/generate-and-store-invoice-pdf.use-case';
 import { issueAckInvoice } from '../../../application/invoices/issue-ack-invoice-use-case';
 import { issueFinalInvoice } from '../../../application/invoices/issue-final-invoice-use-case';
-import type { OrdersRepo, InvoicesRepo, BrandingRepo, BranchRepo, ServiceAreaRepo, CustomersRepo, PdfGenerator, StorageAdapter, SubscriptionsRepo, SubscriptionUsageRepo, SubscriptionPlansRepo, PaymentsRepo } from '../../../application/ports';
-import { ORDERS_REPO, INVOICES_REPO, BRANDING_REPO, BRANCH_REPO, SERVICE_AREA_REPO, CUSTOMERS_REPO, PDF_GENERATOR, STORAGE_ADAPTER, SUBSCRIPTIONS_REPO, SUBSCRIPTION_USAGE_REPO, SUBSCRIPTION_PLANS_REPO, PAYMENTS_REPO } from '../../../infra/infra.module';
+import type { OrdersRepo, InvoicesRepo, BrandingRepo, BranchRepo, ServiceAreaRepo, CustomersRepo, PdfGenerator, StorageAdapter, PaymentsRepo } from '../../../application/ports';
+import { ORDERS_REPO, INVOICES_REPO, BRANDING_REPO, BRANCH_REPO, SERVICE_AREA_REPO, CUSTOMERS_REPO, PDF_GENERATOR, STORAGE_ADAPTER, PAYMENTS_REPO } from '../../../infra/infra.module';
 
 @Injectable()
 export class AdminInvoicesService {
@@ -20,16 +20,13 @@ export class AdminInvoicesService {
     @Inject(CUSTOMERS_REPO) private readonly customersRepo: CustomersRepo,
     @Inject(PDF_GENERATOR) private readonly pdfGenerator: PdfGenerator,
     @Inject(STORAGE_ADAPTER) private readonly storageAdapter: StorageAdapter,
-    @Inject(SUBSCRIPTIONS_REPO) private readonly subscriptionsRepo: SubscriptionsRepo,
-    @Inject(SUBSCRIPTION_USAGE_REPO) private readonly subscriptionUsageRepo: SubscriptionUsageRepo,
-    @Inject(SUBSCRIPTION_PLANS_REPO) private readonly subscriptionPlansRepo: SubscriptionPlansRepo,
     @Inject(PAYMENTS_REPO) private readonly paymentsRepo: PaymentsRepo,
   ) {}
 
   async createAckDraft(
     orderId: string,
     dto: {
-      orderMode?: 'INDIVIDUAL' | 'SUBSCRIPTION_ONLY' | 'BOTH';
+      orderMode?: 'INDIVIDUAL';
       items: Array<{
         type: string;
         name: string;
@@ -42,13 +39,6 @@ export class AdminInvoicesService {
       }>;
       taxPaise?: number;
       discountPaise?: number;
-      subscriptionUtilized?: boolean;
-      subscriptionId?: string | null;
-      subscriptionUsageKg?: number | null;
-      subscriptionUsageItems?: number | null;
-      subscriptionUsageSubscriptionIds?: string[] | null;
-      newSubscription?: { planId: string; validityStartDate: string; quantityMonths?: number } | null;
-      newSubscriptions?: Array<{ planId: string; validityStartDate: string; quantityMonths?: number }> | null;
       comments?: string | null;
     },
   ) {
@@ -69,13 +59,6 @@ export class AdminInvoicesService {
         items,
         tax: dto.taxPaise ?? 0,
         discountPaise: dto.discountPaise ?? null,
-        subscriptionUtilized: dto.subscriptionUtilized,
-        subscriptionId: dto.subscriptionId,
-        subscriptionUsageKg: dto.subscriptionUsageKg,
-        subscriptionUsageItems: dto.subscriptionUsageItems,
-        subscriptionUsageSubscriptionIds: dto.subscriptionUsageSubscriptionIds?.length ? dto.subscriptionUsageSubscriptionIds : undefined,
-        newSubscription: dto.newSubscription,
-        newSubscriptions: dto.newSubscriptions?.length ? dto.newSubscriptions : undefined,
         comments: dto.comments,
       },
       {
@@ -84,7 +67,6 @@ export class AdminInvoicesService {
         brandingRepo: this.brandingRepo,
         branchRepo: this.branchRepo,
         serviceAreaRepo: this.serviceAreaRepo,
-        subscriptionPlansRepo: this.subscriptionPlansRepo,
       },
     );
   }
@@ -105,8 +87,6 @@ export class AdminInvoicesService {
       taxPaise?: number;
       discountPaise?: number;
       comments?: string | null;
-      subscriptionUsageKg?: number | null;
-      subscriptionUsageItems?: number | null;
     },
   ) {
     const items = dto.items.map((i) => ({
@@ -126,8 +106,6 @@ export class AdminInvoicesService {
         tax: dto.taxPaise ?? 0,
         discountPaise: dto.discountPaise ?? null,
         comments: dto.comments,
-        subscriptionUsageKg: dto.subscriptionUsageKg,
-        subscriptionUsageItems: dto.subscriptionUsageItems,
       },
       {
         ordersRepo: this.ordersRepo,
@@ -152,9 +130,6 @@ export class AdminInvoicesService {
         brandingRepo: this.brandingRepo,
         pdfGenerator: this.pdfGenerator,
         storageAdapter: this.storageAdapter,
-        subscriptionsRepo: this.subscriptionsRepo,
-        subscriptionUsageRepo: this.subscriptionUsageRepo,
-        subscriptionPlansRepo: this.subscriptionPlansRepo,
         paymentsRepo: this.paymentsRepo,
       },
       options,
@@ -170,8 +145,6 @@ export class AdminInvoicesService {
       brandingRepo: this.brandingRepo,
       pdfGenerator: this.pdfGenerator,
       storageAdapter: this.storageAdapter,
-      subscriptionsRepo: this.subscriptionsRepo,
-      subscriptionUsageRepo: this.subscriptionUsageRepo,
     });
     return { invoiceId: result.invoiceId, pdfUrl: result.pdfUrl, status: 'ISSUED' };
   }
@@ -190,7 +163,6 @@ export class AdminInvoicesService {
       customersRepo: this.customersRepo,
       brandingRepo: this.brandingRepo,
       branchRepo: this.branchRepo,
-      subscriptionsRepo: this.subscriptionsRepo,
       pdfGenerator: this.pdfGenerator,
       storageAdapter: this.storageAdapter,
     };

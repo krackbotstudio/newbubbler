@@ -1,6 +1,4 @@
 export { PrismaOrdersRepo } from './prisma-orders-repo';
-export { PrismaSubscriptionsRepo } from './prisma-subscriptions-repo';
-export { PrismaSubscriptionUsageRepo } from './prisma-subscription-usage-repo';
 export { PrismaInvoicesRepo } from './prisma-invoices-repo';
 export { PrismaPaymentsRepo } from './prisma-payments-repo';
 export { PrismaAddressesRepo } from './prisma-addresses-repo';
@@ -17,7 +15,6 @@ export { PrismaLaundryItemPricesRepo } from './prisma-laundry-item-prices-repo';
 export { PrismaServiceCategoryRepo } from './prisma-service-category-repo';
 export { PrismaSegmentCategoryRepo } from './prisma-segment-category-repo';
 export { PrismaItemSegmentServicePriceRepo } from './prisma-item-segment-service-price-repo';
-export { PrismaSubscriptionPlansRepo } from './prisma-subscription-plans-repo';
 export { PrismaCustomersRepo } from './prisma-customers-repo';
 export { PrismaAnalyticsRepo } from './prisma-analytics-repo';
 export { PrismaFeedbackRepo } from './prisma-feedback-repo';

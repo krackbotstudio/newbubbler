@@ -46,7 +46,6 @@ export interface AnalyticsResponse {
   orderCategories: {
     online: number;
     walkin: number;
-    subscription: number;
     cancelled: number;
   };
   breakdown: Array<{
@@ -69,7 +68,6 @@ export function toAnalyticsPoints(breakdown: AnalyticsResponse['breakdown']): An
 
 /** Response from GET /admin/analytics/dashboard-kpis. */
 export interface DashboardKpisResponse {
-  activeSubscriptionsCount: number;
   totalCustomersCount: number;
 }
 

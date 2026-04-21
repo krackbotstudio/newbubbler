@@ -52,8 +52,8 @@ const branchSchema = z
     panNumber: z.string().max(20).optional(),
     invoicePrefix: z.string().max(24).optional(),
     itemTagBrandName: z.string().max(40).optional(),
-    primaryColor: z.string().regex(/^#?[0-9A-Fa-f]{6}$/, 'Use a 6-digit hex color (e.g. #D94680)').optional(),
-    secondaryColor: z.string().regex(/^#?[0-9A-Fa-f]{6}$/, 'Use a 6-digit hex color (e.g. #FCE7F3)').optional(),
+    primaryColor: z.string().regex(/^#?[0-9A-Fa-f]{6}$/, 'Use a 6-digit hex color (e.g. #1e40af)').optional(),
+    secondaryColor: z.string().regex(/^#?[0-9A-Fa-f]{6}$/, 'Use a 6-digit hex color (e.g. #dbeafe)').optional(),
     footerNote: z.string().max(500).optional(),
     upiId: z.string().max(120).optional(),
     upiPayeeName: z.string().max(120).optional(),
@@ -111,8 +111,8 @@ export function OpsBranchBrandingView({ branchId }: { branchId: string }) {
       setPanNumber(branch.panNumber ?? '');
       setInvoicePrefix(branch.invoicePrefix ?? '');
       setItemTagBrandName(branch.itemTagBrandName ?? '');
-      setPrimaryColor(branch.primaryColor ?? '#D94680');
-      setSecondaryColor(branch.secondaryColor ?? '#FCE7F3');
+      setPrimaryColor(branch.primaryColor ?? '#1e40af');
+      setSecondaryColor(branch.secondaryColor ?? '#dbeafe');
       setFooterNote(branch.footerNote ?? '');
       setUpiId(branch.upiId ?? '');
       setUpiPayeeName(branch.upiPayeeName ?? '');
@@ -322,14 +322,14 @@ export function OpsBranchBrandingView({ branchId }: { branchId: string }) {
                 <div className="flex items-center gap-2">
                   <Input
                     type="color"
-                    value={normalizeHexColor(primaryColor) ?? '#D94680'}
+                    value={normalizeHexColor(primaryColor) ?? '#1e40af'}
                     onChange={(e) => setPrimaryColor(e.target.value)}
                     className="h-10 w-16 p-1"
                   />
                   <Input
                     value={primaryColor}
                     onChange={(e) => setPrimaryColor(e.target.value)}
-                    placeholder="#D94680"
+                    placeholder="#1e40af"
                     maxLength={7}
                   />
                 </div>
@@ -339,18 +339,18 @@ export function OpsBranchBrandingView({ branchId }: { branchId: string }) {
                 <div className="flex items-center gap-2">
                   <Input
                     type="color"
-                    value={normalizeHexColor(secondaryColor) ?? '#FCE7F3'}
+                    value={normalizeHexColor(secondaryColor) ?? '#dbeafe'}
                     onChange={(e) => setSecondaryColor(e.target.value)}
                     className="h-10 w-16 p-1"
                   />
                   <Input
                     value={secondaryColor}
                     onChange={(e) => setSecondaryColor(e.target.value)}
-                    placeholder="#FCE7F3"
+                    placeholder="#dbeafe"
                     maxLength={7}
                   />
                 </div>
-                <p className="mt-1 text-xs text-muted-foreground">Replaces the default light-pink branch background.</p>
+                <p className="mt-1 text-xs text-muted-foreground">Light tint for branch surfaces (e.g. sidebar wash).</p>
               </FormField>
             </div>
             <FormField label="Footer note on invoices (optional)">

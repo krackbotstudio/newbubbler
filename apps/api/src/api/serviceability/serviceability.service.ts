@@ -12,19 +12,39 @@ export class ServiceabilityService {
     private readonly branchRepo: BranchRepo,
   ) {}
 
-  async check(pincode: string) {
-    return checkServiceability(pincode, { serviceAreaRepo: this.serviceAreaRepo, branchRepo: this.branchRepo });
+  async check(pincode: string, branchId?: string | null) {
+    return checkServiceability(pincode, {
+      serviceAreaRepo: this.serviceAreaRepo,
+      branchRepo: this.branchRepo,
+      branchId: branchId?.trim() || null,
+    });
   }
 
   /** Branches that actively serve this pincode (for customer branch picker). */
   async listBranchesForPincode(
     pincode: string,
-  ): Promise<{ branches: Array<{ id: string; name: string; logoUrl: string | null; updatedAt: string | null }> }> {
+  ): Promise<{
+    branches: Array<{
+      id: string;
+      name: string;
+      logoUrl: string | null;
+      updatedAt: string | null;
+      primaryColor: string | null;
+      secondaryColor: string | null;
+    }>;
+  }> {
     const pc = pincode.trim();
     if (!pc) return { branches: [] };
     const areas = await this.serviceAreaRepo.listActiveByPincode(pc);
     const seen = new Set<string>();
-    const branches: Array<{ id: string; name: string; logoUrl: string | null; updatedAt: string | null }> = [];
+    const branches: Array<{
+      id: string;
+      name: string;
+      logoUrl: string | null;
+      updatedAt: string | null;
+      primaryColor: string | null;
+      secondaryColor: string | null;
+    }> = [];
     for (const a of areas) {
       if (seen.has(a.branchId)) continue;
       seen.add(a.branchId);
@@ -34,6 +54,8 @@ export class ServiceabilityService {
         name: (b?.name ?? '').trim() || a.branchId,
         logoUrl: b?.logoUrl?.trim() ? b.logoUrl.trim() : null,
         updatedAt: b?.updatedAt ? b.updatedAt.toISOString() : null,
+        primaryColor: b?.primaryColor?.trim() ? b.primaryColor.trim() : null,
+        secondaryColor: b?.secondaryColor?.trim() ? b.secondaryColor.trim() : null,
       });
     }
     return { branches };

@@ -1,4 +1,5 @@
 import { api } from './api';
+import { applyBranchThemeToDocument, resetBranchThemeInDocument } from './portal-theme';
 
 export interface PortalPublic {
   id: string;
@@ -7,6 +8,9 @@ export interface PortalPublic {
   brandName: string;
   logoUrl: string | null;
   appIconUrl: string | null;
+  /** Branch theme (from Branch row); drives customer-web CSS variables. */
+  primaryColor?: string | null;
+  secondaryColor?: string | null;
   termsAndConditions: string | null;
   carouselImages: Array<{ id: string; portalId: string; position: number; imageUrl: string }>;
 }
@@ -37,8 +41,13 @@ export function getStoredPortal(): PortalPublic | null {
 
 export function setStoredPortal(portal: PortalPublic | null) {
   if (typeof window === 'undefined') return;
-  if (!portal) localStorage.removeItem(PORTAL_KEY);
-  else localStorage.setItem(PORTAL_KEY, JSON.stringify(portal));
+  if (!portal) {
+    localStorage.removeItem(PORTAL_KEY);
+    resetBranchThemeInDocument();
+    return;
+  }
+  localStorage.setItem(PORTAL_KEY, JSON.stringify(portal));
+  applyBranchThemeToDocument(portal.primaryColor ?? null, portal.secondaryColor ?? null);
 }
 
 export async function fetchPortalPublic(slugHint?: string): Promise<PortalPublic | null> {

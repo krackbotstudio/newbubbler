@@ -1,6 +1,18 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { ADDRESSES_REPO, CUSTOMERS_REPO, CUSTOMER_PORTALS_REPO, ORDERS_REPO, SUBSCRIPTIONS_REPO, SUBSCRIPTION_PLANS_REPO } from '../../infra/infra.module';
-import type { AddressesRepo, CustomersRepo, CustomerPortalsRepo, OrdersRepo, SubscriptionsRepo, SubscriptionPlansRepo } from '../../application/ports';
+import {
+  ADDRESSES_REPO,
+  BRANCH_REPO,
+  CUSTOMERS_REPO,
+  CUSTOMER_PORTALS_REPO,
+  SERVICE_AREA_REPO,
+} from '../../infra/infra.module';
+import type {
+  AddressesRepo,
+  BranchRepo,
+  CustomersRepo,
+  CustomerPortalsRepo,
+  ServiceAreaRepo,
+} from '../../application/ports';
 import { AppError } from '../../application/errors';
 import type { AuthUser } from '../common/roles.guard';
 
@@ -11,76 +23,25 @@ export interface RegisterPushTokenResult {
 export interface MeResponse {
   user: { id: string; phone: string | null; role: string; name: string | null; email: string | null };
   defaultAddress?: { id: string; pincode: string };
-  /** All active subscriptions (customer picks one when booking). Each is tied to one address (addressId). */
-  activeSubscriptions: Array<{
-    id: string;
-    planId: string;
-    planName: string;
-    planDescription: string | null;
-    /** Address this subscription is tied to (pickup/delivery only at this address). */
-    addressId: string | null;
-    /** Address label at purchase; still shown after address is edited/deleted. */
-    addressLabel: string | null;
-    validityStartDate: string;
-    validTill: string;
-    remainingPickups: number;
-    remainingKg: number | null;
-    remainingItems: number | null;
-    maxPickups: number;
-    kgLimit: number | null;
-    itemsLimit: number | null;
-    /** Branch tied to this subscription (pickup slots and orders). */
-    branchId: string | null;
-    /** True when this subscription already has an order that is not yet delivered/cancelled. */
-    hasActiveOrder: boolean;
-  }>;
-  /** First active subscription (backward compat). */
-  activeSubscription?: {
-    id: string;
-    planId: string;
-    planName: string;
-    planDescription?: string | null;
-    addressId?: string | null;
-    validityStartDate: string;
-    validTill: string;
-    remainingPickups: number;
-    remainingKg: number | null;
-    remainingItems: number | null;
-    maxPickups: number;
-    kgLimit: number | null;
-    itemsLimit: number | null;
-    hasActiveOrder?: boolean;
-  };
-  /** Past (completed) subscriptions for this customer. */
-  pastSubscriptions?: Array<{
-    id: string;
-    planId: string;
-    planName: string;
-    addressId: string | null;
-    /** Address label at purchase; still shown after address is edited/deleted. */
-    addressLabel: string | null;
-    validityStartDate: string;
-    validTill: string;
-    inactivatedAt: string;
-    remainingPickups: number;
-    usedPickups: number;
-    maxPickups: number;
-    usedKg: number;
-    usedItemsCount: number;
-    kgLimit: number | null;
-    itemsLimit: number | null;
-  }>;
+}
+
+export interface CustomerBranchOption {
+  id: string;
+  name: string;
+  logoUrl: string | null;
+  updatedAt: string | null;
+  primaryColor: string | null;
+  secondaryColor: string | null;
 }
 
 @Injectable()
 export class MeService {
   constructor(
     @Inject(ADDRESSES_REPO) private readonly addressesRepo: AddressesRepo,
-    @Inject(SUBSCRIPTIONS_REPO) private readonly subscriptionsRepo: SubscriptionsRepo,
-    @Inject(SUBSCRIPTION_PLANS_REPO) private readonly subscriptionPlansRepo: SubscriptionPlansRepo,
     @Inject(CUSTOMERS_REPO) private readonly customersRepo: CustomersRepo,
-    @Inject(ORDERS_REPO) private readonly ordersRepo: OrdersRepo,
     @Inject(CUSTOMER_PORTALS_REPO) private readonly customerPortalsRepo: CustomerPortalsRepo,
+    @Inject(SERVICE_AREA_REPO) private readonly serviceAreaRepo: ServiceAreaRepo,
+    @Inject(BRANCH_REPO) private readonly branchRepo: BranchRepo,
   ) {}
 
   private async resolvePortalBranchScope(
@@ -105,66 +66,11 @@ export class MeService {
   }
 
   async getMe(user: AuthUser, rawHost?: string, slugHint?: string): Promise<MeResponse> {
-    const portalBranchId = await this.resolvePortalBranchScope(user.id, rawHost, slugHint);
-    const [customer, defaultAddress, activeSubscriptionsList, pastSubscriptionsList] = await Promise.all([
+    await this.resolvePortalBranchScope(user.id, rawHost, slugHint);
+    const [customer, defaultAddress] = await Promise.all([
       this.customersRepo.getById(user.id),
       this.addressesRepo.findDefaultByUserId(user.id),
-      this.subscriptionsRepo.listActiveByUserId(user.id),
-      this.subscriptionsRepo.listPastByUserId(user.id),
     ]);
-    const scopedActive = portalBranchId
-      ? activeSubscriptionsList.filter((s) => s.branchId != null && s.branchId === portalBranchId)
-      : activeSubscriptionsList;
-    const scopedPast = portalBranchId
-      ? pastSubscriptionsList.filter((s) => s.branchId != null && s.branchId === portalBranchId)
-      : pastSubscriptionsList;
-    const activeSubscriptions = await Promise.all(
-      scopedActive.map(async (s) => {
-        const [activeOrder, plan] = await Promise.all([
-          this.ordersRepo.findActiveBySubscriptionId(s.id),
-          this.subscriptionPlansRepo.getById(s.planId),
-        ]);
-        return {
-          id: s.id,
-          planId: s.planId,
-          planName: s.planName,
-          planDescription: plan?.description ?? null,
-          branchId: s.branchId ?? null,
-          addressId: s.addressId ?? null,
-          addressLabel: s.addressLabel ?? null,
-          validityStartDate: s.validityStartDate.toISOString(),
-          validTill: s.validTill.toISOString(),
-          remainingPickups: s.remainingPickups,
-          remainingKg: s.remainingKg,
-          remainingItems: s.remainingItems,
-          maxPickups: s.maxPickups,
-          kgLimit: s.kgLimit,
-          itemsLimit: s.itemsLimit,
-          hasActiveOrder: activeOrder != null,
-        };
-      }),
-    );
-    const pastSubscriptions = scopedPast.map((s) => {
-      const maxPickups = s.maxPickups;
-      const usedPickups = maxPickups - s.remainingPickups;
-      return {
-        id: s.id,
-        planId: s.planId,
-        planName: s.planName,
-        addressId: s.addressId ?? null,
-        addressLabel: (s as { addressLabel?: string | null }).addressLabel ?? null,
-        validityStartDate: s.validityStartDate.toISOString(),
-        validTill: s.expiryDate.toISOString(),
-        inactivatedAt: s.inactivatedAt.toISOString(),
-        remainingPickups: s.remainingPickups,
-        usedPickups,
-        maxPickups,
-        usedKg: s.usedKg,
-        usedItemsCount: s.usedItemsCount,
-        kgLimit: s.kgLimit,
-        itemsLimit: s.itemsLimit,
-      };
-    });
 
     return {
       user: {
@@ -175,9 +81,6 @@ export class MeService {
         email: customer?.email ?? null,
       },
       ...(defaultAddress && { defaultAddress: { id: defaultAddress.id, pincode: defaultAddress.pincode } }),
-      activeSubscriptions,
-      ...(activeSubscriptions[0] && { activeSubscription: activeSubscriptions[0] }),
-      ...(pastSubscriptions.length > 0 && { pastSubscriptions }),
     };
   }
 
@@ -188,5 +91,97 @@ export class MeService {
   async registerPushToken(user: AuthUser, pushToken: string): Promise<RegisterPushTokenResult> {
     await this.customersRepo.update(user.id, { expoPushToken: pushToken });
     return { ok: true };
+  }
+
+  /** Branches the customer may choose (portal: single branch; app: union of branches serving saved-address pincodes). */
+  async listAvailableBranches(
+    user: AuthUser,
+    rawHost?: string,
+    slugHint?: string,
+  ): Promise<{ branches: CustomerBranchOption[] }> {
+    let portalBranchId: string | null = null;
+    try {
+      portalBranchId = await this.resolvePortalBranchScope(user.id, rawHost, slugHint);
+    } catch {
+      portalBranchId = null;
+    }
+    if (portalBranchId) {
+      const b = await this.branchRepo.getById(portalBranchId);
+      if (!b) return { branches: [] };
+      return {
+        branches: [
+          {
+            id: b.id,
+            name: (b.name ?? '').trim() || b.id,
+            logoUrl: b.logoUrl?.trim() ? b.logoUrl.trim() : null,
+            updatedAt: b.updatedAt ? b.updatedAt.toISOString() : null,
+            primaryColor: b.primaryColor?.trim() ? b.primaryColor.trim() : null,
+            secondaryColor: b.secondaryColor?.trim() ? b.secondaryColor.trim() : null,
+          },
+        ],
+      };
+    }
+
+    const addresses = await this.addressesRepo.listByUserId(user.id);
+    const pincodes = [...new Set(addresses.map((a) => a.pincode.trim()).filter(Boolean))];
+    const seen = new Set<string>();
+    const branches: CustomerBranchOption[] = [];
+    for (const pc of pincodes) {
+      const areas = await this.serviceAreaRepo.listActiveByPincode(pc);
+      for (const a of areas) {
+        if (seen.has(a.branchId)) continue;
+        seen.add(a.branchId);
+        const b = await this.branchRepo.getById(a.branchId);
+        if (!b) continue;
+        branches.push({
+          id: a.branchId,
+          name: (b.name ?? '').trim() || a.branchId,
+          logoUrl: b.logoUrl?.trim() ? b.logoUrl.trim() : null,
+          updatedAt: b.updatedAt ? b.updatedAt.toISOString() : null,
+          primaryColor: b.primaryColor?.trim() ? b.primaryColor.trim() : null,
+          secondaryColor: b.secondaryColor?.trim() ? b.secondaryColor.trim() : null,
+        });
+      }
+    }
+
+    /**
+     * New customers have no saved addresses yet, so the pincode union above is empty and they would
+     * skip branch selection entirely. Fall back to every branch that has at least one active service
+     * area (then all branches) so onboarding can show the same picker as existing users.
+     */
+    if (branches.length === 0) {
+      const areas = await this.serviceAreaRepo.listAll();
+      for (const a of areas) {
+        if (!a.active) continue;
+        if (seen.has(a.branchId)) continue;
+        seen.add(a.branchId);
+        const b = await this.branchRepo.getById(a.branchId);
+        if (!b) continue;
+        branches.push({
+          id: a.branchId,
+          name: (b.name ?? '').trim() || a.branchId,
+          logoUrl: b.logoUrl?.trim() ? b.logoUrl.trim() : null,
+          updatedAt: b.updatedAt ? b.updatedAt.toISOString() : null,
+          primaryColor: b.primaryColor?.trim() ? b.primaryColor.trim() : null,
+          secondaryColor: b.secondaryColor?.trim() ? b.secondaryColor.trim() : null,
+        });
+      }
+    }
+    if (branches.length === 0) {
+      const all = await this.branchRepo.listAll();
+      for (const b of all) {
+        branches.push({
+          id: b.id,
+          name: (b.name ?? '').trim() || b.id,
+          logoUrl: b.logoUrl?.trim() ? b.logoUrl.trim() : null,
+          updatedAt: b.updatedAt ? b.updatedAt.toISOString() : null,
+          primaryColor: b.primaryColor?.trim() ? b.primaryColor.trim() : null,
+          secondaryColor: b.secondaryColor?.trim() ? b.secondaryColor.trim() : null,
+        });
+      }
+    }
+
+    branches.sort((a, b) => a.name.localeCompare(b.name));
+    return { branches };
   }
 }

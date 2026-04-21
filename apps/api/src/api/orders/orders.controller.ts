@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Patch, Body, Post, UseGuards, Req } from '@nestjs/common';
+import { Controller, Get, Param, Patch, Body, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { OrderStatus, Role } from '@shared/enums';
 import { AGENT_ROLE } from '../common/agent-role';
 import { JwtAuthGuard } from '../common/jwt-auth.guard';
@@ -34,7 +34,6 @@ export class OrdersController {
       pickupDate: dto.pickupDate,
       timeWindow: dto.timeWindow,
       estimatedWeightKg: dto.estimatedWeightKg,
-      subscriptionId: dto.subscriptionId,
       branchId: dto.branchId,
     }, host, slugHint);
     return result;
@@ -44,11 +43,12 @@ export class OrdersController {
   @Roles(Role.CUSTOMER)
   async listOrders(
     @CurrentUser() user: AuthUser,
+    @Query('branchId') branchId: string | undefined,
     @Req() req: { headers?: { host?: string; 'x-forwarded-host'?: string; 'x-portal-slug'?: string } },
   ) {
     const host = req.headers?.['x-forwarded-host'] ?? req.headers?.host;
     const slugHint = req.headers?.['x-portal-slug'];
-    const orders = await this.ordersService.listForCustomer(user, host, slugHint);
+    const orders = await this.ordersService.listForCustomer(user, host, slugHint, branchId ?? null);
     return orders.map((o) => {
       const ext = o as {
         amountToPayPaise?: number | null;
@@ -62,6 +62,7 @@ export class OrdersController {
         orderType: o.orderType,
         orderSource: (o as { orderSource?: string | null }).orderSource ?? null,
         subscriptionId: (o as { subscriptionId?: string | null }).subscriptionId ?? null,
+        branchId: o.branchId ?? null,
         pickupDate: o.pickupDate,
         timeWindow: o.timeWindow,
         createdAt: o.createdAt,
@@ -76,8 +77,14 @@ export class OrdersController {
 
   @Get(':id/invoices')
   @Roles(Role.CUSTOMER)
-  async listOrderInvoices(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.ordersService.listInvoicesForOrder(id, user);
+  async listOrderInvoices(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Req() req: { headers?: { host?: string; 'x-forwarded-host'?: string; 'x-portal-slug'?: string } },
+  ) {
+    const host = req.headers?.['x-forwarded-host'] ?? req.headers?.host;
+    const slugHint = req.headers?.['x-portal-slug'];
+    return this.ordersService.listInvoicesForOrder(id, user, host, slugHint);
   }
 
   @Get(':id')
@@ -90,6 +97,11 @@ export class OrdersController {
     const host = req.headers?.['x-forwarded-host'] ?? req.headers?.host;
     const slugHint = req.headers?.['x-portal-slug'];
     const order = await this.ordersService.getOrderForUser(user, id, host, slugHint);
+    /** One round-trip for mobile: avoids nested GET /orders/:id/invoices (some proxies/clients mishandle it). */
+    if (user.role === Role.CUSTOMER) {
+      const invoices = await this.ordersService.listInvoicesForOrder(id, user, host, slugHint);
+      return { ...order, invoices };
+    }
     return order;
   }
 

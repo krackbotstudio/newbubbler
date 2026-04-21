@@ -25,6 +25,7 @@ export class ItemsController {
 
   @Get('price-list')
   async listPriceList(
+    @Query('branchId') branchId: string | undefined,
     @Req()
     req: {
       headers?: { host?: string; 'x-forwarded-host'?: string; 'x-portal-slug'?: string };
@@ -32,6 +33,6 @@ export class ItemsController {
   ) {
     const host = req.headers?.['x-forwarded-host'] ?? req.headers?.host;
     const slugHint = req.headers?.['x-portal-slug'];
-    return this.itemsService.listPriceList(host, slugHint);
+    return this.itemsService.listPriceList(host, slugHint, branchId ?? null);
   }
 }

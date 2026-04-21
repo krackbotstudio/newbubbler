@@ -11,9 +11,10 @@ export const ROLE_PERMISSIONS: Record<
   { allow?: readonly string[]; denyRoutes?: readonly string[]; navHide?: readonly string[] }
 > = {
   ADMIN: { allow: ['*'] },
-  PARTIAL_ADMIN: { allow: ['*'] },
   BILLING: { allow: ['*'] },
   OPS: { denyRoutes: ['/admin-users'] },
+  /** Same route guard pattern as branch head until account is migrated off PARTIAL_ADMIN. */
+  PARTIAL_ADMIN: { denyRoutes: ['/admin-users'] },
   AGENT: {
     allow: ['/dashboard', '/orders', '/feedback'],
     navHide: ['/orders', '/customers'],

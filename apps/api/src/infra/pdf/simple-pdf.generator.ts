@@ -97,8 +97,9 @@ function buildMinimalPdf(aggregate: InvoicePdfAggregate): Buffer {
 
   // Items table header
   const colName = marginX;
-  const colQty = marginX + contentW * 0.62;
-  const colUnit = marginX + contentW * 0.75;
+  const colQty = marginX + contentW * 0.48;
+  const colClothes = marginX + contentW * 0.58;
+  const colUnit = marginX + contentW * 0.72;
   const colAmt = marginX + contentW * 0.88;
 
   setFont(fontH);
@@ -109,6 +110,7 @@ function buildMinimalPdf(aggregate: InvoicePdfAggregate): Buffer {
   setFont(fontSmall);
   textAt(colName, y, 'Name');
   textAt(colQty, y, 'Qty');
+  textAt(colClothes, y, 'Clothes');
   textAt(colUnit, y, 'Unit (₹)');
   textAt(colAmt, y, 'Amount (₹)');
   endText();
@@ -123,6 +125,11 @@ function buildMinimalPdf(aggregate: InvoicePdfAggregate): Buffer {
     const name = item.name.length > maxNameLen ? item.name.slice(0, maxNameLen - 1) + '…' : item.name;
     textAt(colName, y, name);
     textAt(colQty, y, String(item.quantity));
+    const clothes =
+      item.clothesCount != null && Number.isFinite(item.clothesCount)
+        ? String(item.clothesCount)
+        : String(item.quantity);
+    textAt(colClothes, y, clothes);
     textAt(colUnit, y, money(item.unitPrice));
     textAt(colAmt, y, money(item.amount));
     y -= 14;

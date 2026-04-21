@@ -8,7 +8,6 @@ export interface OrderListItem {
   serviceType: string;
   orderType?: string;
   orderSource?: string | null;
-  subscriptionId?: string | null;
   pickupDate: string;
   timeWindow: string;
   createdAt: string;
@@ -22,7 +21,6 @@ export interface OrderDetail extends OrderListItem {
   pincode: string;
   estimatedWeightKg: number | null;
   actualWeightKg: number | null;
-  subscriptionId: string | null;
   paymentStatus: string;
   updatedAt: string;
 }
@@ -91,14 +89,13 @@ export function useCustomerFlowOrderInvoices(id: string | null) {
 }
 
 export interface CreateOrderInput {
-  orderType?: 'INDIVIDUAL' | 'SUBSCRIPTION' | 'BOTH';
+  orderType?: 'INDIVIDUAL';
   serviceType?: string;
   selectedServices?: string[];
   addressId: string;
   pickupDate: string;
   timeWindow: string;
   estimatedWeightKg?: number;
-  subscriptionId?: string;
 }
 
 export function useCreateCustomerFlowOrder() {

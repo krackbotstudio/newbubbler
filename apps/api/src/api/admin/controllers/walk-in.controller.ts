@@ -13,7 +13,7 @@ import { CreateWalkInOrderDto } from '../dto/create-walk-in-order.dto';
 
 @Controller('admin/walk-in')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.ADMIN, Role.PARTIAL_ADMIN, Role.OPS, Role.BILLING, AGENT_ROLE)
+@Roles(Role.ADMIN, Role.OPS, Role.BILLING, AGENT_ROLE)
 export class WalkInController {
   constructor(private readonly walkInService: WalkInService) {}
 

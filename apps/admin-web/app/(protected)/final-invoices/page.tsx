@@ -30,7 +30,6 @@ export default function FinalInvoicesPage() {
   const isBranchHead = user && isBranchScopedStaff(user.role) && user.branchId;
   const { data: branches = [] } = useBranches();
   const branchOptions = useMemo(() => restrictBranchesForUser(branches, user), [branches, user]);
-  const isPartialAdmin = user?.role === 'PARTIAL_ADMIN';
   const [countryCode, setCountryCode] = useState('+91');
   const [phoneDigits, setPhoneDigits] = useState('');
   const combinedPhone = useMemo(
@@ -54,11 +53,6 @@ export default function FinalInvoicesPage() {
   useEffect(() => {
     if (isBranchHead && user?.branchId) setBranchId(user.branchId);
   }, [isBranchHead, user?.branchId]);
-
-  useEffect(() => {
-    if (isBranchHead || !isPartialAdmin || branchId) return;
-    if (branchOptions.length > 0) setBranchId(branchOptions[0].id);
-  }, [isBranchHead, isPartialAdmin, branchId, branchOptions]);
 
   const filters = {
     customerId: resolvedCustomerId ?? undefined,
@@ -90,9 +84,7 @@ export default function FinalInvoicesPage() {
 
   const handleRowClick = useCallback(
     (row: AdminFinalInvoiceRow) => {
-      if (row.type === 'SUBSCRIPTION' && row.subscriptionId) {
-        router.push(`/subscription-invoice/${row.subscriptionId}`);
-      } else if (row.orderId) {
+      if (row.orderId) {
         router.push(`/orders/${row.orderId}`);
       }
     },
@@ -112,8 +104,7 @@ export default function FinalInvoicesPage() {
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold">Final Invoices</h1>
       <p className="text-sm text-muted-foreground">
-        All final invoices (order and subscription) with payment collected. Includes zero-value invoices. Use date
-        filters in any order, then Apply.
+        All final invoices with payment collected. Includes zero-value invoices. Use date filters in any order, then Apply.
       </p>
 
       <Card>
@@ -177,7 +168,7 @@ export default function FinalInvoicesPage() {
                   }}
                   title="Filter final invoices by branch name"
                 >
-                  {!isPartialAdmin && <option value="">All branches</option>}
+                  <option value="">All branches</option>
                   {branchOptions.map((b) => (
                     <option key={b.id} value={b.id}>
                       {b.name ?? b.id}
@@ -224,8 +215,8 @@ export default function FinalInvoicesPage() {
                         {row.issuedAt ? formatDate(row.issuedAt) : '—'}
                       </TableCell>
                       <TableCell>
-                        <Badge variant={row.type === 'SUBSCRIPTION' ? 'secondary' : 'default'}>
-                          {row.type === 'SUBSCRIPTION' ? 'Subscription' : row.orderSource === 'WALK_IN' ? 'Walk in' : 'Online'}
+                        <Badge variant="default">
+                          {row.orderSource === 'WALK_IN' ? 'Walk in' : 'Online'}
                         </Badge>
                       </TableCell>
                       <TableCell className="font-mono text-xs">{row.code ?? '—'}</TableCell>
@@ -236,7 +227,7 @@ export default function FinalInvoicesPage() {
                         {row.branchName ?? '—'}
                       </TableCell>
                       <TableCell className="max-w-[140px] truncate">
-                        {row.type === 'SUBSCRIPTION' ? (row.planName ?? '—') : (row.orderId ? `Order ${row.orderId.slice(0, 8)}…` : '—')}
+                        {row.orderId ? `Order ${row.orderId.slice(0, 8)}…` : '—'}
                       </TableCell>
                       <TableCell>
                         <Badge

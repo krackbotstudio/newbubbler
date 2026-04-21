@@ -108,16 +108,6 @@ export function CustomerOrdersTable({ userId, role, userBranchId }: CustomerOrde
   const ackInvoice = orderSummary?.invoices?.find((inv) => inv.type === 'ACKNOWLEDGEMENT');
   const pdfUrl = invoice?.pdfUrl ? (invoice.pdfUrl.startsWith('http') ? invoice.pdfUrl : `${getApiOrigin()}${invoice.pdfUrl}`) : null;
 
-  const hasSubscription = Boolean(orderSummary?.subscription && orderSummary?.subscriptionUsage);
-  const subscriptionUnit =
-    orderSummary?.subscription?.kgLimit != null
-      ? 'KG'
-      : orderSummary?.subscription?.itemsLimit != null
-        ? 'Nos'
-        : undefined;
-  const subscriptionUsageRowIndex =
-    invoiceModal?.type === 'FINAL' && hasSubscription && (invoice?.items?.length ?? 0) > 0 ? 0 : undefined;
-
   const mergedInvoiceBranding = useMemo(
     () =>
       mergeInvoiceDisplayBranding(invoice?.brandingSnapshotJson, branding ?? undefined, {
@@ -474,8 +464,6 @@ export function CustomerOrdersTable({ userId, role, userBranchId }: CustomerOrde
                 logoUrlCacheBuster={invoiceLogoCacheBuster}
                 ackInvoice={invoiceModal!.type === 'FINAL' ? ackInvoice ?? null : undefined}
                 catalogMatrix={catalogMatrix ?? null}
-                subscriptionUnit={subscriptionUnit}
-                subscriptionUsageRowIndex={subscriptionUsageRowIndex}
               />
             </div>
           </>

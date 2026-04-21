@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { getStoredUser, isBranchScopedStaff, restrictBranchesForUser, type Role } from "@/lib/auth";
+import { getStoredUser, isBranchScopedStaff, type Role } from "@/lib/auth";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,7 +45,6 @@ export function AdminUserDialog({
   const [email, setEmail] = useState<string>("");
   const [role, setRole] = useState<Role | "">("");
   const [branchId, setBranchId] = useState<string>("");
-  const [branchIds, setBranchIds] = useState<string[]>([]);
   const [isActive, setIsActive] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [resettingPassword, setResettingPassword] = useState(false);
@@ -53,11 +52,9 @@ export function AdminUserDialog({
 
   const { data: branches = [] } = useBranches();
   const actor = useMemo(() => getStoredUser(), []);
-  const actorIsPartialAdmin = actor?.role === "PARTIAL_ADMIN";
-  const branchOptions = useMemo(() => restrictBranchesForUser(branches, actor), [branches, actor]);
-  const allowedRoleOptions: Role[] = actorIsPartialAdmin
-    ? ["OPS", "AGENT"]
-    : ["ADMIN", "PARTIAL_ADMIN", "OPS", "AGENT"];
+  void actor;
+  const branchOptions = branches;
+  const allowedRoleOptions: Role[] = ["ADMIN", "OPS", "AGENT"];
 
   useEffect(() => {
     if (open) {
@@ -66,30 +63,18 @@ export function AdminUserDialog({
         setEmail(user.email);
         setRole(user.role);
         setBranchId(user.branchId ?? "");
-        setBranchIds(Array.from(new Set(user.branchIds ?? [])));
         setIsActive(user.isActive);
       } else {
         setName("");
         setEmail("");
         setRole("");
         setBranchId("");
-        setBranchIds([]);
         setIsActive(true);
       }
       setError(null);
       setSubmitting(false);
     }
   }, [open, mode, user]);
-
-  useEffect(() => {
-    if (!open) return;
-    if (role !== "PARTIAL_ADMIN") return;
-    if (branchIds.length > 0) return;
-    if (branches.length > 0) {
-      // Keep Partial Admin valid by default with at least one allowed branch.
-      setBranchIds([branches[0].id]);
-    }
-  }, [open, role, branchIds, branches]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -99,10 +84,6 @@ export function AdminUserDialog({
     }
     if (isBranchScopedStaff(role) && !branchId) {
       setError("Branch is required for Branch Head and Agent");
-      return;
-    }
-    if (role === "PARTIAL_ADMIN" && branchIds.length === 0) {
-      setError("Select at least one branch for Partial Admin");
       return;
     }
     if (!email) {
@@ -129,7 +110,6 @@ export function AdminUserDialog({
           email,
           role,
           branchId: isBranchScopedStaff(role) ? branchId || null : null,
-          branchIds: role === "PARTIAL_ADMIN" ? branchIds : [],
           isActive,
         });
         if (tempPassword && newUser) {
@@ -141,7 +121,6 @@ export function AdminUserDialog({
           name: name || null,
           role,
           branchId: isBranchScopedStaff(role) ? branchId || null : null,
-          branchIds: role === "PARTIAL_ADMIN" ? branchIds : [],
           isActive,
         });
       }
@@ -175,8 +154,7 @@ export function AdminUserDialog({
   const title = mode === "create" ? "New admin user" : "Edit admin user";
   /** `role` state is `Role | ""` until selected; narrow before `isBranchScopedStaff(Role)`. */
   const branchFieldVisible = role !== "" && isBranchScopedStaff(role);
-  const partialAdminBranchesVisible = role === "PARTIAL_ADMIN";
-  const canManageTargetUser = !actorIsPartialAdmin || !user || user.role === "OPS" || user.role === "AGENT";
+  const canManageTargetUser = true;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -210,11 +188,9 @@ export function AdminUserDialog({
               disabled={mode === "edit"}
             />
           </div>
-          {!canManageTargetUser && (
-            <p className="text-sm text-destructive">
-              Partial admin can manage only Branch Head and Agent users in assigned branches.
-            </p>
-          )}
+          {!canManageTargetUser ? (
+            <p className="text-sm text-destructive">Not allowed.</p>
+          ) : null}
           <div className="space-y-1">
             <label className="text-sm font-medium">Role</label>
             <Select
@@ -223,7 +199,6 @@ export function AdminUserDialog({
                 const newRole = value as Role;
                 setRole(newRole);
                 if (!isBranchScopedStaff(newRole)) setBranchId("");
-                if (newRole !== "PARTIAL_ADMIN") setBranchIds([]);
               }}
             >
               <SelectTrigger>
@@ -231,42 +206,11 @@ export function AdminUserDialog({
               </SelectTrigger>
               <SelectContent>
                 {allowedRoleOptions.includes("ADMIN") && <SelectItem value="ADMIN">Admin</SelectItem>}
-                {allowedRoleOptions.includes("PARTIAL_ADMIN") && <SelectItem value="PARTIAL_ADMIN">Partial Admin</SelectItem>}
                 {allowedRoleOptions.includes("OPS") && <SelectItem value="OPS">Branch Head</SelectItem>}
                 {allowedRoleOptions.includes("AGENT") && <SelectItem value="AGENT">Agent</SelectItem>}
               </SelectContent>
             </Select>
           </div>
-          {partialAdminBranchesVisible && (
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Allowed branches</label>
-              <div className="max-h-48 overflow-auto rounded-md border p-2 space-y-2">
-                {branchOptions.map((b) => {
-                  const checked = branchIds.includes(b.id);
-                  return (
-                    <label key={b.id} className="flex items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4"
-                        checked={checked}
-                        onChange={(e) => {
-                          setBranchIds((prev) =>
-                            e.target.checked
-                              ? Array.from(new Set([...prev, b.id]))
-                              : prev.filter((id) => id !== b.id)
-                          );
-                        }}
-                      />
-                      <span>{b.name ?? b.id}</span>
-                    </label>
-                  );
-                })}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Partial Admin can access/manage only selected branches.
-              </p>
-            </div>
-          )}
           {branchFieldVisible && (
             <div className="space-y-1">
               <label className="text-sm font-medium">Branch</label>

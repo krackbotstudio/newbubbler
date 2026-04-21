@@ -27,7 +27,7 @@ export class AdminCustomerPortalsService {
   }
 
   private assertStaff(actor: AuthUser | undefined) {
-    if (!actor || (actor.role !== Role.ADMIN && actor.role !== Role.PARTIAL_ADMIN && actor.role !== Role.OPS)) {
+    if (!actor || (actor.role !== Role.ADMIN && actor.role !== Role.OPS)) {
       throw new AppError('FORBIDDEN', 'Only staff can manage branch customer portals');
     }
   }
@@ -37,13 +37,6 @@ export class AdminCustomerPortalsService {
     if (actor.role === Role.OPS) {
       if (!actor.branchId || actor.branchId !== branchId) {
         throw new AppError('FORBIDDEN', 'You can only manage your own branch portal');
-      }
-      return;
-    }
-    if (actor.role === Role.PARTIAL_ADMIN) {
-      const allowed = new Set((actor.branchIds ?? []).filter(Boolean));
-      if (allowed.size > 0 && !allowed.has(branchId)) {
-        throw new AppError('FORBIDDEN', 'You can only manage assigned branch portals');
       }
       return;
     }

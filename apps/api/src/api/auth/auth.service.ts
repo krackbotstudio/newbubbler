@@ -170,13 +170,16 @@ export class AuthService {
       }
     }
 
+    const branchId = user.branchId ?? null;
+    const branchIds = branchId ? [branchId] : [];
+
     const token = jwt.sign(
       {
         sub: user.id,
         role: user.role as Role,
         email: user.email,
-        branchId: (user as { branchId?: string | null }).branchId ?? null,
-        branchIds: (user as { branchIds?: string[] }).branchIds ?? [],
+        branchId,
+        branchIds,
       },
       this.jwtSecret,
       { expiresIn: '1h' },
@@ -188,8 +191,8 @@ export class AuthService {
         id: user.id,
         email: user.email!,
         role: user.role as Role,
-        branchId: (user as { branchId?: string | null }).branchId ?? null,
-        branchIds: (user as { branchIds?: string[] }).branchIds ?? [],
+        branchId,
+        branchIds,
         onboardingCompletedAt:
           (user as { onboardingCompletedAt?: Date | null }).onboardingCompletedAt?.toISOString() ??
           null,

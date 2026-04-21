@@ -286,7 +286,6 @@ export class AdminSignupService {
         name: true,
         role: true,
         branchId: true,
-        branchIds: true,
         onboardingCompletedAt: true,
       },
     });

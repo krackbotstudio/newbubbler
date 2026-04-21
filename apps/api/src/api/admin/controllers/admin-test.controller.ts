@@ -8,8 +8,8 @@ import { prisma } from '../../../infra/prisma/prisma-client';
 const SEEDED_PHONE = process.env.SEEDED_CUSTOMER_PHONE ?? '+919999999999';
 
 /**
- * Dev/test helper: returns seeded customer's addressId and subscriptionId
- * so the Test Console can create orders without existing orders.
+ * Dev/test helper: returns seeded customer's addressId (and userId).
+ * Subscription flows were removed; `subscriptionId` is always null for API compatibility.
  */
 @Controller('admin/test')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -20,7 +20,7 @@ export class AdminTestController {
     @Query('phone') phoneQuery?: string,
   ): Promise<{
     addressId: string;
-    subscriptionId: string;
+    subscriptionId: null;
     userId: string;
   } | { error: string }> {
     const phone = (phoneQuery?.trim() || SEEDED_PHONE);
@@ -36,21 +36,10 @@ export class AdminTestController {
     if (!address) {
       return { error: 'Seeded customer has no default address.' };
     }
-    const subscription = await prisma.subscription.findFirst({
-      where: {
-        userId: user.id,
-        active: true,
-        remainingPickups: { gt: 0 },
-        expiryDate: { gt: new Date() },
-      },
-    });
-    if (!subscription) {
-      return { error: 'Seeded customer has no active subscription.' };
-    }
     return {
       userId: user.id,
       addressId: address.id,
-      subscriptionId: subscription.id,
+      subscriptionId: null,
     };
   }
 }

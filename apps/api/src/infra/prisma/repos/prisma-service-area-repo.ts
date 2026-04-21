@@ -26,6 +26,13 @@ export class PrismaServiceAreaRepo implements ServiceAreaRepo {
     return !!row;
   }
 
+  async isPincodeActiveForBranch(pincode: string, branchId: string): Promise<boolean> {
+    const row = await this.prisma.serviceArea.findFirst({
+      where: { pincode, branchId, active: true },
+    });
+    return !!row;
+  }
+
   async listAll(): Promise<ServiceAreaRecord[]> {
     const rows = await this.prisma.serviceArea.findMany({
       orderBy: [{ pincode: 'asc' }, { branchId: 'asc' }],

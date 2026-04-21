@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { useCustomerFlowMe, type ActiveSubscriptionSummary } from '@/hooks/customer-flow/use-me';
+import { useCustomerFlowMe } from '@/hooks/customer-flow/use-me';
 import { useCustomerFlowAddresses, type AddressItem } from '@/hooks/customer-flow/use-addresses';
 import { useCreateCustomerFlowOrder } from '@/hooks/customer-flow/use-orders';
 import { useCustomerFlowSlotAvailability } from '@/hooks/customer-flow/use-slot-availability';
@@ -69,7 +69,6 @@ export default function CustomerFlowCreateOrderPage() {
   const [portalBranchId, setPortalBranchId] = useState<string | null>(null);
   const [step, setStep] = useState<BookingStep>('services');
   const [selectedServiceIds, setSelectedServiceIds] = useState<CustomerFlowServiceTypeId[]>([]);
-  const [subscriptionBookingId, setSubscriptionBookingId] = useState<string | null>(null);
   const [addressId, setAddressId] = useState('');
   const [pickupDate, setPickupDate] = useState('');
   const [timeWindow, setTimeWindow] = useState('');
@@ -81,20 +80,6 @@ export default function CustomerFlowCreateOrderPage() {
   useEffect(() => {
     setPortalBranchId(getStoredPortal()?.branchId ?? null);
   }, []);
-
-  const isSubscriptionFlow = !!subscriptionBookingId;
-  const activeSubscriptions = me?.activeSubscriptions ?? [];
-
-  const subscription = useMemo(
-    () => activeSubscriptions.find((s) => s.id === subscriptionBookingId) ?? null,
-    [activeSubscriptions, subscriptionBookingId],
-  );
-
-  const subscriptionMinDate = useMemo(() => {
-    if (!subscription?.validityStartDate) return todayKey;
-    const v = subscription.validityStartDate.slice(0, 10);
-    return v > todayKey ? v : todayKey;
-  }, [subscription?.validityStartDate, todayKey]);
 
   const selectedAddress = useMemo(
     () => addresses?.find((a) => a.id === addressId) ?? null,
@@ -110,17 +95,8 @@ export default function CustomerFlowCreateOrderPage() {
   );
 
   useEffect(() => {
-    if (!pickupDate) setPickupDate(isSubscriptionFlow ? subscriptionMinDate : todayKey);
-  }, [pickupDate, todayKey, isSubscriptionFlow, subscriptionMinDate]);
-
-  useEffect(() => {
-    if (isSubscriptionFlow && subscription && pickupDate) {
-      const max = subscription.validTill?.slice(0, 10);
-      const min = subscriptionMinDate;
-      if (pickupDate < min) setPickupDate(min);
-      if (max && pickupDate > max) setPickupDate(max);
-    }
-  }, [isSubscriptionFlow, subscription, pickupDate, subscriptionMinDate]);
+    if (!pickupDate) setPickupDate(todayKey);
+  }, [pickupDate, todayKey]);
 
   const timeSlotsFiltered = useMemo(() => {
     const raw = slotQuery.data?.timeSlots ?? [];
@@ -134,35 +110,19 @@ export default function CustomerFlowCreateOrderPage() {
   }
 
   function resetIndividualBooking() {
-    setSubscriptionBookingId(null);
     setSelectedServiceIds([]);
     setAddressId('');
     setPickupDate(todayKey);
     setTimeWindow('');
   }
 
-  function startSubscriptionBook(sub: ActiveSubscriptionSummary) {
-    setValidationError(null);
-    if (sub.hasActiveOrder) return;
-    setSubscriptionBookingId(sub.id);
-    setSelectedServiceIds([]);
-    if (sub.addressId) setAddressId(sub.addressId);
-    setPickupDate(todayKey);
-    setTimeWindow('');
-    setStep('date');
-  }
-
   useEffect(() => {
     if (!addresses?.length) return;
-    if (isSubscriptionFlow && subscription?.addressId) {
-      if (!addressId || addressId !== subscription.addressId) setAddressId(subscription.addressId);
-      return;
-    }
-    if (!isSubscriptionFlow && !addressId) {
+    if (!addressId) {
       const def = addresses.find((a) => a.isDefault) ?? addresses[0];
       if (def) setAddressId(def.id);
     }
-  }, [addresses, addressId, isSubscriptionFlow, subscription?.addressId]);
+  }, [addresses, addressId]);
 
   function continueFromServices() {
     setValidationError(null);
@@ -170,7 +130,6 @@ export default function CustomerFlowCreateOrderPage() {
       setValidationError('Please select at least one service.');
       return;
     }
-    setSubscriptionBookingId(null);
     setStep('address');
   }
 
@@ -209,29 +168,11 @@ export default function CustomerFlowCreateOrderPage() {
       setValidationError('Complete date, time, and address.');
       return;
     }
-    if (!isSubscriptionFlow && selectedServiceIds.length === 0) {
+    if (selectedServiceIds.length === 0) {
       setValidationError('Please select at least one service.');
       return;
     }
     const pickupIso = new Date(`${pickupDate}T12:00:00`).toISOString();
-    if (isSubscriptionFlow && subscriptionBookingId) {
-      createOrder.mutate(
-        {
-          orderType: 'SUBSCRIPTION',
-          subscriptionId: subscriptionBookingId,
-          addressId,
-          pickupDate: pickupIso,
-          timeWindow,
-        },
-        {
-          onSuccess: (data) => {
-            resetIndividualBooking();
-            router.push(`${base}/orders/${data.orderId}`);
-          },
-        },
-      );
-      return;
-    }
     createOrder.mutate(
       {
         orderType: 'INDIVIDUAL',
@@ -357,67 +298,6 @@ export default function CustomerFlowCreateOrderPage() {
               Continue → Address
             </button>
 
-            {activeSubscriptions.length > 0 ? (
-              <div className="mt-6">
-                <p className="mb-1 text-sm font-semibold" style={{ color: C.textSecondary }}>
-                  Active plans
-                </p>
-                <p className="mb-3 text-[13px] leading-snug" style={{ color: C.textSecondary }}>
-                  Tap a plan to book a slot (address is locked for the subscription). You cannot book again with a plan
-                  that already has an order in progress.
-                </p>
-                <div className="space-y-3">
-                  {activeSubscriptions.map((sub) => {
-                    const locked = !!sub.hasActiveOrder;
-                    const addrLabel =
-                      sub.addressLabel ??
-                      (sub.addressId ? addresses.find((a) => a.id === sub.addressId)?.label : null) ??
-                      'Address';
-                    return (
-                      <button
-                        key={sub.id}
-                        type="button"
-                        disabled={locked || !sub.addressId}
-                        onClick={() => !locked && sub.addressId && startSubscriptionBook(sub)}
-                        className="w-full rounded-xl border p-3 text-left"
-                        style={{
-                          borderColor: C.borderLight,
-                          backgroundColor: locked ? C.borderLight : C.elevation2,
-                          opacity: locked ? 0.75 : 1,
-                        }}
-                      >
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-semibold" style={{ color: C.text }}>
-                            {sub.planName ?? 'Plan'}
-                          </span>
-                          <span
-                            className="rounded-full px-2 py-0.5 text-xs font-semibold"
-                            style={{ backgroundColor: C.primaryLight, color: C.primaryDark }}
-                          >
-                            {addrLabel}
-                          </span>
-                        </div>
-                        <p className="mt-1 text-xs" style={{ color: C.textSecondary }}>
-                          {sub.remainingPickups}/{sub.maxPickups} pickups left
-                          {sub.validTill ? ` · Valid till ${sub.validTill.slice(0, 10)}` : ''}
-                        </p>
-                        {locked ? (
-                          <p className="mt-2 text-xs" style={{ color: C.textSecondary }}>
-                            You have an active order with this plan. Complete or wait for it before booking again.
-                          </p>
-                        ) : null}
-                        {!sub.addressId ? (
-                          <p className="mt-2 text-xs" style={{ color: C.error }}>
-                            This plan has no address on file. Contact support.
-                          </p>
-                        ) : null}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : null}
-
             <button
               type="button"
               className="mt-4 w-full text-center text-sm underline"
@@ -517,48 +397,12 @@ export default function CustomerFlowCreateOrderPage() {
               Select date
             </h1>
             <p className="mb-4 text-sm" style={{ color: C.textSecondary }}>
-              {isSubscriptionFlow
-                ? 'Pick a date within your subscription validity.'
-                : 'Pick a date for pickup (we’ll show available time slots).'}
+              Pick a date for pickup (we’ll show available time slots).
             </p>
-            {isSubscriptionFlow && subscription ? (
-              <p className="mb-3 text-[13px]" style={{ color: C.textSecondary }}>
-                Valid from{' '}
-                {subscription.validityStartDate
-                  ? new Date(`${subscription.validityStartDate.slice(0, 10)}T12:00:00`).toLocaleDateString('en-IN', {
-                      day: 'numeric',
-                      month: 'short',
-                      year: 'numeric',
-                    })
-                  : '—'}
-                {' to '}
-                {subscription.validTill
-                  ? new Date(`${subscription.validTill.slice(0, 10)}T12:00:00`).toLocaleDateString('en-IN', {
-                      day: 'numeric',
-                      month: 'short',
-                      year: 'numeric',
-                    })
-                  : '—'}
-              </p>
-            ) : null}
             {validationError ? (
               <p className="mb-3 text-sm font-medium" style={{ color: C.error }}>
                 {validationError}
               </p>
-            ) : null}
-
-            {isSubscriptionFlow && selectedAddress ? (
-              <div className="mb-4 rounded-lg p-3" style={{ backgroundColor: C.elevation2 }}>
-                <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: C.textSecondary }}>
-                  Pickup address
-                </p>
-                <p className="font-semibold" style={{ color: C.text }}>
-                  {selectedAddress.label}
-                </p>
-                <p className="text-sm" style={{ color: C.textSecondary }}>
-                  {selectedAddress.addressLine}
-                </p>
-              </div>
             ) : null}
 
             <label className="mb-4 block">
@@ -567,12 +411,7 @@ export default function CustomerFlowCreateOrderPage() {
               </span>
               <input
                 type="date"
-                min={isSubscriptionFlow ? subscriptionMinDate : todayKey}
-                max={
-                  isSubscriptionFlow && subscription?.validTill
-                    ? subscription.validTill.slice(0, 10)
-                    : undefined
-                }
+                min={todayKey}
                 value={pickupDate}
                 onChange={(e) => setPickupDate(e.target.value)}
                 className="h-12 w-full rounded-lg border px-3 text-base focus-visible:outline-none focus-visible:border-[var(--customer-primary,#C2185B)] focus-visible:ring-2 focus-visible:ring-[var(--customer-primary,#C2185B)]"
@@ -594,12 +433,7 @@ export default function CustomerFlowCreateOrderPage() {
               style={{ color: C.textSecondary }}
               onClick={() => {
                 setValidationError(null);
-                if (isSubscriptionFlow) {
-                  resetIndividualBooking();
-                  setStep('services');
-                } else {
-                  setStep('address');
-                }
+                setStep('address');
               }}
             >
               Back
@@ -704,30 +538,26 @@ export default function CustomerFlowCreateOrderPage() {
                 Services
               </p>
               <p className="font-medium" style={{ color: C.text }}>
-                {isSubscriptionFlow
-                  ? 'Booking with subscription'
-                  : selectedServiceIds
-                      .map((id) => CUSTOMER_FLOW_SERVICE_TYPES.find((s) => s.id === id)?.label ?? id)
-                      .join(', ')}
+                {selectedServiceIds
+                  .map((id) => CUSTOMER_FLOW_SERVICE_TYPES.find((s) => s.id === id)?.label ?? id)
+                  .join(', ')}
               </p>
             </div>
 
-            {!isSubscriptionFlow ? (
-              <label className="mt-4 block">
-                <span className="mb-1 block text-sm font-medium" style={{ color: C.text }}>
-                  Estimated weight (kg) <span style={{ color: C.textSecondary }}>(optional)</span>
-                </span>
-                <input
-                  type="number"
-                  min={0}
-                  step={0.5}
-                  value={estimatedWeightKg}
-                  onChange={(e) => setEstimatedWeightKg(e.target.value)}
-                  className="h-11 w-full rounded-lg border px-3 focus-visible:outline-none focus-visible:border-[var(--customer-primary,#C2185B)] focus-visible:ring-2 focus-visible:ring-[var(--customer-primary,#C2185B)]"
-                  style={{ borderColor: C.borderLight, backgroundColor: C.elevation2 }}
-                />
-              </label>
-            ) : null}
+            <label className="mt-4 block">
+              <span className="mb-1 block text-sm font-medium" style={{ color: C.text }}>
+                Estimated weight (kg) <span style={{ color: C.textSecondary }}>(optional)</span>
+              </span>
+              <input
+                type="number"
+                min={0}
+                step={0.5}
+                value={estimatedWeightKg}
+                onChange={(e) => setEstimatedWeightKg(e.target.value)}
+                className="h-11 w-full rounded-lg border px-3 focus-visible:outline-none focus-visible:border-[var(--customer-primary,#C2185B)] focus-visible:ring-2 focus-visible:ring-[var(--customer-primary,#C2185B)]"
+                style={{ borderColor: C.borderLight, backgroundColor: C.elevation2 }}
+              />
+            </label>
 
             {validationError ? (
               <p className="mt-3 text-sm font-medium" style={{ color: C.error }}>

@@ -1,6 +1,4 @@
 export * from './orders-repo.port';
-export * from './subscriptions-repo.port';
-export * from './subscription-usage-repo.port';
 export * from './unit-of-work.port';
 export * from './invoices-repo.port';
 export * from './addresses-repo.port';
@@ -17,7 +15,6 @@ export * from './laundry-item-prices-repo.port';
 export * from './service-category-repo.port';
 export * from './segment-category-repo.port';
 export * from './item-segment-service-price-repo.port';
-export * from './subscription-plans-repo.port';
 export * from './customers-repo.port';
 export * from './payments-repo.port';
 export * from './storage-adapter.port';

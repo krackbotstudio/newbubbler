@@ -14,6 +14,13 @@ export class InvoiceDraftItemDto {
   @Min(0.1)
   quantity!: number;
 
+  /** Optional piece count; omit to mean “same as quantity” on the client. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0.01)
+  clothesCount?: number;
+
   @Type(() => Number)
   @IsInt()
   @Min(0)

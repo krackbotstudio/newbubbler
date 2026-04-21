@@ -3,7 +3,6 @@ export * from './invoice';
 export * from './payment';
 export * from './feedback';
 export * from './catalog';
-export * from './subscription';
 export * from './service-area';
 export * from './branch';
 export * from './branding';

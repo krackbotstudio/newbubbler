@@ -8,7 +8,6 @@ import { useDeleteOrder } from '@/hooks/useOrders';
 import { useCreateAckDraft, useIssueAck, useCreateFinalDraft, useIssueFinal } from '@/hooks/useInvoice';
 import { useCatalogItemsWithPrices, useCatalogItemsWithMatrix } from '@/hooks/useCatalog';
 import { useBranding } from '@/hooks/useBranding';
-import { useSubscriptionPlans } from '@/hooks/useSubscriptionPlans';
 import { useUpdatePayment } from '@/hooks/usePayments';
 import {
   OrderStatusBadge,
@@ -29,12 +28,11 @@ import {
 } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { InvoiceBuilder, type InvoiceLineRow } from '@/components/forms/InvoiceBuilder';
-import { formatMoney, formatDate, formatPickupDayDisplay, formatTimeWindow24h, getGoogleMapsUrl, getTodayLocalDateKey } from '@/lib/format';
+import { formatMoney, formatDate, formatPickupDayDisplay, formatTimeWindow24h, getGoogleMapsUrl } from '@/lib/format';
 import { getApiOrigin, getFriendlyErrorMessage } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import { computeSubscriptionPreview, parseAckItems, parseAckKg } from '@/lib/subscription-preview';
 import { ErrorDisplay } from '@/components/shared/ErrorDisplay';
-import type { OrderStatus, InvoiceOrderMode, PaymentProvider } from '@/types';
+import type { OrderStatus, PaymentProvider } from '@/types';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { toast } from 'sonner';
 import { ExternalLink } from 'lucide-react';
@@ -42,6 +40,12 @@ import { AcknowledgementInvoiceDialog } from '@/components/admin/orders/Acknowle
 import { FinalInvoiceDialog } from '@/components/admin/orders/FinalInvoiceDialog';
 import { getStoredUser } from '@/lib/auth';
 import { CUSTOMER_APP_URL } from '@/lib/customer-app-url';
+
+function parseInvoiceItemClothesCount(raw: unknown): number | undefined {
+  if (raw == null || raw === '') return undefined;
+  const n = Number(raw as string | number);
+  return Number.isFinite(n) && n >= 0.01 ? n : undefined;
+}
 
 const STATUS_FLOW: OrderStatus[] = [
   'BOOKING_CONFIRMED',
@@ -67,7 +71,6 @@ export default function OrderDetailPage() {
   const { data: catalog } = useCatalogItemsWithPrices();
   const { data: catalogMatrixData } = useCatalogItemsWithMatrix();
   const { data: branding } = useBranding();
-  const { data: subscriptionPlans } = useSubscriptionPlans();
   const branchId = summary?.branch?.id ?? null;
   const catalogMatrix = catalogMatrixData
     ? {
@@ -81,27 +84,17 @@ export default function OrderDetailPage() {
       }
     : undefined;
 
-  const [ackOrderMode, setAckOrderMode] = useState<InvoiceOrderMode>('INDIVIDUAL');
   const [ackItems, setAckItems] = useState<InvoiceLineRow[]>([]);
   const [ackTaxPercent, setAckTaxPercent] = useState(0);
   const [ackDiscountType, setAckDiscountType] = useState<'percent' | 'amount'>('amount');
   const [ackDiscountValue, setAckDiscountValue] = useState(0);
   const [ackComments, setAckComments] = useState('Thank you');
-  const [ackWeightKg, setAckWeightKg] = useState<number | ''>('');
-  const [ackItemsCount, setAckItemsCount] = useState<number | ''>('');
-  const [ackNewSubscriptionPlanId, setAckNewSubscriptionPlanId] = useState('');
-  const [ackNewSubscriptionStartDate, setAckNewSubscriptionStartDate] = useState(() => getTodayLocalDateKey());
-  const [ackNewSubscriptionQuantityMonths, setAckNewSubscriptionQuantityMonths] = useState<number>(1);
-  type NewSubEntry = { id: string; planId: string; validityStartDate: string; quantityMonths: number };
-  const [ackNewSubscriptions, setAckNewSubscriptions] = useState<NewSubEntry[]>([]);
   const hasPrefilledFinal = useRef(false);
   const hasHydratedAck = useRef(false);
   const hasHydratedFinal = useRef(false);
   const ackPrintAreaRef = useRef<HTMLDivElement>(null);
   const finalPrintAreaRef = useRef<HTMLDivElement>(null);
   const [finalItems, setFinalItems] = useState<InvoiceLineRow[]>([]);
-  const [finalWeightKg, setFinalWeightKg] = useState<number | ''>('');
-  const [finalItemsCount, setFinalItemsCount] = useState<number | ''>('');
   const [finalTaxPercent, setFinalTaxPercent] = useState(0);
   const [finalDiscountType, setFinalDiscountType] = useState<'percent' | 'amount'>('amount');
   const [finalDiscountValue, setFinalDiscountValue] = useState(0);
@@ -117,6 +110,7 @@ export default function OrderDetailPage() {
   const [finalViewerOpen, setFinalViewerOpen] = useState(false);
   /** Set true in onAckIssueSuccess; cleared when summary shows ISSUED ACK — opens viewer after refetch. */
   const openAckViewerAfterIssueRef = useRef(false);
+  const [ackPickupConfirmOpen, setAckPickupConfirmOpen] = useState(false);
 
   const buildFinalWhatsAppMessage = useCallback(() => {
     if (!summary?.order) return '';
@@ -154,7 +148,7 @@ export default function OrderDetailPage() {
     }
   }, [summary]);
 
-  // Hydrate ACK form from saved invoice when summary loads; or default order mode from order type
+  // Hydrate ACK form from saved invoice when summary loads
   useEffect(() => {
     if (!summary) return;
     const invList = Array.isArray(summary.invoices) ? summary.invoices : [];
@@ -162,19 +156,22 @@ export default function OrderDetailPage() {
     if (ack) {
       if (!hasHydratedAck.current) {
         hasHydratedAck.current = true;
-        setAckOrderMode((ack.orderMode as InvoiceOrderMode) || 'INDIVIDUAL');
         if (ack.items?.length) {
           setAckItems(
-            ack.items.map((i) => ({
-              type: (i.type || 'SERVICE') as InvoiceLineRow['type'],
-              name: i.name,
-              quantity: i.quantity,
-              unitPricePaise: i.unitPrice,
-              amountPaise: i.amount,
-              catalogItemId: i.catalogItemId ?? undefined,
-              segmentCategoryId: i.segmentCategoryId ?? undefined,
-              serviceCategoryId: i.serviceCategoryId ?? undefined,
-            })),
+            ack.items.map((i) => {
+              const clothesCount = parseInvoiceItemClothesCount(i.clothesCount);
+              return {
+                type: (i.type || 'SERVICE') as InvoiceLineRow['type'],
+                name: i.name,
+                quantity: i.quantity,
+                ...(clothesCount != null ? { clothesCount } : {}),
+                unitPricePaise: i.unitPrice,
+                amountPaise: i.amount,
+                catalogItemId: i.catalogItemId ?? undefined,
+                segmentCategoryId: i.segmentCategoryId ?? undefined,
+                serviceCategoryId: i.serviceCategoryId ?? undefined,
+              };
+            }),
           );
         }
         if (ack.subtotal != null && ack.tax != null) {
@@ -185,22 +182,7 @@ export default function OrderDetailPage() {
         setAckDiscountType('amount');
         setAckDiscountValue(ack.discountPaise ?? 0);
         setAckComments(ack.comments ?? 'Thank you');
-        const rawSnap = ack.newSubscriptionSnapshotJson;
-        if (rawSnap) {
-          type Snap = { planId: string; validityStartDate: string; quantityMonths?: number };
-          const list: Snap[] = Array.isArray(rawSnap) ? rawSnap as Snap[] : (rawSnap as Snap).planId ? [rawSnap as Snap] : [];
-          setAckNewSubscriptions(
-            list.map((s, i) => ({
-              id: `hydrated-${ack.id}-${i}`,
-              planId: s.planId,
-              validityStartDate: s.validityStartDate,
-              quantityMonths: typeof (s as { quantityMonths?: number }).quantityMonths === 'number' ? (s as { quantityMonths: number }).quantityMonths : 1,
-            }))
-          );
-        }
       }
-    } else if (summary.order.orderType === 'SUBSCRIPTION' || summary.order.orderType === 'BOTH') {
-      setAckOrderMode('SUBSCRIPTION_ONLY');
     }
   }, [summary]);
 
@@ -214,23 +196,21 @@ export default function OrderDetailPage() {
       hasPrefilledFinal.current = true;
       hasHydratedFinal.current = true;
       setFinalItems(
-        finalInv.items
-          .filter((i) => i.name !== 'Subscription usage')
-          .map((i) => ({
-          type: (i.type || 'SERVICE') as InvoiceLineRow['type'],
-          name: i.name,
-          quantity: i.quantity,
-          unitPricePaise: i.unitPrice,
-          amountPaise: i.amount,
-          catalogItemId: i.catalogItemId ?? undefined,
-          segmentCategoryId: i.segmentCategoryId ?? undefined,
-          serviceCategoryId: i.serviceCategoryId ?? undefined,
-        })),
+        finalInv.items.map((i) => {
+          const clothesCount = parseInvoiceItemClothesCount(i.clothesCount);
+          return {
+            type: (i.type || 'SERVICE') as InvoiceLineRow['type'],
+            name: i.name,
+            quantity: i.quantity,
+            ...(clothesCount != null ? { clothesCount } : {}),
+            unitPricePaise: i.unitPrice,
+            amountPaise: i.amount,
+            catalogItemId: i.catalogItemId ?? undefined,
+            segmentCategoryId: i.segmentCategoryId ?? undefined,
+            serviceCategoryId: i.serviceCategoryId ?? undefined,
+          };
+        }),
       );
-      const kg = (finalInv as { subscriptionUsageKg?: number | null }).subscriptionUsageKg;
-      const items = (finalInv as { subscriptionUsageItems?: number | null }).subscriptionUsageItems;
-      setFinalWeightKg(kg != null ? kg : (finalInv.items[0]?.quantity ?? ''));
-      setFinalItemsCount(items != null ? items : '');
       if (finalInv.subtotal != null && finalInv.tax != null) {
         const discPaise = finalInv.discountPaise ?? 0;
         const taxable = Math.max(0, finalInv.subtotal - discPaise);
@@ -244,22 +224,22 @@ export default function OrderDetailPage() {
       const ackItems = ack?.items;
       if (ackItems?.length) {
         setFinalItems(
-          ackItems.map((i) => ({
-            type: (i.type || 'SERVICE') as InvoiceLineRow['type'],
-            name: i.name,
-            quantity: i.quantity,
-            unitPricePaise: i.unitPrice,
-            amountPaise: i.amount,
-            catalogItemId: i.catalogItemId ?? undefined,
-            segmentCategoryId: i.segmentCategoryId ?? undefined,
-            serviceCategoryId: i.serviceCategoryId ?? undefined,
-          })),
+          ackItems.map((i) => {
+            const clothesCount = parseInvoiceItemClothesCount(i.clothesCount);
+            return {
+              type: (i.type || 'SERVICE') as InvoiceLineRow['type'],
+              name: i.name,
+              quantity: i.quantity,
+              ...(clothesCount != null ? { clothesCount } : {}),
+              unitPricePaise: i.unitPrice,
+              amountPaise: i.amount,
+              catalogItemId: i.catalogItemId ?? undefined,
+              segmentCategoryId: i.segmentCategoryId ?? undefined,
+              serviceCategoryId: i.serviceCategoryId ?? undefined,
+            };
+          }),
         );
       }
-      const ackKg = (ack as { subscriptionUsageKg?: number | null }).subscriptionUsageKg;
-      const ackItemsCount = (ack as { subscriptionUsageItems?: number | null }).subscriptionUsageItems;
-      setFinalWeightKg(ackKg != null ? ackKg : (ackItems?.[0]?.quantity ?? ''));
-      setFinalItemsCount(ackItemsCount != null ? ackItemsCount : '');
       if (ack.subtotal != null && ack.tax != null) {
         const discPaise = ack.discountPaise ?? 0;
         const taxable = Math.max(0, ack.subtotal - discPaise);
@@ -282,29 +262,25 @@ export default function OrderDetailPage() {
     const finalInv = invList.find((i) => i.type === 'FINAL');
     if (ack?.status !== 'ISSUED' || finalInv?.items?.length) return;
 
-    const ackKg = (ack as { subscriptionUsageKg?: number | null }).subscriptionUsageKg;
-    const ackItemsCount = (ack as { subscriptionUsageItems?: number | null }).subscriptionUsageItems;
-
     if (ack.items?.length) {
       setFinalItems(
-        ack.items.map((i) => ({
-          type: (i.type || 'SERVICE') as InvoiceLineRow['type'],
-          name: i.name,
-          quantity: i.quantity,
-          unitPricePaise: i.unitPrice,
-          amountPaise: i.amount,
-          catalogItemId: i.catalogItemId ?? undefined,
-          segmentCategoryId: i.segmentCategoryId ?? undefined,
-          serviceCategoryId: i.serviceCategoryId ?? undefined,
-        })),
+        ack.items.map((i) => {
+          const clothesCount = parseInvoiceItemClothesCount(i.clothesCount);
+          return {
+            type: (i.type || 'SERVICE') as InvoiceLineRow['type'],
+            name: i.name,
+            quantity: i.quantity,
+            ...(clothesCount != null ? { clothesCount } : {}),
+            unitPricePaise: i.unitPrice,
+            amountPaise: i.amount,
+            catalogItemId: i.catalogItemId ?? undefined,
+            segmentCategoryId: i.segmentCategoryId ?? undefined,
+            serviceCategoryId: i.serviceCategoryId ?? undefined,
+          };
+        }),
       );
-    } else if (ackKg != null && Number(ackKg) > 0) {
-      // Subscription-only ACK: no line item on final invoice; admin sets final weight in the input next to subscription summary
-      setFinalItems([]);
     }
 
-    setFinalWeightKg(ackKg != null ? ackKg : (ack.items?.[0]?.quantity ?? ''));
-    setFinalItemsCount(ackItemsCount != null ? ackItemsCount : '');
     if (ack.subtotal != null && ack.tax != null) {
       const discPaise = ack.discountPaise ?? 0;
       const taxable = Math.max(0, ack.subtotal - discPaise);
@@ -384,118 +360,64 @@ export default function OrderDetailPage() {
     order.status === 'OUT_FOR_DELIVERY' ||
     order.status === 'DELIVERED' ||
     (order.orderSource === 'WALK_IN' && order.status === 'READY');
-  const canEditFinalInvoiceFields =
-    order.status !== 'CANCELLED' && canIssueFinalInvoice;
   const ackSubmitted = ackInvoice?.status === 'ISSUED';
   const finalSubmitted = finalInvoice?.status === 'ISSUED';
   const paymentRecorded = summary.payment?.status === 'CAPTURED';
+  /** Show final invoice UI (read-only until status allows issue: OFD / Delivered / walk-in Ready). */
+  const canEditFinalInvoiceForm =
+    order.status !== 'CANCELLED' &&
+    ackSubmitted &&
+    !finalSubmitted &&
+    !paymentRecorded;
+  /** Inline “Out for delivery” before totals; walk-in at Ready issues final without this step. */
+  const canMarkOutForDelivery =
+    ackSubmitted &&
+    !finalSubmitted &&
+    order.status !== 'CANCELLED' &&
+    ['PICKED_UP', 'IN_PROCESSING', 'READY'].includes(order.status) &&
+    !(order.orderSource === 'WALK_IN' && order.status === 'READY');
   const showTabs = ackSubmitted;
   const currentUser = getStoredUser();
   const isAdmin = currentUser?.role === 'ADMIN';
   const isLocked = ackInvoice?.status === 'ISSUED';
   const isFinalLocked = paymentRecorded;
-  const hasSubscription = !!(summary.subscription || summary.subscriptionUsage);
-
-  /** ACK weight/items for this order (from issued ACK invoice). Acknowledgement invoice is immutable once submitted. */
-  const ackKgForOrder = ackInvoice && (ackInvoice as { subscriptionUsageKg?: number | null }).subscriptionUsageKg != null ? Number((ackInvoice as { subscriptionUsageKg?: number | null }).subscriptionUsageKg) : null;
-  const ackItemsForOrder = ackInvoice && (ackInvoice as { subscriptionUsageItems?: number | null }).subscriptionUsageItems != null ? Number((ackInvoice as { subscriptionUsageItems?: number | null }).subscriptionUsageItems) : null;
-  /** Final draft weight/items: form state or saved draft. When admin saves final draft, display reflects this until Submit. */
-  const finalKgForDisplay = (finalWeightKg !== '' && finalWeightKg !== undefined) ? Number(finalWeightKg) : (finalInvoice && (finalInvoice as { subscriptionUsageKg?: number | null }).subscriptionUsageKg != null ? Number((finalInvoice as { subscriptionUsageKg?: number | null }).subscriptionUsageKg) : null);
-  const finalItemsForDisplay = (finalItemsCount !== '' && finalItemsCount !== undefined) ? Number(finalItemsCount) : (finalInvoice && (finalInvoice as { subscriptionUsageItems?: number | null }).subscriptionUsageItems != null ? Number((finalInvoice as { subscriptionUsageItems?: number | null }).subscriptionUsageItems) : null);
-  /** Effective subscription usage for display when final draft exists: backend used − ACK + final draft. Left side and green bar use this so saving 4.5 kg shows 4.5 until Submit. */
-  const sub = summary.subscription;
-  const effectiveUsedKg = sub?.kgLimit != null && ackKgForOrder != null
-    ? Number(sub.usedKg ?? 0) - ackKgForOrder + (finalKgForDisplay ?? ackKgForOrder)
-    : Number(sub?.usedKg ?? 0);
-  const effectiveUsedItems = sub?.itemsLimit != null && ackItemsForOrder != null
-    ? (sub.usedItemsCount ?? 0) - ackItemsForOrder + (finalItemsForDisplay ?? ackItemsForOrder)
-    : (sub?.usedItemsCount ?? 0);
 
   const ackSubtotal = (items: InvoiceLineRow[]) =>
     items.reduce((s, i) => s + (i.amountPaise ?? i.quantity * i.unitPricePaise), 0);
-  const hasNewSubscriptionSelected =
-    (ackOrderMode === 'SUBSCRIPTION_ONLY' || ackOrderMode === 'BOTH') && ackNewSubscriptions.length > 0;
-  const ackSubscriptionAmountPaise = ackNewSubscriptions.reduce(
-    (sum, entry) => sum + (subscriptionPlans?.find((p) => p.id === entry.planId)?.pricePaise ?? 0) * entry.quantityMonths,
-    0
-  );
   const toAckDraftBody = (
     items: InvoiceLineRow[],
     taxPercent: number,
     discountType: 'percent' | 'amount',
     discountValue: number,
     comments: string,
-    subscriptionAmountPaise?: number
   ) => {
-    const mode = ackOrderMode;
-    const itemsSubtotal = mode === 'SUBSCRIPTION_ONLY' ? 0 : ackSubtotal(items);
-    const combinedSubtotal = itemsSubtotal + (subscriptionAmountPaise ?? 0);
-    const subtotal = hasNewSubscriptionSelected ? combinedSubtotal : itemsSubtotal;
+    const itemsSubtotal = ackSubtotal(items);
     const discountPaise =
-      mode === 'SUBSCRIPTION_ONLY' && !(subscriptionAmountPaise && subscriptionAmountPaise > 0)
-        ? 0
-        : discountType === 'percent'
-          ? Math.round(subtotal * discountValue / 100)
-          : discountValue;
-    const taxableAfterDiscount = Math.max(0, subtotal - discountPaise);
-    const taxPaise =
-      mode === 'SUBSCRIPTION_ONLY' && !(subscriptionAmountPaise && subscriptionAmountPaise > 0)
-        ? 0
-        : Math.round(taxableAfterDiscount * taxPercent / 100);
+      discountType === 'percent'
+        ? Math.round(itemsSubtotal * discountValue / 100)
+        : discountValue;
+    const taxableAfterDiscount = Math.max(0, itemsSubtotal - discountPaise);
+    const taxPaise = Math.round(taxableAfterDiscount * taxPercent / 100);
     const commentsWithBillNote = (comments?.trim() || 'Thank you') || undefined;
-    const base = {
-      orderMode: mode,
-      items:
-        mode === 'SUBSCRIPTION_ONLY'
-          ? []
-          : items.map((i) => ({
-              type: i.type,
-              name: i.name,
-              quantity: i.quantity,
-              unitPricePaise: i.unitPricePaise,
-              amountPaise: Math.round(i.amountPaise ?? i.quantity * i.unitPricePaise),
-              catalogItemId: i.catalogItemId,
-              segmentCategoryId: i.segmentCategoryId,
-              serviceCategoryId: i.serviceCategoryId,
-            })),
+    return {
+      orderMode: 'INDIVIDUAL' as const,
+      items: items.map((i) => ({
+        type: i.type,
+        name: i.name,
+        quantity: i.quantity,
+        unitPricePaise: i.unitPricePaise,
+        amountPaise: Math.round(i.amountPaise ?? i.quantity * i.unitPricePaise),
+        catalogItemId: i.catalogItemId,
+        segmentCategoryId: i.segmentCategoryId,
+        serviceCategoryId: i.serviceCategoryId,
+        ...(i.clothesCount != null &&
+          Number.isFinite(i.clothesCount) &&
+          i.clothesCount >= 0.01 && { clothesCount: i.clothesCount }),
+      })),
       taxPaise,
       discountPaise,
       comments: commentsWithBillNote,
     };
-    if ((mode === 'SUBSCRIPTION_ONLY' || mode === 'BOTH') && ackNewSubscriptions.length > 0) {
-      return {
-        ...base,
-        newSubscriptions: ackNewSubscriptions.map(({ planId, validityStartDate, quantityMonths }) => ({
-          planId,
-          validityStartDate,
-          quantityMonths,
-        })),
-      };
-    }
-    if (mode === 'SUBSCRIPTION_ONLY' && order.subscriptionId) {
-      return {
-        ...base,
-        subscriptionUtilized: true,
-        subscriptionId: order.subscriptionId,
-        subscriptionUsageSubscriptionIds: [order.subscriptionId],
-        subscriptionUsageKg: ackWeightKg !== '' ? ackWeightKg : undefined,
-        subscriptionUsageItems: ackItemsCount !== '' ? ackItemsCount : undefined,
-      };
-    }
-    if (mode === 'BOTH' && order.subscriptionId) {
-      return {
-        ...base,
-        subscriptionUtilized: true,
-        subscriptionId: order.subscriptionId,
-        subscriptionUsageSubscriptionIds: [order.subscriptionId],
-        subscriptionUsageKg: ackWeightKg !== '' ? ackWeightKg : undefined,
-        subscriptionUsageItems: ackItemsCount !== '' ? ackItemsCount : undefined,
-      };
-    }
-    if (mode === 'INDIVIDUAL' && order.subscriptionId) {
-      return { ...base, subscriptionId: undefined, subscriptionUtilized: false };
-    }
-    return base;
   };
   const finalSubtotal = (items: InvoiceLineRow[]) =>
     items.reduce((s, i) => s + (i.amountPaise ?? i.quantity * i.unitPricePaise), 0);
@@ -505,19 +427,14 @@ export default function OrderDetailPage() {
     discountType: 'percent' | 'amount',
     discountValue: number,
     comments: string,
-    weightKg?: number | '',
-    itemsCount?: number | ''
   ) => {
-    const filteredItems = items.filter((i) => i.name !== 'Subscription usage');
-    const subtotal = finalSubtotal(filteredItems);
+    const subtotal = finalSubtotal(items);
     const discountPaise = discountType === 'percent' ? Math.round(subtotal * discountValue / 100) : discountValue;
     const taxableAfterDiscount = Math.max(0, subtotal - discountPaise);
     const taxPaise = Math.round(taxableAfterDiscount * taxPercent / 100);
-    const sub = summary?.subscription;
-    const subscriptionUsageKg = hasSubscription && sub?.kgLimit != null && weightKg !== '' && weightKg !== undefined ? Number(weightKg) : undefined;
-    const subscriptionUsageItems = hasSubscription && sub?.itemsLimit != null && itemsCount !== '' && itemsCount !== undefined ? Number(itemsCount) : undefined;
     return {
-      items: filteredItems.map((i) => ({
+      orderMode: 'INDIVIDUAL' as const,
+      items: items.map((i) => ({
         type: i.type,
         name: i.name,
         quantity: i.quantity,
@@ -526,26 +443,16 @@ export default function OrderDetailPage() {
         catalogItemId: i.catalogItemId,
         segmentCategoryId: i.segmentCategoryId,
         serviceCategoryId: i.serviceCategoryId,
+        ...(i.clothesCount != null &&
+          Number.isFinite(i.clothesCount) &&
+          i.clothesCount >= 0.01 && { clothesCount: i.clothesCount }),
       })),
       taxPaise,
       discountPaise,
       comments: comments || undefined,
-      ...(subscriptionUsageKg !== undefined && { subscriptionUsageKg }),
-      ...(subscriptionUsageItems !== undefined && { subscriptionUsageItems }),
     };
   };
 
-  const defaultAckBody = () =>
-    toAckDraftBody(
-      [
-        { type: 'SERVICE', name: 'Wash & Fold', quantity: 1, unitPricePaise: 10000, amountPaise: 10000 },
-        { type: 'FEE', name: 'Pickup fee', quantity: 1, unitPricePaise: 2000, amountPaise: 2000 },
-      ],
-      0,
-      'amount',
-      0,
-      ''
-    );
   const defaultFinalBody = () =>
     toFinalDraftBody(
       [
@@ -618,63 +525,42 @@ export default function OrderDetailPage() {
     }
   };
 
-  const quickIssueAck = () => {
-    const useNewSub = hasNewSubscriptionSelected;
-    const body = useNewSub || ackItems.length
-      ? toAckDraftBody(ackItems, ackTaxPercent, ackDiscountType, ackDiscountValue, ackComments, useNewSub ? ackSubscriptionAmountPaise : undefined)
-      : defaultAckBody();
-    createAckDraft.mutate(body, {
-      onSuccess: () => {
-        issueAck.mutate(
-          {
-            applySubscription: ackOrderMode !== 'INDIVIDUAL' && (!!order.subscriptionId || ackOrderMode === 'SUBSCRIPTION_ONLY'),
-            weightKg: ackWeightKg !== '' ? ackWeightKg : undefined,
-            itemsCount: ackItemsCount !== '' ? ackItemsCount : undefined,
+  const submitAckInvoiceFromConfirmDialog = () => {
+    const onIssueError = (e: Error) => toast.error(getFriendlyErrorMessage(e));
+    const close = () => setAckPickupConfirmOpen(false);
+    if (!ackInvoice) {
+      createAckDraft.mutate(
+        toAckDraftBody(ackItems, ackTaxPercent, ackDiscountType, ackDiscountValue, ackComments),
+        {
+          onSuccess: () => {
+            issueAck.mutate(undefined, {
+              onSuccess: () => {
+                onAckIssueSuccess();
+                close();
+              },
+              onError: onIssueError,
+            });
           },
-          {
-            onSuccess: onAckIssueSuccess,
-            onError: (e) => toast.error(e.message),
-          },
-        );
-      },
-      onError: (e) => toast.error(e.message),
-    });
+          onError: (e) => toast.error(getFriendlyErrorMessage(e)),
+        },
+      );
+    } else {
+      issueAck.mutate(undefined, {
+        onSuccess: () => {
+          onAckIssueSuccess();
+          close();
+        },
+        onError: onIssueError,
+      });
+    }
   };
 
-  /** Single click: save ACK draft → issue ACK → set status to PICKED_UP. */
-  const confirmPickup = () => {
-    const useNewSub = hasNewSubscriptionSelected;
-    const body = ackOrderMode === 'SUBSCRIPTION_ONLY' || useNewSub || ackItems.length
-      ? toAckDraftBody(ackItems, ackTaxPercent, ackDiscountType, ackDiscountValue, ackComments, useNewSub ? ackSubscriptionAmountPaise : undefined)
-      : defaultAckBody();
-    createAckDraft.mutate(body, {
-      onSuccess: () => {
-        issueAck.mutate(
-          {
-            applySubscription: ackOrderMode !== 'INDIVIDUAL' && (!!order.subscriptionId || ackOrderMode === 'SUBSCRIPTION_ONLY'),
-            weightKg: ackWeightKg !== '' ? ackWeightKg : undefined,
-            itemsCount: ackItemsCount !== '' ? ackItemsCount : undefined,
-          },
-          {
-            onSuccess: () => {
-              updateStatus.mutate('PICKED_UP', {
-                onSuccess: () => toast.success('Pickup confirmed and ACK submitted'),
-                onError: (e) => toast.error(e.message),
-              });
-            },
-            onError: (e) => toast.error(e.message),
-          },
-        );
-      },
-      onError: (e) => toast.error(e.message),
-    });
-  };
   /** Submit: persist draft then issue (one click). Issued finals are read-only (no UI edit). */
   const submitFinalInvoice = () => {
     const body =
       finalItems.length > 0
-        ? toFinalDraftBody(finalItems, finalTaxPercent, finalDiscountType, finalDiscountValue, finalComments, finalWeightKg, finalItemsCount)
-        : toFinalDraftBody([], finalTaxPercent, finalDiscountType, finalDiscountValue, finalComments, finalWeightKg, finalItemsCount);
+        ? toFinalDraftBody(finalItems, finalTaxPercent, finalDiscountType, finalDiscountValue, finalComments)
+        : toFinalDraftBody([], finalTaxPercent, finalDiscountType, finalDiscountValue, finalComments);
 
     createFinalDraft.mutate(body, {
       onSuccess: () => {
@@ -725,53 +611,13 @@ export default function OrderDetailPage() {
         ? 'PICKED_UP'
         : order.status;
   const currentIdx = STATUS_FLOW.indexOf(currentStatusForFlow);
-  const canConfirmOrder = order.status === 'BOOKING_CONFIRMED';
-  const hasSubscriptionUsage = (ackWeightKg !== '' && Number(ackWeightKg) > 0) || (ackItemsCount !== '' && Number(ackItemsCount) > 0);
-  /** Order is dedicated to one subscription; we use summary.subscription (order's subscription). */
-  const hasExistingSubscriptionSelected = ackOrderMode !== 'INDIVIDUAL' && !!summary.subscription;
-  const subscriptionUsageRequired =
-    (ackOrderMode === 'SUBSCRIPTION_ONLY' && !!order.subscriptionId) ||
-    (ackOrderMode === 'BOTH' && hasExistingSubscriptionSelected);
-  const effectiveSubsForLimits = summary.subscription
-    ? [{ kgLimit: summary.subscription.kgLimit, itemsLimit: summary.subscription.itemsLimit }]
-    : [];
-  const subscriptionRequiresWeight = effectiveSubsForLimits.some((s) => s.kgLimit != null);
-  const subscriptionRequiresItems = effectiveSubsForLimits.some((s) => s.itemsLimit != null);
-  /** Single source of truth: subscription utilisation after this ACK (live as admin types). When ACK is already issued, do not add form weight/items again – backend usedKg/usedItemsCount already include them. */
-  const ackSubscriptionPreview = summary.subscription
-    ? computeSubscriptionPreview({
-        pickupLimit: summary.subscription.maxPickups,
-        usedPickups: summary.subscription.maxPickups - summary.subscription.remainingPickups,
-        itemLimit: summary.subscription.itemsLimit ?? null,
-        usedItems: summary.subscription.usedItemsCount ?? 0,
-        kgLimit: summary.subscription.kgLimit ?? null,
-        usedKg: Number(summary.subscription.usedKg ?? 0),
-        ackItems: isLocked ? 0 : parseAckItems(ackItemsCount),
-        ackKg: isLocked ? 0 : parseAckKg(ackWeightKg),
-        applySubscription: isLocked ? false : !!hasExistingSubscriptionSelected,
-      })
-    : null;
-  const validSubscriptionUsage =
-    (!subscriptionRequiresWeight || (ackWeightKg !== '' && Number(ackWeightKg) > 0)) &&
-    (!subscriptionRequiresItems || (ackItemsCount !== '' && Number(ackItemsCount) > 0));
-  const pickupCanSave =
-    ackOrderMode === 'SUBSCRIPTION_ONLY'
-      ? validSubscriptionUsage || (hasNewSubscriptionSelected && !!ackNewSubscriptionPlanId && !!ackNewSubscriptionStartDate)
-      : ackOrderMode === 'INDIVIDUAL'
-        ? ackItems.length > 0
-        : ackOrderMode === 'BOTH'
-          ? ackItems.length > 0 || (hasExistingSubscriptionSelected && validSubscriptionUsage) || hasNewSubscriptionSelected
-          : false;
-
   const formatTs = (s: string | null) => (s ? formatDate(s) + (s.includes('T') ? ' ' + new Date(s).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '') : '—');
 
   const orderServiceTypesLabel =
-    order.orderType === 'SUBSCRIPTION' || order.orderSource === 'WALK_IN'
-      ? null
-      : (order.serviceTypes && order.serviceTypes.length > 0 ? order.serviceTypes : [order.serviceType])
-          .filter(Boolean)
-          .map((s) => String(s).replace(/_/g, ' '))
-          .join(', ') || null;
+    (order.serviceTypes && order.serviceTypes.length > 0 ? order.serviceTypes : [order.serviceType])
+      .filter(Boolean)
+      .map((s) => String(s).replace(/_/g, ' '))
+      .join(', ') || null;
 
   return (
     <>
@@ -798,15 +644,8 @@ export default function OrderDetailPage() {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="text-2xl font-semibold break-all font-mono">Order {order.id}</h1>
-          <span
-            className={cn(
-              'rounded-md px-2 py-0.5 text-xs font-medium',
-              order.orderType === 'SUBSCRIPTION'
-                ? 'bg-primary/10 text-primary'
-                : 'bg-muted text-muted-foreground'
-            )}
-          >
-            {order.orderType === 'SUBSCRIPTION' ? 'Subscription' : 'Individual booking'}
+          <span className="rounded-md px-2 py-0.5 text-xs font-medium bg-muted text-muted-foreground">
+            Individual booking
           </span>
           {orderServiceTypesLabel ? (
             <span
@@ -1086,7 +925,7 @@ export default function OrderDetailPage() {
           <DialogHeader>
             <DialogTitle>Cancel order</DialogTitle>
             <DialogDescription>
-              Cancel this order before issuing the ACK invoice. No subscription deductions will be applied; summary will be recalculated. Please provide a reason.
+              Cancel this order before issuing the ACK invoice. Please provide a reason.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2 py-2">
@@ -1121,6 +960,130 @@ export default function OrderDetailPage() {
               }}
             >
               {updateStatus.isPending ? 'Cancelling…' : 'Cancel order'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={ackPickupConfirmOpen} onOpenChange={setAckPickupConfirmOpen}>
+        <DialogContent showClose className="sm:max-w-lg max-h-[90vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Confirm pick up</DialogTitle>
+            <DialogDescription>
+              Review the acknowledgement invoice lines and total. Submit issues the invoice and updates order status to picked up when the order is in booking or pickup-scheduled state.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="min-h-0 flex-1 overflow-y-auto space-y-4 py-2">
+            {ackItems.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Add at least one line item on the invoice before submitting.</p>
+            ) : (
+              <>
+                <div className="overflow-x-auto rounded-md border">
+                  <table className="w-full border-collapse text-sm">
+                    <thead>
+                      <tr className="border-b bg-muted/50">
+                        <th className="text-left py-2 px-3">Item</th>
+                        <th className="text-right py-2 px-3">Qty</th>
+                        <th className="text-right py-2 px-3">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {ackItems.map((row, idx) => {
+                        const lineAmount = row.amountPaise ?? row.quantity * row.unitPricePaise;
+                        const seg =
+                          catalogMatrix && row.segmentCategoryId
+                            ? catalogMatrix.segmentCategories.find((s) => s.id === row.segmentCategoryId)?.label
+                            : null;
+                        const svc =
+                          catalogMatrix && row.serviceCategoryId
+                            ? catalogMatrix.serviceCategories.find((s) => s.id === row.serviceCategoryId)?.label
+                            : null;
+                        const detail = [seg, svc].filter(Boolean).join(' · ');
+                        return (
+                          <tr key={idx} className="border-b last:border-0">
+                            <td className="py-2 px-3">
+                              <div className="font-medium">{row.name}</div>
+                              {detail ? (
+                                <div className="text-xs text-muted-foreground mt-0.5">{detail}</div>
+                              ) : null}
+                            </td>
+                            <td className="py-2 px-3 text-right tabular-nums">{row.quantity}</td>
+                            <td className="py-2 px-3 text-right tabular-nums">{formatMoney(lineAmount)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                {(() => {
+                  const st = ackSubtotal(ackItems);
+                  const disc =
+                    ackDiscountType === 'percent'
+                      ? Math.round((st * ackDiscountValue) / 100)
+                      : ackDiscountValue;
+                  const taxableAfterDisc = Math.max(0, st - disc);
+                  const tax = Math.round((taxableAfterDisc * ackTaxPercent) / 100);
+                  const total = st - disc + tax;
+                  return (
+                    <div className="space-y-1 rounded-md bg-muted/40 px-3 py-2 text-sm">
+                      <div className="flex justify-between gap-4">
+                        <span className="text-muted-foreground">Subtotal</span>
+                        <span className="tabular-nums font-medium">{formatMoney(st)}</span>
+                      </div>
+                      <div className="flex justify-between gap-4">
+                        <span className="text-muted-foreground">
+                          Discount{' '}
+                          {ackDiscountType === 'percent' ? `(${ackDiscountValue}%)` : '(₹)'}
+                        </span>
+                        <span className="tabular-nums font-medium">−{formatMoney(disc)}</span>
+                      </div>
+                      <div className="flex justify-between gap-4">
+                        <span className="text-muted-foreground">Tax ({ackTaxPercent}%)</span>
+                        <span className="tabular-nums font-medium">{formatMoney(tax)}</span>
+                      </div>
+                      <div className="flex justify-between gap-4 border-t pt-2 mt-2 text-base font-semibold">
+                        <span>Total</span>
+                        <span className="tabular-nums">{formatMoney(total)}</span>
+                      </div>
+                    </div>
+                  );
+                })()}
+                {ackComments.trim() ? (
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-muted-foreground">Comments (on invoice)</p>
+                    <p className="text-sm whitespace-pre-line rounded-md border bg-background px-3 py-2">
+                      {ackComments.trim()}
+                    </p>
+                  </div>
+                ) : null}
+              </>
+            )}
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0 flex-shrink-0">
+            <Button type="button" variant="outline" onClick={() => setAckPickupConfirmOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={submitAckInvoiceFromConfirmDialog}
+              disabled={
+                ackItems.length === 0 ||
+                createAckDraft.isPending ||
+                issueAck.isPending ||
+                finalSubmitted
+              }
+              style={
+                summary.branch?.primaryColor
+                  ? {
+                      backgroundColor: summary.branch.primaryColor,
+                      borderColor: summary.branch.primaryColor,
+                      color: '#fff',
+                    }
+                  : undefined
+              }
+              className={summary.branch?.primaryColor ? 'hover:opacity-90 border-0' : undefined}
+            >
+              {createAckDraft.isPending || issueAck.isPending ? 'Submitting…' : 'Submit'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1179,11 +1142,6 @@ export default function OrderDetailPage() {
               <p className="font-bold mb-1">Order details</p>
               <p>{customer.name ?? '—'}</p>
               <p className="text-muted-foreground">Phone: {customer.phone ?? '—'}</p>
-              {order.orderType === 'SUBSCRIPTION' ? (
-                <p className="text-muted-foreground">
-                  Subscription booking{summary.subscription?.planName ? ` (${summary.subscription.planName})` : ''}
-                </p>
-              ) : null}
               {order.orderSource !== 'WALK_IN' && (
                 <p>
                   {address.addressLine}, {address.pincode}
@@ -1224,118 +1182,12 @@ export default function OrderDetailPage() {
             </div>
           </div>
 
-          {/* Subscription details on invoice (order is dedicated to one subscription) */}
-          {(ackOrderMode === 'SUBSCRIPTION_ONLY' || (order.subscriptionId && summary.subscription)) && summary.subscription && ackSubscriptionPreview && (() => {
-              const sub = summary.subscription;
-              const p = ackSubscriptionPreview;
-              return (
-                <div className="rounded-md border border-muted bg-muted/30 p-3 text-sm">
-                  <p className="font-medium mb-1.5">Subscription</p>
-                  <p className="text-foreground">{sub.planName}</p>
-                  <p className="text-muted-foreground text-xs mt-1">
-                    {[`${sub.maxPickups} pickups total`, sub.kgLimit != null ? `${sub.kgLimit} kg` : null, sub.itemsLimit != null ? `${sub.itemsLimit} items` : null, `Valid till ${formatDate(sub.expiryDate)}`].filter(Boolean).join(' · ')}
-                  </p>
-                  <p className="text-muted-foreground text-xs mt-2 font-medium">Utilised with this invoice</p>
-                  <p className="text-foreground text-xs">
-                    {p.previewUsedPickups} pickup{p.previewUsedPickups !== 1 ? 's' : ''}
-                    {sub.kgLimit != null && <> · <span className={p.kgExceeded ? 'text-destructive font-medium' : ''}>{p.previewUsedKg}/{sub.kgLimit} kg</span>{p.kgExceeded && ' (exceeded)'}</>}
-                    {sub.itemsLimit != null && <> · <span className={p.itemsExceeded ? 'text-destructive font-medium' : ''}>{p.previewUsedItems}/{sub.itemsLimit} items</span>{p.itemsExceeded && ' (exceeded)'}</>}
-                  </p>
-                  {!isLocked && ((p.kgExceeded && parseAckKg(ackWeightKg) > 0) || (p.itemsExceeded && parseAckItems(ackItemsCount) > 0)) && (
-                    <p className="text-destructive text-xs font-medium mt-1.5">Exceeds subscription. Reduce weight or items to submit.</p>
-                  )}
-                </div>
-              );
-            })()}
-
-          {hasExistingSubscriptionSelected && (ackOrderMode === 'SUBSCRIPTION_ONLY' || ackOrderMode === 'BOTH') && (
-            <div className="mb-3 rounded-md border border-green-200 bg-green-50 dark:bg-green-950/40 dark:border-green-800 p-2.5 text-sm">
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                <span className="text-green-700 dark:text-green-300 font-medium" aria-hidden>✓</span>
-                <span className="text-green-800 dark:text-green-200 font-medium">
-                  {summary.subscription?.planName ?? '—'}
-                </span>
-                <span className="text-green-800 dark:text-green-200">
-                  {isLocked ? (
-                    /* When ACK already submitted: show subscription state as recorded (same as at ACK submit) – ref for future. */
-                    <>
-                      {summary.subscription != null ? `${summary.subscription.remainingPickups}/${summary.subscription.maxPickups} pickups left` : '—'}
-                      {summary.subscription?.kgLimit != null && <> · {(summary.subscription.kgLimit ?? 0) - Number(summary.subscription.usedKg ?? 0)}/{summary.subscription.kgLimit} kg left</>}
-                      {summary.subscription?.itemsLimit != null && <> · {(summary.subscription.itemsLimit ?? 0) - (summary.subscription.usedItemsCount ?? 0)}/{summary.subscription.itemsLimit} items left</>}
-                      {' · Applied'}
-                    </>
-                  ) : ackSubscriptionPreview != null ? (
-                    <>
-                      {ackSubscriptionPreview.previewRemainingPickups}/{summary.subscription!.maxPickups} pickups left
-                      {summary.subscription?.kgLimit != null && (
-                        <> · <span className={ackSubscriptionPreview.kgExceeded ? 'text-destructive font-medium' : ''}>{ackSubscriptionPreview.previewRemainingKg ?? 0}/{summary.subscription.kgLimit} kg left</span>{ackSubscriptionPreview.kgExceeded && ' (exceeded)'}</>
-                      )}
-                      {summary.subscription?.itemsLimit != null && (
-                        <> · <span className={ackSubscriptionPreview.itemsExceeded ? 'text-destructive font-medium' : ''}>{ackSubscriptionPreview.previewRemainingItems ?? 0}/{summary.subscription.itemsLimit} items left</span>{ackSubscriptionPreview.itemsExceeded && ' (exceeded)'}</>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      {summary.subscription != null ? `${summary.subscription.remainingPickups}/${summary.subscription.maxPickups} pickups left` : '—'}
-                      {summary.subscription?.kgLimit != null && <> · {Number(summary.subscription?.usedKg ?? 0)}/{summary.subscription.kgLimit} kg</>}
-                      {summary.subscription?.itemsLimit != null && <> · {summary.subscription?.usedItemsCount ?? 0}/{summary.subscription.itemsLimit} items</>}
-                    </>
-                  )}
-                  {!isLocked && summary.subscriptionUsage && ' · Applied'}
-                </span>
-                {subscriptionUsageRequired && !isLocked && (
-                  <span className="flex items-center gap-3 ml-auto">
-                    {subscriptionRequiresWeight && (
-                      <label className="flex items-center gap-1.5 text-green-800 dark:text-green-200">
-                        Weight (kg) <span className="text-destructive">*</span>
-                        <input
-                          type="number"
-                          min={0}
-                          step={0.1}
-                          value={ackWeightKg === '' ? '' : ackWeightKg}
-                          onChange={(e) => setAckWeightKg(e.target.value === '' ? '' : Number(e.target.value))}
-                          className={cn('w-20 rounded border border-green-300 dark:border-green-700 bg-white dark:bg-gray-900 px-2 py-1 text-sm', (!ackWeightKg || Number(ackWeightKg) <= 0) && 'border-amber-500')}
-                        />
-                      </label>
-                    )}
-                    {subscriptionRequiresItems && (
-                      <label className="flex items-center gap-1.5 text-green-800 dark:text-green-200">
-                        Items <span className="text-destructive">*</span>
-                        <input
-                          type="number"
-                          min={0}
-                          value={ackItemsCount === '' ? '' : ackItemsCount}
-                          onChange={(e) => setAckItemsCount(e.target.value === '' ? '' : Number(e.target.value))}
-                          className={cn('w-20 rounded border border-green-300 dark:border-green-700 bg-white dark:bg-gray-900 px-2 py-1 text-sm', (ackItemsCount === '' || Number(ackItemsCount) <= 0) && 'border-amber-500')}
-                        />
-                      </label>
-                    )}
-                  </span>
-                )}
-              </div>
-              {subscriptionUsageRequired && !validSubscriptionUsage && !isLocked && (
-                <p className="text-xs text-amber-600 dark:text-amber-400 mt-1 pl-6">
-                  {subscriptionRequiresWeight && !subscriptionRequiresItems && 'Enter weight (kg) to save.'}
-                  {!subscriptionRequiresWeight && subscriptionRequiresItems && 'Enter items count to save.'}
-                  {subscriptionRequiresWeight && subscriptionRequiresItems && 'Enter weight and items to save.'}
-                </p>
-              )}
-              {!isLocked && ackSubscriptionPreview && ((ackSubscriptionPreview.kgExceeded && parseAckKg(ackWeightKg) > 0) || (ackSubscriptionPreview.itemsExceeded && parseAckItems(ackItemsCount) > 0)) && (
-                <p className="text-xs text-destructive font-medium mt-1.5 pl-6">Exceeds subscription. Reduce weight or items to submit.</p>
-              )}
-              {ackSubscriptionPreview && !ackSubscriptionPreview.pickupsExceeded && !ackSubscriptionPreview.kgExceeded && !ackSubscriptionPreview.itemsExceeded && (ackSubscriptionPreview.previewRemainingPickups === 0 || ackSubscriptionPreview.previewRemainingKg === 0 || ackSubscriptionPreview.previewRemainingItems === 0) && (
-                <p className="text-xs text-amber-600 dark:text-amber-400 mt-1.5 pl-6 font-medium">After this invoice subscription will become inactive.</p>
-              )}
-            </div>
-          )}
           <InvoiceBuilder
             items={ackItems}
-            subscriptionLines={ackNewSubscriptions.length > 0 ? ackNewSubscriptions.map((entry) => {
-              const plan = subscriptionPlans?.find((p) => p.id === entry.planId);
-              return { planName: plan?.name ?? entry.planId, startDate: entry.validityStartDate, quantity: entry.quantityMonths, unitPricePaise: plan?.pricePaise ?? 0 };
-            }) : undefined}
             taxPaise={0}
             discountPaise={0}
+            branchPrimaryColor={summary.branch?.primaryColor ?? null}
+            branchSecondaryColor={summary.branch?.secondaryColor ?? null}
             onItemsChange={setAckItems}
             onTaxChange={() => {}}
             onDiscountChange={() => {}}
@@ -1347,81 +1199,16 @@ export default function OrderDetailPage() {
             discountValue={ackDiscountValue}
             onDiscountTypeChange={setAckDiscountType}
             onDiscountValueChange={setAckDiscountValue}
-            showPrepaidWhenZero={
-              (() => {
-                const subBased = ackOrderMode === 'SUBSCRIPTION_ONLY' || hasNewSubscriptionSelected || (ackOrderMode === 'BOTH' && hasExistingSubscriptionSelected);
-                if (!subBased) return false;
-                const s = (ackOrderMode === 'SUBSCRIPTION_ONLY' ? 0 : ackSubtotal(ackItems)) + (hasNewSubscriptionSelected ? ackSubscriptionAmountPaise : 0);
-                const d = ackDiscountType === 'percent' ? Math.round(s * ackDiscountValue / 100) : ackDiscountValue;
-                const taxable = Math.max(0, s - d);
-                const t = Math.round(taxable * ackTaxPercent / 100);
-                return s - d + t <= 0;
-              })()
-            }
             comments={ackComments}
             onCommentsChange={setAckComments}
-            onSaveDraft={() =>
-              createAckDraft.mutate(
-                toAckDraftBody(
-                  ackItems,
-                  ackTaxPercent,
-                  ackDiscountType,
-                  ackDiscountValue,
-                  ackComments,
-                  hasNewSubscriptionSelected ? ackSubscriptionAmountPaise : undefined,
-                ),
-                {
-                  onSuccess: () => toast.success('ACK invoice saved'),
-                  onError: (e) => toast.error(getFriendlyErrorMessage(e)),
-                },
-              )
-            }
-            onIssue={() => {
-              const issueOpts = {
-                applySubscription: ackOrderMode !== 'INDIVIDUAL' && (!!order.subscriptionId || ackOrderMode === 'SUBSCRIPTION_ONLY'),
-                weightKg: ackWeightKg !== '' ? ackWeightKg : undefined,
-                itemsCount: ackItemsCount !== '' ? ackItemsCount : undefined,
-              };
-              const onIssueError = (e: Error) => toast.error(getFriendlyErrorMessage(e));
-              if (!ackInvoice) {
-                createAckDraft.mutate(
-                  toAckDraftBody(ackItems, ackTaxPercent, ackDiscountType, ackDiscountValue, ackComments, hasNewSubscriptionSelected ? ackSubscriptionAmountPaise : undefined),
-                  {
-                    onSuccess: () => {
-                      issueAck.mutate(issueOpts, {
-                        onSuccess: onAckIssueSuccess,
-                        onError: onIssueError,
-                      });
-                    },
-                    onError: (e) => toast.error(getFriendlyErrorMessage(e)),
-                  },
-                );
-              } else {
-                issueAck.mutate(issueOpts, {
-                  onSuccess: onAckIssueSuccess,
-                  onError: onIssueError,
-                });
-              }
-            }}
-            saveDraftLoading={createAckDraft.isPending}
+            onSaveDraft={() => {}}
+            onIssue={() => {}}
+            saveDraftLoading={false}
             issueLoading={issueAck.isPending || createAckDraft.isPending}
             draftExists={!!ackInvoice}
             issued={isLocked || finalSubmitted}
             disableEditing={order.status === 'CANCELLED'}
-            issueDisabled={finalSubmitted || (() => {
-              if (ackSubscriptionPreview == null) return false;
-              const kgOrItemsExceeded = ackSubscriptionPreview.kgExceeded || ackSubscriptionPreview.itemsExceeded;
-              const lastInvoiceAllowed = summary.subscription?.remainingPickups === 0 && !kgOrItemsExceeded;
-              return kgOrItemsExceeded || (ackSubscriptionPreview.pickupsExceeded && !lastInvoiceAllowed);
-            })()}
-            allowSubmitWithoutDraft={
-              hasExistingSubscriptionSelected &&
-              validSubscriptionUsage &&
-              ackSubscriptionPreview != null &&
-              !ackSubscriptionPreview.kgExceeded &&
-              !ackSubscriptionPreview.itemsExceeded &&
-              (!ackSubscriptionPreview.pickupsExceeded || (summary.subscription?.remainingPickups === 0))
-            }
+            issueDisabled={finalSubmitted}
             onPrint={() => window.print()}
             showPrintOnly={true}
             pdfUrl={ackInvoice?.pdfUrl}
@@ -1437,31 +1224,17 @@ export default function OrderDetailPage() {
               undefined
             }
             tagCustomerName={customer.name ?? '—'}
-            orderMode={ackOrderMode}
-            subscriptionOnlyCanSave={
-              ackOrderMode === 'SUBSCRIPTION_ONLY' &&
-              (hasNewSubscriptionSelected || (hasExistingSubscriptionSelected && validSubscriptionUsage))
-            }
-            saveDraftLabel="Save Ack Invoice"
-            canSaveDraft={!finalSubmitted && (
-              ackOrderMode === 'SUBSCRIPTION_ONLY'
-                ? (!!order.subscriptionId && summary.subscription ? validSubscriptionUsage : false) || hasNewSubscriptionSelected
-                : ackOrderMode === 'BOTH'
-                  ? ackItems.length > 0 || (hasExistingSubscriptionSelected && validSubscriptionUsage) || hasNewSubscriptionSelected
-                  : ackItems.length > 0
-            )}
-            subscriptionAmountPaise={hasNewSubscriptionSelected ? ackSubscriptionAmountPaise : undefined}
-            showTaxAndDiscountWhenNewSubscription={ackOrderMode === 'SUBSCRIPTION_ONLY' && hasNewSubscriptionSelected}
+            pickupConfirmFlow
+            onConfirmPickupClick={() => setAckPickupConfirmOpen(true)}
+            pickupConfirmDisabled={ackItems.length === 0 || finalSubmitted}
           />
           {(() => {
             const itemsSt = ackSubtotal(ackItems);
-            const st = (ackOrderMode === 'SUBSCRIPTION_ONLY' ? 0 : itemsSt) + (hasNewSubscriptionSelected ? ackSubscriptionAmountPaise : 0);
+            const st = itemsSt;
             const disc = ackDiscountType === 'percent' ? Math.round(st * ackDiscountValue / 100) : ackDiscountValue;
             const taxableAfterDisc = Math.max(0, st - disc);
             const tax = Math.round(taxableAfterDisc * ackTaxPercent / 100);
             const ackTotal = st - disc + tax;
-            const isSubscriptionBased = ackOrderMode === 'SUBSCRIPTION_ONLY' || hasNewSubscriptionSelected || (ackOrderMode === 'BOTH' && hasExistingSubscriptionSelected);
-            const isPrepaid = ackTotal <= 0 && isSubscriptionBased;
             return (
               <>
                 <div className="mt-4 pt-4 border-t space-y-1 text-right">
@@ -1469,7 +1242,7 @@ export default function OrderDetailPage() {
                     Subtotal: {formatMoney(st)} · Discount {ackDiscountType === 'percent' ? `(${ackDiscountValue}%)` : `(₹)`}: -{formatMoney(disc)} · Tax ({ackTaxPercent}%): {formatMoney(tax)}
                   </p>
                   <p className="text-2xl font-bold">
-                    {isPrepaid ? 'Prepaid' : `Total: ${formatMoney(ackTotal)}`}
+                    {`Total: ${formatMoney(ackTotal)}`}
                   </p>
                 </div>
                 {branding?.termsAndConditions?.trim() && (
@@ -1564,11 +1337,6 @@ export default function OrderDetailPage() {
               <p className="font-bold mb-1">Order details</p>
               <p>{customer.name ?? '—'}</p>
               <p className="text-muted-foreground">Phone: {customer.phone ?? '—'}</p>
-              {order.orderType === 'SUBSCRIPTION' ? (
-                <p className="text-muted-foreground">
-                  Subscription booking{summary.subscription?.planName ? ` (${summary.subscription.planName})` : ''}
-                </p>
-              ) : null}
               {order.orderSource !== 'WALK_IN' && (
                 <p>
                   {address.addressLine}, {address.pincode}
@@ -1606,62 +1374,12 @@ export default function OrderDetailPage() {
             </div>
           </div>
 
-          {/* Subscription utilized (same line as on ACK – visible on Final invoice) + final weight input */}
-          {summary.subscriptionUsage && summary.subscription && (
-            <div className="rounded-md border border-green-200 bg-green-50 dark:bg-green-950/40 dark:border-green-800 p-2.5 text-sm">
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                <span className="text-green-700 dark:text-green-300 font-medium" aria-hidden>✓</span>
-                <span className="text-green-800 dark:text-green-200 font-medium">
-                  {summary.subscription.planName}
-                </span>
-                <span className="text-green-800 dark:text-green-200">
-                  {summary.subscription.remainingPickups}/{summary.subscription.maxPickups} pickups left
-                  {summary.subscription.kgLimit != null && ` · ${effectiveUsedKg}/${summary.subscription.kgLimit} kg`}
-                  {summary.subscription.itemsLimit != null && ` · ${effectiveUsedItems}/${summary.subscription.itemsLimit} items`}
-                  {' · Applied'}
-                </span>
-                {finalInvoice?.status !== 'ISSUED' && summary.subscription.kgLimit != null && (
-                  <span className="flex items-center gap-1.5 ml-auto ack-print-hide">
-                    <label htmlFor="final-weight-kg" className="text-green-800 dark:text-green-200 whitespace-nowrap">Final weight (kg):</label>
-                    <input
-                      id="final-weight-kg"
-                      type="number"
-                      min={0}
-                      step={0.1}
-                      className="h-8 w-20 rounded border border-green-300 bg-white dark:bg-gray-900 px-2 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
-                      value={finalWeightKg === '' ? '' : finalWeightKg}
-                      onChange={(e) => setFinalWeightKg(e.target.value === '' ? '' : parseFloat(e.target.value) || 0)}
-                      placeholder="0"
-                      disabled={!canEditFinalInvoiceFields}
-                    />
-                    <span className="text-xs text-green-700 dark:text-green-300">Deducted from subscription</span>
-                  </span>
-                )}
-                {finalInvoice?.status !== 'ISSUED' && summary.subscription.itemsLimit != null && summary.subscription.kgLimit == null && (
-                  <span className="flex items-center gap-1.5 ml-auto ack-print-hide">
-                    <label htmlFor="final-items-count" className="text-green-800 dark:text-green-200 whitespace-nowrap">Final items:</label>
-                    <input
-                      id="final-items-count"
-                      type="number"
-                      min={0}
-                      step={1}
-                      className="h-8 w-20 rounded border border-green-300 bg-white dark:bg-gray-900 px-2 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
-                      value={finalItemsCount === '' ? '' : finalItemsCount}
-                      onChange={(e) => setFinalItemsCount(e.target.value === '' ? '' : parseInt(e.target.value, 10) || 0)}
-                      placeholder="0"
-                      disabled={!canEditFinalInvoiceFields}
-                    />
-                    <span className="text-xs text-green-700 dark:text-green-300">Deducted from subscription</span>
-                  </span>
-                )}
-              </div>
-            </div>
-          )}
-
           <InvoiceBuilder
             items={finalItems}
             taxPaise={0}
             discountPaise={0}
+            branchPrimaryColor={summary.branch?.primaryColor ?? null}
+            branchSecondaryColor={summary.branch?.secondaryColor ?? null}
             onItemsChange={setFinalItems}
             onTaxChange={() => {}}
             onDiscountChange={() => {}}
@@ -1675,13 +1393,41 @@ export default function OrderDetailPage() {
             onDiscountValueChange={setFinalDiscountValue}
             comments={finalComments}
             onCommentsChange={setFinalComments}
+            afterCommentsSlot={
+              canMarkOutForDelivery ? (
+                <Button
+                  type="button"
+                  disabled={updateStatus.isPending}
+                  style={
+                    summary.branch?.primaryColor
+                      ? {
+                          backgroundColor: summary.branch.primaryColor,
+                          borderColor: summary.branch.primaryColor,
+                          color: '#fff',
+                        }
+                      : undefined
+                  }
+                  className={cn(summary.branch?.primaryColor && 'hover:opacity-90 border-0')}
+                  onClick={() =>
+                    updateStatus.mutate('OUT_FOR_DELIVERY', {
+                      onSuccess: () => toast.success('Order marked out for delivery'),
+                      onError: (e) => toast.error(e.message),
+                    })
+                  }
+                >
+                  {updateStatus.isPending ? 'Updating…' : 'Out for delivery'}
+                </Button>
+              ) : undefined
+            }
             onSaveDraft={() => {}}
             onIssue={submitFinalInvoice}
             issueLoading={createFinalDraft.isPending || issueFinal.isPending}
             draftExists={!!finalInvoice}
             issued={isFinalLocked || finalSubmitted}
-            disableEditing={!canEditFinalInvoiceFields || finalSubmitted}
+            disableEditing={!canEditFinalInvoiceForm || !canIssueFinalInvoice}
             issueDisabled={!canIssueFinalInvoice}
+            issueButtonLabel="Submit invoice"
+            showIssueButtonWhenReadOnly={canEditFinalInvoiceForm}
             allowSubmitWithoutDraft
             hideSaveDraftButton
             showPrintOnly={true}
@@ -1711,9 +1457,6 @@ export default function OrderDetailPage() {
               undefined
             }
             tagCustomerName={customer.name ?? '—'}
-            orderMode="INDIVIDUAL"
-            subscriptionUnit={hasSubscription && summary?.subscription ? (summary.subscription.kgLimit != null ? 'KG' : summary.subscription.itemsLimit != null ? 'Nos' : undefined) : undefined}
-            subscriptionUsageRowIndex={undefined}
           />
           {(() => {
             const st = finalSubtotal(finalItems);
@@ -1753,13 +1496,6 @@ export default function OrderDetailPage() {
               </>
             );
           })()}
-          {!canIssueFinalInvoice && (
-            <p className="mt-2 text-xs text-muted-foreground">
-              {order.orderSource === 'WALK_IN'
-                ? 'Mark order as Ready (or later) to create/submit final invoice.'
-                : 'Mark order as Out for Delivery or Delivered to create/submit final invoice.'}
-            </p>
-          )}
         </CardContent>
         </div>
       </Card>

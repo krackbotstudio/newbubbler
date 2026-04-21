@@ -2,6 +2,8 @@
 
 This guide covers deploying the Customer PWA to Dokploy.
 
+**Implementation note:** The PWA bundle is **`apps/customer-mobile/App`** (see `index.js`). Customer features are developed in **`customer-mobile`**; this app adds web export, PWA manifest/service worker, and Docker/nginx only.
+
 ## Prerequisites
 
 1. **Dokploy** server running and accessible

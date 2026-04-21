@@ -29,14 +29,9 @@ export default function CustomersPage() {
   const router = useRouter();
   const user = getStoredUser();
   const isBranchHead = user?.role === 'OPS';
-  const isPartialAdmin = user?.role === 'PARTIAL_ADMIN';
   const branchLocked = !!(user && isBranchFilterLocked(user.role, user.branchId));
   const { data: branches = [] } = useBranches();
-  const branchOptions = useMemo(() => {
-    if (!isPartialAdmin) return branches;
-    const allowed = new Set(user?.branchIds ?? []);
-    return branches.filter((b) => allowed.has(b.id));
-  }, [branches, isPartialAdmin, user?.branchIds]);
+  const branchOptions = useMemo(() => branches, [branches]);
 
   const [search, setSearch] = useState('');
   const [branchId, setBranchId] = useState('');
@@ -93,7 +88,7 @@ export default function CustomersPage() {
         <p className="text-sm text-muted-foreground mt-1">
           {isBranchHead
             ? 'By default you see customers with at least one past or active order at your branch. Enter at least 10 digits of a mobile number to search all customers across every branch (same discovery as walk-in lookup). Use the box below to filter this list by name or partial phone.'
-            : 'List of customers with order and subscription counts. Search by name or phone, or open a profile from the table.'}
+            : 'List of customers with order counts. Search by name or phone, or open a profile from the table.'}
         </p>
       </div>
 
@@ -112,7 +107,7 @@ export default function CustomersPage() {
                   }}
                   title="Filter customers by branch"
                 >
-                  {!isPartialAdmin && <option value="">All branches</option>}
+                  <option value="">All branches</option>
                   {branchOptions.map((b) => (
                     <option key={b.id} value={b.id}>
                       {b.name ?? b.id}
@@ -160,7 +155,6 @@ export default function CustomersPage() {
             data={items}
             isLoading={isLoading}
             onRowClick={handleRowClick}
-            hideSubscriptionColumns={isBranchHead}
             emptyDescription={
               isBranchHead
                 ? useGlobalPhoneSearch

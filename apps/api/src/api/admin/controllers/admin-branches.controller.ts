@@ -36,14 +36,14 @@ export class AdminBranchesController {
   constructor(private readonly adminBranchesService: AdminBranchesService) {}
 
   @Get()
-  @Roles(Role.ADMIN, Role.PARTIAL_ADMIN, Role.BILLING, Role.OPS, AGENT_ROLE)
+  @Roles(Role.ADMIN, Role.BILLING, Role.OPS, AGENT_ROLE)
   async list(@Req() req: { user: AuthUser }) {
     return this.adminBranchesService.list(req.user);
   }
 
   /** Must stay above @Get(':id') so "field-uniqueness" is not parsed as an id. */
   @Get('field-uniqueness')
-  @Roles(Role.ADMIN, Role.PARTIAL_ADMIN, Role.BILLING, Role.OPS, AGENT_ROLE)
+  @Roles(Role.ADMIN, Role.BILLING, Role.OPS, AGENT_ROLE)
   async fieldUniqueness(
     @Req() req: { user: AuthUser },
     @Query('excludeBranchId') excludeBranchId?: string,
@@ -63,7 +63,7 @@ export class AdminBranchesController {
   }
 
   @Get(':id')
-  @Roles(Role.ADMIN, Role.PARTIAL_ADMIN, Role.BILLING, Role.OPS, AGENT_ROLE)
+  @Roles(Role.ADMIN, Role.BILLING, Role.OPS, AGENT_ROLE)
   async getById(@Param('id') id: string, @Req() req: { user: AuthUser }) {
     return this.adminBranchesService.getById(id, req.user);
   }
@@ -95,7 +95,7 @@ export class AdminBranchesController {
   }
 
   @Patch(':id')
-  @Roles(Role.ADMIN, Role.PARTIAL_ADMIN, Role.BILLING, Role.OPS)
+  @Roles(Role.ADMIN, Role.BILLING, Role.OPS)
   async update(
     @Param('id') id: string,
     @Body() dto: UpdateBranchDto,
@@ -133,7 +133,7 @@ export class AdminBranchesController {
   }
 
   @Post(':id/logo')
-  @Roles(Role.ADMIN, Role.PARTIAL_ADMIN, Role.BILLING, Role.OPS)
+  @Roles(Role.ADMIN, Role.BILLING, Role.OPS)
   @UseInterceptors(FileInterceptor('file'))
   async uploadLogo(
     @Param('id') id: string,
@@ -151,7 +151,7 @@ export class AdminBranchesController {
   }
 
   @Post(':id/upi-qr')
-  @Roles(Role.ADMIN, Role.PARTIAL_ADMIN, Role.BILLING, Role.OPS)
+  @Roles(Role.ADMIN, Role.BILLING, Role.OPS)
   @UseInterceptors(FileInterceptor('file'))
   async uploadUpiQr(
     @Param('id') id: string,

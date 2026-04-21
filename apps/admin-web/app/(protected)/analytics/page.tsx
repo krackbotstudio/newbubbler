@@ -56,7 +56,6 @@ export default function AnalyticsPage() {
 
   const { data: branches = [], isLoading: branchesLoading } = useBranches();
   const branchOptions = useMemo(() => restrictBranchesForUser(branches, user), [branches, user]);
-  const isPartialAdmin = user?.role === 'PARTIAL_ADMIN';
   const [branchId, setBranchId] = useState<string>('');
   const effectiveBranchId = effectiveScopedBranchId ?? (branchId || null);
   const [cursor, setCursor] = useState<string | undefined>(undefined);
@@ -165,9 +164,9 @@ export default function AnalyticsPage() {
   }, [selectedPreset, appliedDateFrom, appliedDateTo, effectiveBranchId]);
 
   useEffect(() => {
-    if (branchLocked || !isPartialAdmin || branchId) return;
+    if (branchLocked || branchId) return;
     if (branchOptions.length > 0) setBranchId(branchOptions[0].id);
-  }, [branchLocked, isPartialAdmin, branchId, branchOptions]);
+  }, [branchLocked, branchId, branchOptions]);
 
   const limit = 20;
   const ordersFilters: AdminOrdersFilters = {
@@ -286,7 +285,7 @@ export default function AnalyticsPage() {
               }}
               disabled={branchesLoading}
             >
-              {!isPartialAdmin && <option value="">All branches</option>}
+              <option value="">All branches</option>
               {branchOptions.map((b) => (
                 <option key={b.id} value={b.id}>
                   {b.name}

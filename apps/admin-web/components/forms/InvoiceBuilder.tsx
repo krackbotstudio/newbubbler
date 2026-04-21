@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect, useMemo, type RefObject } from 'react';
+import { useState, useEffect, useMemo, type ReactNode, type RefObject } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import type { InvoiceItemType, InvoiceOrderMode } from '@/types';
+import type { InvoiceItemType } from '@/types';
 import type { LaundryItem, CatalogMatrixResponse } from '@/types/catalog';
 import type { ServiceType } from '@/types/order';
 import { formatMoney } from '@/lib/format';
@@ -34,6 +34,8 @@ export interface InvoiceLineRow {
   type: InvoiceItemType;
   name: string;
   quantity: number;
+  /** Piece count; omit when blank so billing/PDF treats it as quantity. */
+  clothesCount?: number;
   unitPricePaise: number;
   amountPaise?: number;
   /** Catalog matrix line: item + segment + service for edit dropdowns */
@@ -72,10 +74,6 @@ interface InvoiceBuilderProps {
   catalog?: LaundryItem[];
   /** Catalog matrix (Item + Segment + Service); when set, add-line is Item → Segment → Service → Qty only, no name override. */
   catalogMatrix?: CatalogMatrixResponse;
-  /** ACK order type: SUBSCRIPTION_ONLY hides line items and shows subscription-only message. */
-  orderMode?: InvoiceOrderMode;
-  /** When SUBSCRIPTION_ONLY, save is disabled unless subscription usage (weight/items) is provided. */
-  subscriptionOnlyCanSave?: boolean;
   /** When true, tax input is percentage; parent should convert to paise when building draft. */
   taxAsPercent?: boolean;
   /** When true, discount has type (percent | amount) and value. */
@@ -88,8 +86,6 @@ interface InvoiceBuilderProps {
   discountValue?: number;
   onDiscountTypeChange?: (t: 'percent' | 'amount') => void;
   onDiscountValueChange?: (v: number) => void;
-  /** Show "Prepaid" when total is 0 (subscription). */
-  showPrepaidWhenZero?: boolean;
   /** Comments to include in invoice (display only here; pass to draft body from parent). */
   comments?: string;
   onCommentsChange?: (v: string) => void;
@@ -99,24 +95,29 @@ interface InvoiceBuilderProps {
   onPrint?: () => void;
   /** Override label for the save draft button (e.g. "Save Ack Invoice"). */
   saveDraftLabel?: string;
-  /** When true, save button is enabled (overrides internal disable logic). Use when parent allows save e.g. BOTH with subscription-only. */
+  /** When true, save button is enabled (overrides internal disable logic). */
   canSaveDraft?: boolean;
-  /** When SUBSCRIPTION_ONLY and new subscription is selected, pass subscription amount so subtotal/tax/discount/total include it. */
-  subscriptionAmountPaise?: number;
-  /** When true, show Tax and Discount inputs even in SUBSCRIPTION_ONLY mode (e.g. when adding new subscription to invoice). */
-  showTaxAndDiscountWhenNewSubscription?: boolean;
-  /** Read-only subscription plan lines to show in the same items table (plan name, start date, qty, price). */
-  subscriptionLines?: Array<{ planName: string; startDate: string; quantity: number; unitPricePaise: number }>;
-  /** When true, Submit button is disabled (e.g. subscription would exceed limits after this invoice). Do not set when remaining after === 0. */
+  /** When true, Submit button is disabled. Do not set when remaining after === 0. */
   issueDisabled?: boolean;
+  /** Label for the issue/submit button (default: "Submit"). */
+  issueButtonLabel?: string;
   /** When true, Submit is enabled even when draft does not exist (parent should save then issue on click). */
   allowSubmitWithoutDraft?: boolean;
   /** When true, hide Save draft; parent should use Submit only (e.g. save+issue in one handler). */
   hideSaveDraftButton?: boolean;
-  /** For subscription-based invoice: show "KG" or "Nos" after the quantity for the subscription usage line. */
-  subscriptionUnit?: 'KG' | 'Nos';
-  /** Row index of the subscription usage line (e.g. 0) when subscriptionUnit is set. */
-  subscriptionUsageRowIndex?: number;
+  /**
+   * When the form is read-only (`disableEditing`), still show the issue/submit button (e.g. final invoice:
+   * submit disabled until status allows issue, while lines stay locked).
+   */
+  showIssueButtonWhenReadOnly?: boolean;
+  /** Rendered after the comments block and before save/issue actions (e.g. “Out for delivery” on order final tab). */
+  afterCommentsSlot?: ReactNode;
+  /** When set with `onConfirmPickupClick`, replaces Save draft + Submit with one primary action (e.g. ACK → review dialog). */
+  pickupConfirmFlow?: boolean;
+  confirmPickupLabel?: string;
+  onConfirmPickupClick?: () => void;
+  /** Disable the confirm-pickup button (e.g. no line items). */
+  pickupConfirmDisabled?: boolean;
   /** When set and invoice is issued, show "Share on WhatsApp" button. If pdfUrl is also set, tries to share PDF file + thank you note via system share (e.g. WhatsApp); else opens WhatsApp with this message. */
   whatsappShareMessage?: string | null;
   /** Optional thank you note included when sharing (default: "Thank you for your order! Please find your invoice attached."). */
@@ -125,6 +126,9 @@ interface InvoiceBuilderProps {
   printAreaRef?: RefObject<HTMLElement | null>;
   /** When true (e.g. order cancelled), line items are read-only and Add items / tax / discount / comments cannot be edited. */
   disableEditing?: boolean;
+  /** Branch theme for catalog “Add items” dialog (segment/service controls). */
+  branchPrimaryColor?: string | null;
+  branchSecondaryColor?: string | null;
   /** When set (e.g. order UUID on order detail), each line shows “Print tag” for thermal labels. */
   tagPrintOrderLabel?: string | null;
   /** Printed top line on line tags: branch “Short brand on item tag” (`itemTagBrandName`), then branch name, etc. (see order page). */
@@ -202,8 +206,6 @@ export function InvoiceBuilder({
   pdfUrl,
   catalog,
   catalogMatrix,
-  orderMode = 'INDIVIDUAL',
-  subscriptionOnlyCanSave = false,
   taxAsPercent = false,
   discountAsPercentOrAmount = false,
   taxPercent = 0,
@@ -212,33 +214,34 @@ export function InvoiceBuilder({
   discountValue = 0,
   onDiscountTypeChange,
   onDiscountValueChange,
-  showPrepaidWhenZero = false,
   comments = '',
   onCommentsChange,
   showPrintOnly = false,
   onPrint,
   saveDraftLabel,
   canSaveDraft,
-  subscriptionAmountPaise,
-  showTaxAndDiscountWhenNewSubscription = false,
-  subscriptionLines,
   issueDisabled = false,
+  issueButtonLabel,
   allowSubmitWithoutDraft = false,
   hideSaveDraftButton = false,
-  subscriptionUnit,
-  subscriptionUsageRowIndex,
+  showIssueButtonWhenReadOnly = false,
+  afterCommentsSlot,
+  pickupConfirmFlow = false,
+  confirmPickupLabel,
+  onConfirmPickupClick,
+  pickupConfirmDisabled = false,
   whatsappShareMessage,
   whatsappShareThankYouNote = 'Thank you for your order! Please find your invoice attached.',
   printAreaRef,
   disableEditing = false,
+  branchPrimaryColor = null,
+  branchSecondaryColor = null,
   tagPrintOrderLabel = null,
   tagBrandName = null,
   tagCustomerName = null,
   issuedShareAdvanced = null,
 }: InvoiceBuilderProps) {
-  const isSubscriptionOnly = orderMode === 'SUBSCRIPTION_ONLY';
-  const canSaveSubscriptionOnly = !isSubscriptionOnly || subscriptionOnlyCanSave;
-  const showTaxAndDiscount = !isSubscriptionOnly || showTaxAndDiscountWhenNewSubscription;
+  const showTaxAndDiscount = true;
   const [newName, setNewName] = useState('');
   const [newQty, setNewQty] = useState(1);
   const [newUnitPrice, setNewUnitPrice] = useState(0);
@@ -252,6 +255,7 @@ export function InvoiceBuilder({
   const [addItemsDialogOpen, setAddItemsDialogOpen] = useState(false);
   /** While editing line qty, hold raw string so decimals like "2." work; commit on blur. */
   const [qtyDraftByRowIndex, setQtyDraftByRowIndex] = useState<Record<number, string>>({});
+  const [clothesDraftByRowIndex, setClothesDraftByRowIndex] = useState<Record<number, string>>({});
   const [tagDialogRowIndex, setTagDialogRowIndex] = useState<number | null>(null);
   /** Draft strings so Tax % and Discount can be cleared and retyped; commit on blur. */
   const [taxPercentDraft, setTaxPercentDraft] = useState<string | null>(null);
@@ -355,9 +359,7 @@ export function InvoiceBuilder({
   }, [catalogItemId, catalogService, selectedPrice?.unitPricePaise]);
 
   const itemsSubtotal = items.reduce((sum, i) => sum + (i.amountPaise ?? i.quantity * i.unitPricePaise), 0);
-  const subtotal = isSubscriptionOnly
-    ? (subscriptionAmountPaise ?? 0)
-    : itemsSubtotal + (subscriptionAmountPaise ?? 0);
+  const subtotal = itemsSubtotal;
   const discountFromInput = discountAsPercentOrAmount
     ? (discountType === 'percent' ? Math.round(subtotal * (discountValue ?? 0) / 100) : (discountValue ?? 0))
     : 0;
@@ -442,12 +444,20 @@ export function InvoiceBuilder({
   function updateLine(index: number, patch: Partial<InvoiceLineRow>) {
     const row = items[index];
     if (!row) return;
+    const { clothesCount: patchClothes, ...patchRest } = patch;
     const updated: InvoiceLineRow = {
       ...row,
-      ...patch,
+      ...patchRest,
       quantity: patch.quantity ?? row.quantity,
       unitPricePaise: patch.unitPricePaise ?? row.unitPricePaise,
     };
+    if ('clothesCount' in patch) {
+      if (patchClothes != null && Number.isFinite(patchClothes) && patchClothes >= 0.01) {
+        updated.clothesCount = patchClothes;
+      } else {
+        delete (updated as { clothesCount?: number }).clothesCount;
+      }
+    }
     if (useMatrix && updated.catalogItemId && updated.segmentCategoryId && updated.serviceCategoryId) {
       const unit = getMatrixPriceForRow(updated);
       if (unit != null) {
@@ -469,8 +479,7 @@ export function InvoiceBuilder({
   const allowMutation = !issued && !disableEditing;
   const useCatalog = Boolean(catalog?.length) && !useMatrix;
 
-  const hasSubscriptionLines = (subscriptionLines?.length ?? 0) > 0;
-  const showItemsTable = !isSubscriptionOnly || hasSubscriptionLines;
+  const showItemsTable = true;
 
   const [shareLoading, setShareLoading] = useState(false);
   const [downloadLoading, setDownloadLoading] = useState(false);
@@ -582,6 +591,12 @@ export function InvoiceBuilder({
                 </>
               )}
               <th className="text-right py-2">Qty</th>
+              <th
+                className="text-right py-2 text-xs font-medium whitespace-nowrap max-w-[6.5rem]"
+                title="Optional; leave blank to use the same value as Qty."
+              >
+                No. of clothes
+              </th>
               {useMatrix ? (
                 <>
                   <th className="text-right py-2">Service cost (₹)</th>
@@ -599,10 +614,10 @@ export function InvoiceBuilder({
             </tr>
           </thead>
           <tbody>
-            {items.length === 0 && !hasSubscriptionLines ? (
+            {items.length === 0 ? (
               <tr className="border-b">
                 <td
-                  colSpan={(useMatrix ? 6 : 5) + (allowMutation || tagPrintOrderLabel ? 1 : 0)}
+                  colSpan={(useMatrix ? 7 : 6) + (allowMutation || tagPrintOrderLabel ? 1 : 0)}
                   className="py-3 text-center text-muted-foreground"
                 >
                   NA
@@ -612,12 +627,7 @@ export function InvoiceBuilder({
             <>
             {items.map((row, i) => {
               const isMatrixRow = useMatrix && row.catalogItemId && catalogMatrix;
-              const qtyMin =
-                subscriptionUsageRowIndex === i && subscriptionUnit
-                  ? 0
-                  : isMatrixRow
-                    ? 0.1
-                    : 1;
+              const qtyMin = isMatrixRow ? 0.1 : 1;
               const rowSegments = isMatrixRow && row.catalogItemId ? getSegmentsForItem(row.catalogItemId) : [];
               const rowServices =
                 isMatrixRow && row.catalogItemId && row.segmentCategoryId
@@ -825,8 +835,65 @@ export function InvoiceBuilder({
                       ) : (
                         row.quantity
                       )}
-                      {subscriptionUnit != null && subscriptionUsageRowIndex === i && (
-                        <span className="text-muted-foreground text-sm whitespace-nowrap">{subscriptionUnit}</span>
+                    </span>
+                  </td>
+                  <td className="align-middle py-2 text-right">
+                    <span className="inline-flex items-center justify-end gap-1">
+                      {allowMutation ? (
+                        <Input
+                          type="text"
+                          inputMode="decimal"
+                          autoComplete="off"
+                          className="h-8 w-[4.25rem] text-right tabular-nums"
+                          placeholder="—"
+                          value={
+                            clothesDraftByRowIndex[i] !== undefined
+                              ? clothesDraftByRowIndex[i]
+                              : row.clothesCount != null && Number.isFinite(row.clothesCount)
+                                ? String(row.clothesCount)
+                                : ''
+                          }
+                          onFocus={() => {
+                            setClothesDraftByRowIndex((p) => ({
+                              ...p,
+                              [i]:
+                                p[i] ??
+                                (row.clothesCount != null && Number.isFinite(row.clothesCount)
+                                  ? String(row.clothesCount)
+                                  : ''),
+                            }));
+                          }}
+                          onChange={(e) => {
+                            let v = e.target.value.replace(',', '.');
+                            if (v === '' || /^\d*\.?\d*$/.test(v)) {
+                              setClothesDraftByRowIndex((p) => ({ ...p, [i]: v }));
+                            }
+                          }}
+                          onBlur={(e) => {
+                            const rawDraft = e.target.value.replace(',', '.').trim();
+                            setClothesDraftByRowIndex((p) => {
+                              const next = { ...p };
+                              delete next[i];
+                              return next;
+                            });
+                            if (rawDraft === '' || rawDraft === '.') {
+                              updateLine(i, { clothesCount: undefined });
+                              return;
+                            }
+                            const n = Number(rawDraft);
+                            if (!Number.isFinite(n) || n < 0.01) {
+                              updateLine(i, { clothesCount: undefined });
+                            } else {
+                              updateLine(i, { clothesCount: n });
+                            }
+                          }}
+                        />
+                      ) : (
+                        <span className="tabular-nums">
+                          {row.clothesCount != null && Number.isFinite(row.clothesCount)
+                            ? row.clothesCount
+                            : row.quantity}
+                        </span>
                       )}
                     </span>
                   </td>
@@ -871,29 +938,6 @@ export function InvoiceBuilder({
                 </tr>
               );
             })}
-            {subscriptionLines?.map((sub, idx) => {
-              const amount = sub.quantity * sub.unitPricePaise;
-              return (
-                <tr key={`sub-${idx}`} className="border-b bg-muted/20">
-                  {useMatrix ? (
-                    <>
-                      <td className="py-1">Subscription – {sub.planName}</td>
-                      <td className="py-1 text-muted-foreground">{sub.startDate}</td>
-                      <td className="py-1">—</td>
-                    </>
-                  ) : (
-                    <>
-                      <td className="py-1 text-muted-foreground">Subscription</td>
-                      <td className="py-1">{sub.planName}</td>
-                    </>
-                  )}
-                  <td className="text-right py-1">{sub.quantity}</td>
-                  <td className="text-right py-1">{formatMoney(sub.unitPricePaise)}</td>
-                  <td className="text-right py-1">{formatMoney(amount)}</td>
-                  {(allowMutation || tagPrintOrderLabel) && <td className="py-1" />}
-                </tr>
-              );
-            })}
             </>
             )}
           </tbody>
@@ -901,7 +945,7 @@ export function InvoiceBuilder({
       </div>
       )}
 
-      {!issued && !isSubscriptionOnly && (
+      {!issued && (
         <div className="w-full space-y-2">
           {useMatrix && catalogMatrix ? (
             <>
@@ -918,6 +962,8 @@ export function InvoiceBuilder({
                 open={addItemsDialogOpen}
                 onOpenChange={setAddItemsDialogOpen}
                 catalogMatrix={catalogMatrix}
+                primaryColor={branchPrimaryColor}
+                secondaryColor={branchSecondaryColor}
                 onAddLine={(line) => {
                   onItemsChange([...items, line]);
                 }}
@@ -1192,26 +1238,63 @@ export function InvoiceBuilder({
         </div>
       )}
 
-      <div className="flex gap-2">
+      <div className="ack-print-hide flex w-full flex-wrap items-center gap-3 pt-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">{afterCommentsSlot}</div>
+        <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
         {allowMutation && (
           <>
-            {!hideSaveDraftButton && (
+            {pickupConfirmFlow && onConfirmPickupClick ? (
               <Button
-                variant="secondary"
-                onClick={onSaveDraft}
-                disabled={saveDraftLoading || (canSaveDraft !== true && (!canSaveSubscriptionOnly || (!isSubscriptionOnly && items.length === 0)))}
+                type="button"
+                onClick={onConfirmPickupClick}
+                disabled={issueLoading || pickupConfirmDisabled}
+                style={
+                  branchPrimaryColor
+                    ? {
+                        backgroundColor: branchPrimaryColor,
+                        borderColor: branchPrimaryColor,
+                        color: '#fff',
+                      }
+                    : undefined
+                }
+                className={cn(branchPrimaryColor && 'hover:opacity-90 border-0')}
               >
-                {saveDraftLoading ? 'Saving…' : (saveDraftLabel ?? 'Save draft')}
+                {confirmPickupLabel ?? 'Confirm pick up'}
               </Button>
+            ) : (
+              <>
+                {!hideSaveDraftButton && (
+                  <Button
+                    variant="secondary"
+                    onClick={onSaveDraft}
+                    disabled={saveDraftLoading || (canSaveDraft !== true && items.length === 0)}
+                  >
+                    {saveDraftLoading ? 'Saving…' : (saveDraftLabel ?? 'Save draft')}
+                  </Button>
+                )}
+                <Button
+                  onClick={onIssue}
+                  disabled={issueLoading || (!draftExists && !allowSubmitWithoutDraft) || issueDisabled}
+                >
+                  {issueLoading ? 'Submitting…' : (issueButtonLabel ?? 'Submit')}
+                </Button>
+              </>
             )}
+          </>
+        )}
+        {!allowMutation &&
+          showIssueButtonWhenReadOnly &&
+          !issued &&
+          !pickupConfirmFlow &&
+          hideSaveDraftButton && (
             <Button
+              type="button"
               onClick={onIssue}
               disabled={issueLoading || (!draftExists && !allowSubmitWithoutDraft) || issueDisabled}
             >
-              {issueLoading ? 'Submitting…' : 'Submit'}
+              {issueLoading ? 'Submitting…' : (issueButtonLabel ?? 'Submit')}
             </Button>
-          </>
-        )}
+          )}
         {issued &&
         showPrintOnly &&
         (pdfUrl || printAreaRef) &&
@@ -1256,6 +1339,7 @@ export function InvoiceBuilder({
             <Button variant="outline">Open PDF</Button>
           </a>
         )}
+        </div>
       </div>
 
       {issued && !showPrintOnly && pdfUrl && (

@@ -113,11 +113,12 @@ export interface PublicCarouselResponse {
   imageUrls: string[];
 }
 
-export async function getPublicCarousel(): Promise<PublicCarouselResponse> {
+export async function getPublicCarousel(branchId?: string | null): Promise<PublicCarouselResponse> {
   const base = apiBase();
   if (!base) return { imageUrls: [] };
   try {
-    const res = await fetchWithTimeout(`${base}/carousel/public`);
+    const q = branchId?.trim() ? `?branchId=${encodeURIComponent(branchId.trim())}` : '';
+    const res = await fetchWithTimeout(`${base}/carousel/public${q}`);
     if (!res.ok) return { imageUrls: [] };
     const data = (await res.json()) as PublicCarouselResponse;
     return { imageUrls: Array.isArray(data.imageUrls) ? data.imageUrls : [] };
@@ -237,54 +238,19 @@ export async function verifyOtp(
   }
 }
 
-export interface ActiveSubscriptionItem {
-  id: string;
-  planId: string;
-  planName: string;
-  planDescription?: string | null;
-  /** Branch tied to this subscription (slots and billing). */
-  branchId?: string | null;
-  /** Address this subscription is tied to (pickup/delivery only at this address). */
-  addressId: string | null;
-  /** Address label at purchase; still shown after address is edited/deleted. */
-  addressLabel?: string | null;
-  validityStartDate: string;
-  validTill: string;
-  remainingPickups: number;
-  remainingKg: number | null;
-  remainingItems: number | null;
-  maxPickups: number;
-  kgLimit: number | null;
-  itemsLimit: number | null;
-  hasActiveOrder: boolean;
-}
-
-export interface PastSubscriptionItem {
-  id: string;
-  planId: string;
-  planName: string;
-  /** Address ID at purchase (may be deleted later). */
-  addressId?: string | null;
-  /** Address label at purchase; still shown after address is edited/deleted. */
-  addressLabel?: string | null;
-  validityStartDate: string;
-  validTill: string;
-  inactivatedAt: string;
-  remainingPickups: number;
-  usedPickups: number;
-  maxPickups: number;
-  usedKg: number;
-  usedItemsCount: number;
-  kgLimit: number | null;
-  itemsLimit: number | null;
-}
-
 export interface MeResponse {
   user: { id: string; phone: string | null; role: string; name: string | null; email: string | null };
   defaultAddress?: { id: string; pincode: string };
-  activeSubscriptions?: ActiveSubscriptionItem[];
-  pastSubscriptions?: PastSubscriptionItem[];
-  activeSubscription?: ActiveSubscriptionItem;
+}
+
+export async function listAvailableBranches(token: string): Promise<BranchesForPincodeResponse> {
+  const base = apiBase();
+  if (!base) throw new Error('API URL not configured');
+  const res = await fetchWithTimeout(`${base}/me/available-branches`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error('Failed to load branches');
+  return res.json() as Promise<BranchesForPincodeResponse>;
 }
 
 export async function getMe(token: string): Promise<MeResponse> {
@@ -450,12 +416,17 @@ export interface ServiceabilityResult {
   branchName?: string | null;
 }
 
-export async function checkServiceability(pincode: string): Promise<ServiceabilityResult> {
+export async function checkServiceability(
+  pincode: string,
+  branchId?: string | null,
+): Promise<ServiceabilityResult> {
   const base = apiBase();
   if (!base) {
     return { pincode, serviceable: false, message: 'Backend not linked. Set EXPO_PUBLIC_API_URL in .env and restart the app.' };
   }
-  const res = await fetchWithTimeout(`${base}/serviceability?pincode=${encodeURIComponent(pincode)}`);
+  const q = new URLSearchParams({ pincode });
+  if (branchId?.trim()) q.set('branchId', branchId.trim());
+  const res = await fetchWithTimeout(`${base}/serviceability?${q.toString()}`);
   const data = (await res.json()) as ServiceabilityResult & { message?: string[]; statusCode?: number };
   if (!res.ok) {
     const msg =
@@ -481,6 +452,9 @@ export interface BranchForPincodeOption {
   logoUrl: string | null;
   /** ISO timestamp for cache-busting when building image URI. */
   updatedAt: string | null;
+  /** Branch theme (admin-configured). Omitted on older API responses. */
+  primaryColor?: string | null;
+  secondaryColor?: string | null;
 }
 
 export interface BranchesForPincodeResponse {
@@ -525,97 +499,6 @@ export async function getSlotAvailability(
   return data;
 }
 
-// --- Subscription plans (customer JWT) ---
-export interface AvailablePlanItem {
-  id: string;
-  name: string;
-  description: string | null;
-  redemptionMode: string;
-  variant: string;
-  validityDays: number;
-  maxPickups: number;
-  kgLimit: number | null;
-  itemsLimit: number | null;
-  pricePaise: number;
-  isRedeemable: boolean;
-  reason?: 'ALREADY_REDEEMED';
-  /** Empty = plan for all branches. Non-empty = plan only for these branch IDs. */
-  branchIds?: string[];
-}
-
-export async function getAvailablePlans(token: string): Promise<AvailablePlanItem[]> {
-  const base = apiBase();
-  if (!base) throw new Error('API URL not configured');
-  const res = await fetchWithTimeout(`${base}/subscriptions/plans/available`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) throw new Error('Failed to load subscription plans');
-  return res.json() as Promise<AvailablePlanItem[]>;
-}
-
-export interface PurchaseSubscriptionResult {
-  subscriptionId: string;
-  planName: string;
-  validityStartDate: string;
-  validTill: string;
-  remainingPickups: number;
-}
-
-export async function purchaseSubscription(
-  token: string,
-  planId: string,
-  addressId: string
-): Promise<PurchaseSubscriptionResult> {
-  const base = apiBase();
-  if (!base) throw new Error('API URL not configured');
-  const res = await fetchWithTimeout(`${base}/subscriptions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify({ planId, addressId }),
-  });
-  if (!res.ok) {
-    const err = (await res.json()) as { message?: string; code?: string };
-    throw new Error(err.message ?? 'Purchase failed');
-  }
-  return res.json() as Promise<PurchaseSubscriptionResult>;
-}
-
-/** Subscription detail for Plans → tap on a plan (active or completed). */
-export interface SubscriptionDetailResponse {
-  id: string;
-  planId: string;
-  planName: string | null;
-  planDescription: string | null;
-  active: boolean;
-  validityStartDate: string;
-  validTill: string;
-  remainingPickups: number;
-  remainingKg: number | null;
-  remainingItems: number | null;
-  maxPickups: number;
-  kgLimit: number | null;
-  itemsLimit: number | null;
-  usedKg: number;
-  usedItemsCount: number;
-  addressId: string | null;
-  /** PAID = admin confirmed payment; DUE = not yet confirmed. */
-  paymentStatus: 'PAID' | 'DUE';
-  invoice: { id: string; code: string; pdfUrl: string | null; issuedAt: string | null } | null;
-}
-
-export async function getSubscriptionDetail(token: string, subscriptionId: string): Promise<SubscriptionDetailResponse | null> {
-  const base = apiBase();
-  if (!base) return null;
-  const res = await fetchWithTimeout(`${base}/subscriptions/${subscriptionId}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) return null;
-  return res.json() as Promise<SubscriptionDetailResponse>;
-}
-
 // --- Orders (customer JWT) ---
 export interface OrderSummary {
   id: string;
@@ -623,7 +506,6 @@ export interface OrderSummary {
   serviceType: string;
   orderType?: string;
   orderSource?: string | null;
-  subscriptionId?: string | null;
   pickupDate: string;
   timeWindow: string;
   createdAt: string;
@@ -637,10 +519,7 @@ export interface OrderSummary {
   addressLabel?: string | null;
   /** Full address line at order time (shown even after address is edited/deleted). */
   addressLine?: string | null;
-  /** Subscription utilisation from invoice (ACK or final): weight in kg. */
-  subscriptionUsageKg?: number | null;
-  /** Subscription utilisation from invoice: items count. */
-  subscriptionUsageItems?: number | null;
+  branchId?: string | null;
 }
 
 export interface OrderDetail extends OrderSummary {
@@ -662,6 +541,8 @@ export interface OrderDetail extends OrderSummary {
   cancelledAt: string | null;
   /** CAPTURED = paid. */
   paymentStatus?: string;
+  /** Returned on GET /orders/:id for customers when the API embeds invoice list (same shape as listOrderInvoices). */
+  invoices?: OrderInvoice[];
 }
 
 /** Invoice line item (amounts in paise). icon from catalog (preset key or URL path). */
@@ -722,30 +603,22 @@ export async function createOrder(
     timeWindow: string;
     selectedServices?: string[];
     estimatedWeightKg?: number;
-    /** For subscription booking: use existing subscription. */
-    orderType?: 'INDIVIDUAL' | 'SUBSCRIPTION';
-    subscriptionId?: string | null;
-    /** Individual: branch that serves the address pincode (when multiple branches serve the area). */
+    /** Branch that serves the address pincode (when multiple branches serve the area). */
     branchId?: string | null;
   }
 ): Promise<{ orderId: string }> {
   const base = apiBase();
   if (!base) throw new Error('API URL not configured');
-  const orderType = body.orderType ?? (body.subscriptionId ? 'SUBSCRIPTION' : 'INDIVIDUAL');
   const payload: Record<string, unknown> = {
-    orderType,
+    orderType: 'INDIVIDUAL',
     addressId: body.addressId,
     pickupDate: body.pickupDate,
     timeWindow: body.timeWindow,
     estimatedWeightKg: body.estimatedWeightKg ?? undefined,
+    selectedServices: body.selectedServices ?? ['WASH_FOLD'],
   };
-  if (orderType === 'SUBSCRIPTION' && body.subscriptionId) {
-    payload.subscriptionId = body.subscriptionId;
-  } else {
-    payload.selectedServices = body.selectedServices ?? ['WASH_FOLD'];
-    if (body.branchId?.trim()) {
-      payload.branchId = body.branchId.trim();
-    }
+  if (body.branchId?.trim()) {
+    payload.branchId = body.branchId.trim();
   }
   const res = await fetchWithTimeout(`${base}/orders`, {
     method: 'POST',
@@ -764,10 +637,11 @@ export async function createOrder(
   return res.json() as Promise<{ orderId: string }>;
 }
 
-export async function listOrders(token: string): Promise<OrderSummary[]> {
+export async function listOrders(token: string, branchId?: string | null): Promise<OrderSummary[]> {
   const base = apiBase();
   if (!base) throw new Error('API URL not configured');
-  const res = await fetchWithTimeout(`${base}/orders`, {
+  const q = branchId?.trim() ? `?branchId=${encodeURIComponent(branchId.trim())}` : '';
+  const res = await fetchWithTimeout(`${base}/orders${q}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) throw new Error('Failed to load orders');
@@ -777,10 +651,21 @@ export async function listOrders(token: string): Promise<OrderSummary[]> {
 export async function getOrder(token: string, orderId: string): Promise<OrderDetail> {
   const base = apiBase();
   if (!base) throw new Error('API URL not configured');
-  const res = await fetchWithTimeout(`${base}/orders/${orderId}`, {
+  const id = encodeURIComponent(orderId.trim());
+  const res = await fetchWithTimeout(`${base}/orders/${id}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
-  if (!res.ok) throw new Error('Failed to load order');
+  if (!res.ok) {
+    const text = await res.text();
+    let msg = 'Failed to load order';
+    try {
+      const payload = JSON.parse(text) as unknown;
+      msg = extractApiErrorMessage(payload) ?? msg;
+    } catch {
+      /* ignore */
+    }
+    throw new Error(msg);
+  }
   return res.json() as Promise<OrderDetail>;
 }
 
@@ -790,17 +675,29 @@ export async function listOrderInvoices(
 ): Promise<OrderInvoice[]> {
   const base = apiBase();
   if (!base) throw new Error('API URL not configured');
-  const res = await fetchWithTimeout(`${base}/orders/${orderId}/invoices`, {
+  const id = encodeURIComponent(orderId.trim());
+  const res = await fetchWithTimeout(`${base}/orders/${id}/invoices`, {
     headers: { Authorization: `Bearer ${token}` },
   });
-  if (!res.ok) throw new Error('Failed to load invoices');
+  if (!res.ok) {
+    const text = await res.text();
+    let msg = `Failed to load invoices (${res.status})`;
+    try {
+      const payload = JSON.parse(text) as unknown;
+      msg = extractApiErrorMessage(payload) ?? msg;
+    } catch {
+      /* ignore */
+    }
+    throw new Error(msg);
+  }
   return res.json() as Promise<OrderInvoice[]>;
 }
 
-export async function listPriceList(token: string): Promise<CustomerPriceListItem[]> {
+export async function listPriceList(token: string, branchId?: string | null): Promise<CustomerPriceListItem[]> {
   const base = apiBase();
   if (!base) throw new Error('API URL not set. Set EXPO_PUBLIC_API_URL in .env and restart Expo.');
-  const res = await fetchWithTimeout(`${base}/items/price-list`, {
+  const q = branchId?.trim() ? `?branchId=${encodeURIComponent(branchId.trim())}` : '';
+  const res = await fetchWithTimeout(`${base}/items/price-list${q}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) {

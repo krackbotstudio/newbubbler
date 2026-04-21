@@ -1,6 +1,4 @@
 import type { OrdersRepo } from './orders-repo.port';
-import type { SubscriptionsRepo } from './subscriptions-repo.port';
-import type { SubscriptionUsageRepo } from './subscription-usage-repo.port';
 import type { InvoicesRepo } from './invoices-repo.port';
 import type { PaymentsRepo } from './payments-repo.port';
 
@@ -10,8 +8,6 @@ import type { PaymentsRepo } from './payments-repo.port';
  */
 export interface TransactionRepos {
   ordersRepo: OrdersRepo;
-  subscriptionsRepo: SubscriptionsRepo;
-  subscriptionUsageRepo: SubscriptionUsageRepo;
   invoicesRepo: InvoicesRepo;
   paymentsRepo: PaymentsRepo;
 }

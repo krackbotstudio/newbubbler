@@ -31,6 +31,17 @@ export class MeController {
     return this.meService.getMe(user, host, slugHint);
   }
 
+  @Get('available-branches')
+  listAvailableBranches(
+    @CurrentUser() user: AuthUser | undefined,
+    @Req() req: { headers?: { host?: string; 'x-forwarded-host'?: string; 'x-portal-slug'?: string } },
+  ) {
+    if (!user) throw new UnauthorizedException();
+    const host = req.headers?.['x-forwarded-host'] ?? req.headers?.host;
+    const slugHint = req.headers?.['x-portal-slug'];
+    return this.meService.listAvailableBranches(user, host, slugHint);
+  }
+
   @Patch()
   updateMe(@CurrentUser() user: AuthUser | undefined, @Body() dto: UpdateMeDto) {
     if (!user) throw new UnauthorizedException();

@@ -54,8 +54,8 @@ export function BranchFormModal({ branch, open, onOpenChange, mode }: BranchForm
   const [panNumber, setPanNumber] = useState('');
   const [invoicePrefix, setInvoicePrefix] = useState('');
   const [itemTagBrandName, setItemTagBrandName] = useState('');
-  const [primaryColor, setPrimaryColor] = useState('#D94680');
-  const [secondaryColor, setSecondaryColor] = useState('#FCE7F3');
+  const [primaryColor, setPrimaryColor] = useState('#1e40af');
+  const [secondaryColor, setSecondaryColor] = useState('#dbeafe');
   const [upiId, setUpiId] = useState('');
   const [upiPayeeName, setUpiPayeeName] = useState('');
   const [upiLink, setUpiLink] = useState('');
@@ -89,8 +89,8 @@ export function BranchFormModal({ branch, open, onOpenChange, mode }: BranchForm
       setPanNumber(branch.panNumber ?? '');
       setInvoicePrefix(branch.invoicePrefix ?? '');
       setItemTagBrandName(branch.itemTagBrandName ?? '');
-      setPrimaryColor(branch.primaryColor ?? '#D94680');
-      setSecondaryColor(branch.secondaryColor ?? '#FCE7F3');
+      setPrimaryColor(branch.primaryColor ?? '#1e40af');
+      setSecondaryColor(branch.secondaryColor ?? '#dbeafe');
       setUpiId(branch.upiId ?? '');
       setUpiPayeeName(branch.upiPayeeName ?? '');
       setUpiLink(branch.upiLink ?? '');
@@ -105,8 +105,8 @@ export function BranchFormModal({ branch, open, onOpenChange, mode }: BranchForm
       setPanNumber('');
       setInvoicePrefix('');
       setItemTagBrandName('');
-      setPrimaryColor('#D94680');
-      setSecondaryColor('#FCE7F3');
+      setPrimaryColor('#1e40af');
+      setSecondaryColor('#dbeafe');
       setUpiId('');
       setUpiPayeeName('');
       setUpiLink('');
@@ -323,7 +323,7 @@ export function BranchFormModal({ branch, open, onOpenChange, mode }: BranchForm
                   <Input
                     value={primaryColor}
                     onChange={(e) => setPrimaryColor(e.target.value)}
-                    placeholder="#D94680"
+                    placeholder="#1e40af"
                     maxLength={7}
                   />
                 </div>
@@ -340,7 +340,7 @@ export function BranchFormModal({ branch, open, onOpenChange, mode }: BranchForm
                   <Input
                     value={secondaryColor}
                     onChange={(e) => setSecondaryColor(e.target.value)}
-                    placeholder="#FCE7F3"
+                    placeholder="#dbeafe"
                     maxLength={7}
                   />
                 </div>

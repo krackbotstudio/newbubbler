@@ -25,7 +25,7 @@ function parseOptionalDate(value?: string): Date | undefined {
 
 @Controller('admin/feedback')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.ADMIN, Role.PARTIAL_ADMIN, Role.OPS, AGENT_ROLE)
+@Roles(Role.ADMIN, Role.OPS, AGENT_ROLE)
 export class AdminFeedbackController {
   constructor(private readonly feedbackService: FeedbackService) {}
 

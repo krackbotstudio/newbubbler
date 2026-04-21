@@ -29,7 +29,6 @@ export default function ServiceAreasPage() {
   const user = getStoredUser();
   const role = user?.role ?? 'CUSTOMER';
   const isBranchHead = isBranchScopedStaff(role) && !!user?.branchId;
-  const isPartialAdmin = role === 'PARTIAL_ADMIN';
   /** Branch heads (OPS) manage pincodes for their branch only; admins manage all. */
   const canManageServiceAreas = role === 'ADMIN' || (role === 'OPS' && !!user?.branchId);
 
@@ -53,9 +52,9 @@ export default function ServiceAreasPage() {
   const branchNameById = Object.fromEntries(branchOptions.map((b) => [b.id, b.name ?? b.id]));
 
   useEffect(() => {
-    if (isBranchHead || !isPartialAdmin || branchFilter) return;
+    if (isBranchHead || branchFilter) return;
     if (branchOptions.length > 0) setBranchFilter(branchOptions[0].id);
-  }, [isBranchHead, isPartialAdmin, branchFilter, branchOptions]);
+  }, [isBranchHead, branchFilter, branchOptions]);
 
   if (error) {
     return (
@@ -81,7 +80,7 @@ export default function ServiceAreasPage() {
             disabled={!!isBranchHead}
             title={isBranchHead ? 'Your assigned branch (filter locked)' : undefined}
           >
-            {!isPartialAdmin && <option value="">All branches</option>}
+            <option value="">All branches</option>
             {branchOptions.map((b) => (
               <option key={b.id} value={b.id}>{b.name}</option>
             ))}

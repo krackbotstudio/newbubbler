@@ -8,9 +8,6 @@ import { listInvoicesForOrder } from '../../application/invoices/list-invoices-f
 import { sendExpoPush } from '../../infra/expo-push';
 import type {
   OrdersRepo,
-  SubscriptionsRepo,
-  SubscriptionUsageRepo,
-  UnitOfWork,
   OrderRecord,
   AddressesRepo,
   ServiceAreaRepo,
@@ -27,9 +24,6 @@ import type {
 } from '../../application/ports';
 import {
   ORDERS_REPO,
-  SUBSCRIPTIONS_REPO,
-  SUBSCRIPTION_USAGE_REPO,
-  UNIT_OF_WORK,
   ADDRESSES_REPO,
   SERVICE_AREA_REPO,
   SLOT_CONFIG_REPO,
@@ -50,9 +44,6 @@ import { AppError } from '../../application/errors';
 export class OrdersService {
   constructor(
     @Inject(ORDERS_REPO) private readonly ordersRepo: OrdersRepo,
-    @Inject(SUBSCRIPTIONS_REPO) private readonly subscriptionsRepo: SubscriptionsRepo,
-    @Inject(SUBSCRIPTION_USAGE_REPO) private readonly subscriptionUsageRepo: SubscriptionUsageRepo,
-    @Inject(UNIT_OF_WORK) private readonly unitOfWork: UnitOfWork,
     @Inject(ADDRESSES_REPO) private readonly addressesRepo: AddressesRepo,
     @Inject(SERVICE_AREA_REPO) private readonly serviceAreaRepo: ServiceAreaRepo,
     @Inject(SLOT_CONFIG_REPO) private readonly slotConfigRepo: SlotConfigRepo,
@@ -92,7 +83,11 @@ export class OrdersService {
     return { portalId: portal.id, branchId: portal.branchId };
   }
 
-  async listInvoicesForOrder(orderId: string, user: AuthUser) {
+  /**
+   * Same access rules as {@link getOrderForUser} (portal branch scope for customers), then loads invoices.
+   */
+  async listInvoicesForOrder(orderId: string, user: AuthUser, rawHost?: string, slugHint?: string) {
+    await this.getOrderForUser(user, orderId, rawHost, slugHint);
     return listInvoicesForOrder(orderId, user.id, {
       ordersRepo: this.ordersRepo,
       invoicesRepo: this.invoicesRepo,
@@ -103,7 +98,7 @@ export class OrdersService {
   }
 
   async createForCustomer(user: AuthUser, dto: {
-    orderType?: 'INDIVIDUAL' | 'SUBSCRIPTION';
+    orderType?: 'INDIVIDUAL';
     serviceType?: OrderRecord['serviceType'];
     services?: OrderRecord['serviceType'][];
     selectedServices?: OrderRecord['serviceType'][];
@@ -111,13 +106,10 @@ export class OrdersService {
     pickupDate: string;
     timeWindow: string;
     estimatedWeightKg?: number;
-    subscriptionId?: string;
     branchId?: string;
   }, rawHost?: string, slugHint?: string): Promise<{ orderId: string; orderType?: string }> {
     const portalScope = await this.resolvePortalScopeForCustomer(user.id, rawHost, slugHint);
-    const orderType =
-      dto.orderType === 'SUBSCRIPTION' ? OrderType.SUBSCRIPTION
-        : OrderType.INDIVIDUAL;
+    const orderType = OrderType.INDIVIDUAL;
     const serviceTypes =
       dto.selectedServices?.length ? dto.selectedServices
         : dto.services?.length ? dto.services
@@ -152,14 +144,10 @@ export class OrdersService {
         pickupDate,
         timeWindow: dto.timeWindow,
         estimatedWeightKg: dto.estimatedWeightKg ?? null,
-        subscriptionId: dto.subscriptionId ?? null,
         branchId: effectiveBranchId,
       },
       {
         ordersRepo: this.ordersRepo,
-        subscriptionsRepo: this.subscriptionsRepo,
-        subscriptionUsageRepo: this.subscriptionUsageRepo,
-        unitOfWork: this.unitOfWork,
         serviceAreaRepo: this.serviceAreaRepo,
         slotConfigRepo: this.slotConfigRepo,
         holidaysRepo: this.holidaysRepo,
@@ -180,11 +168,18 @@ export class OrdersService {
     user: AuthUser,
     rawHost?: string,
     slugHint?: string,
+    branchFilterId?: string | null,
   ): Promise<Array<OrderRecord & { amountToPayPaise: number | null }>> {
     const portalScope = await this.resolvePortalScopeForCustomer(user.id, rawHost, slugHint);
     const list = await this.ordersRepo.listByUserForCustomer(user.id);
-    if (!portalScope) return list;
-    return list.filter((o) => o.branchId != null && o.branchId === portalScope.branchId);
+    let out = list;
+    if (portalScope) {
+      out = out.filter((o) => o.branchId != null && o.branchId === portalScope.branchId);
+    } else if (branchFilterId?.trim()) {
+      const bid = branchFilterId.trim();
+      out = out.filter((o) => o.branchId === bid);
+    }
+    return out;
   }
 
   async getOrderForUser(user: AuthUser, id: string, rawHost?: string, slugHint?: string): Promise<OrderRecord> {

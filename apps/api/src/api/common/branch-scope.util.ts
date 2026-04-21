@@ -14,11 +14,6 @@ export function resolveScopedBranchId(
   const cleanedQuery = queryBranchId?.trim() || undefined;
   if (!user) return cleanedQuery;
   if (isBranchScopedStaffRole(user.role) && user.branchId) return user.branchId;
-  if (user.role === Role.PARTIAL_ADMIN) {
-    const allowed = user.branchIds ?? [];
-    if (cleanedQuery && allowed.includes(cleanedQuery)) return cleanedQuery;
-    return allowed[0];
-  }
   return cleanedQuery;
 }
 

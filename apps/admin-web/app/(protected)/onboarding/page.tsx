@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, type CSSProperties } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { z } from 'zod';
 import { getStoredUser, setStoredUser, type AuthUser } from '@/lib/auth';
@@ -307,16 +307,7 @@ export default function OnboardingPage() {
   const preview = branch ? branchLogoUrl(branch.logoUrl, branch.updatedAt) : null;
 
   return (
-    <div
-      className="mx-auto max-w-2xl space-y-8"
-      style={
-        {
-          '--primary': '221 83% 43%',
-          '--ring': '221 83% 43%',
-          '--secondary': '213 100% 97%',
-        } as CSSProperties
-      }
-    >
+    <div className="mx-auto max-w-2xl space-y-8">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Finish branch setup</h1>
         <p className="mt-1 text-sm text-muted-foreground">

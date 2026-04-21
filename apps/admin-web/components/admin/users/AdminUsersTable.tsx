@@ -28,6 +28,29 @@ import { Copy } from 'lucide-react';
 import { AdminUserDialog } from './AdminUserDialog';
 import { useBranches } from '@/hooks/useBranches';
 
+const TEMP_PW_SESSION_KEY = 'bubbler-admin-staff-temp-passwords';
+
+function readTempPasswordCache(): Record<string, string> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = sessionStorage.getItem(TEMP_PW_SESSION_KEY);
+    if (!raw) return {};
+    const o = JSON.parse(raw) as unknown;
+    if (!o || typeof o !== 'object') return {};
+    return o as Record<string, string>;
+  } catch {
+    return {};
+  }
+}
+
+function writeTempPasswordCache(map: Record<string, string>) {
+  try {
+    sessionStorage.setItem(TEMP_PW_SESSION_KEY, JSON.stringify(map));
+  } catch {
+    /* quota / private mode */
+  }
+}
+
 interface FiltersState {
   role: Role | 'ALL';
   activeOnly: boolean;
@@ -68,10 +91,30 @@ export function AdminUsersTable() {
   const [dialogUser, setDialogUser] = useState<AdminUser | null>(null);
   const [dialogMode, setDialogMode] = useState<'create' | 'edit'>('create');
   const [dialogOpen, setDialogOpen] = useState(false);
-  /** Last password shown per user (from reset or create) – session only, not persisted */
+  /** Plaintext temp passwords from create/reset only (same tab session via sessionStorage). */
   const [lastShownPasswords, setLastShownPasswords] = useState<Record<string, string>>({});
-  const [visiblePasswordUserIds, setVisiblePasswordUserIds] = useState<Record<string, true>>({});
   const [resettingUserId, setResettingUserId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setLastShownPasswords(readTempPasswordCache());
+  }, []);
+
+  function rememberTempPassword(userId: string, password: string) {
+    setLastShownPasswords((prev) => {
+      const next = { ...prev, [userId]: password };
+      writeTempPasswordCache(next);
+      return next;
+    });
+  }
+
+  function forgetTempPassword(userId: string) {
+    setLastShownPasswords((prev) => {
+      const next = { ...prev };
+      delete next[userId];
+      writeTempPasswordCache(next);
+      return next;
+    });
+  }
 
   const { query, cursor, setCursor } = useAdminUsers(filters);
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
@@ -81,8 +124,7 @@ export function AdminUsersTable() {
     setResettingUserId(user.id);
     try {
       const { tempPassword } = await resetAdminUserPassword(user.id);
-      setLastShownPasswords((prev) => ({ ...prev, [user.id]: tempPassword }));
-      setVisiblePasswordUserIds((prev) => ({ ...prev, [user.id]: true }));
+      rememberTempPassword(user.id, tempPassword);
       toast.success('Password reset. Copy from the table and share with the user.');
     } catch (e) {
       toast.error(getFriendlyErrorMessage(e));
@@ -100,33 +142,18 @@ export function AdminUsersTable() {
     setCurrentUser(getStoredUser());
   }, []);
   const isAdmin = currentUser?.role === 'ADMIN';
-  const isPartialAdmin = currentUser?.role === 'PARTIAL_ADMIN';
   const branchOptions = restrictBranchesForUser(branches, currentUser);
-  const roleFilterOptions: Array<{ value: FiltersState['role']; label: string }> = isPartialAdmin
-    ? [
-        { value: 'ALL', label: 'All roles' },
-        { value: 'OPS', label: 'Branch Head' },
-        { value: 'AGENT', label: 'Agent' },
-      ]
-    : [
-        { value: 'ALL', label: 'All roles' },
-        { value: 'ADMIN', label: 'Admin' },
-        { value: 'PARTIAL_ADMIN', label: 'Partial Admin' },
-        { value: 'OPS', label: 'Branch Head' },
-        { value: 'AGENT', label: 'Agent' },
-      ];
+  const roleFilterOptions: Array<{ value: FiltersState['role']; label: string }> = [
+    { value: 'ALL', label: 'All roles' },
+    { value: 'ADMIN', label: 'Admin' },
+    { value: 'OPS', label: 'Branch Head' },
+    { value: 'AGENT', label: 'Agent' },
+    { value: 'PARTIAL_ADMIN', label: 'Partial admin (legacy)' },
+  ];
   useEffect(() => {
-    if (isPartialAdmin && filters.role !== 'ALL' && filters.role !== 'OPS' && filters.role !== 'AGENT') {
-      setFilters((prev) => ({ ...prev, role: 'ALL' }));
-    }
-  }, [isPartialAdmin, filters.role]);
-  useEffect(() => {
-    if (!(isAdmin || isPartialAdmin)) return;
+    if (!isAdmin) return;
     if (filters.branchId) return;
-    if (branchOptions.length > 0 && isPartialAdmin) {
-      setFilters((prev) => ({ ...prev, branchId: branchOptions[0].id }));
-    }
-  }, [isAdmin, isPartialAdmin, filters.branchId, branchOptions]);
+  }, [isAdmin, filters.branchId, branchOptions]);
   const data = query.data;
   const getPasswordState = (userId: string) => {
     const pwd = lastShownPasswords[userId];
@@ -159,7 +186,7 @@ export function AdminUsersTable() {
             </SelectContent>
           </Select>
         </div>
-        {(isAdmin || isPartialAdmin) && (
+        {isAdmin && (
           <div className="flex flex-col gap-1">
             <label className="text-xs font-medium uppercase text-muted-foreground">Branch</label>
             <Select
@@ -172,7 +199,7 @@ export function AdminUsersTable() {
                 <SelectValue placeholder="All branches" />
               </SelectTrigger>
               <SelectContent>
-                {!isPartialAdmin && <SelectItem value="__ALL__">All branches</SelectItem>}
+                <SelectItem value="__ALL__">All branches</SelectItem>
                 {branchOptions.map((b) => (
                   <SelectItem key={b.id} value={b.id}>
                     {b.name ?? b.id}
@@ -209,7 +236,7 @@ export function AdminUsersTable() {
           />
         </div>
         <div className="flex-1" />
-        {(isAdmin || isPartialAdmin) && (
+        {isAdmin && (
           <Button
             onClick={() => {
               setDialogMode('create');
@@ -273,7 +300,6 @@ export function AdminUsersTable() {
               (() => {
                 const isProtected = (user.email ?? '').trim().toLowerCase() === PROTECTED_ADMIN_EMAIL;
                 const pwdState = getPasswordState(user.id);
-                const isPasswordVisible = !!visiblePasswordUserIds[user.id];
                 return (
               <tr key={user.id} className="border-t">
                 <td className="px-3 py-2 align-middle">
@@ -289,7 +315,7 @@ export function AdminUsersTable() {
                       : user.role === 'AGENT'
                         ? 'Agent'
                         : user.role === 'PARTIAL_ADMIN'
-                          ? 'Partial Admin'
+                          ? 'Partial admin (legacy)'
                           : user.role}
                   </span>
                 </td>
@@ -310,49 +336,30 @@ export function AdminUsersTable() {
                 <td className="px-3 py-2 align-middle">
                   {isProtected ? (
                     <span className="text-xs text-muted-foreground">Protected</span>
-                  ) : pwdState.hasValue && isPasswordVisible ? (
+                  ) : pwdState.hasValue ? (
                     <div className="flex flex-wrap items-center gap-1.5">
-                      <code className="rounded bg-muted px-1.5 py-0.5 text-xs font-mono">
+                      <code className="break-all rounded bg-muted px-1.5 py-0.5 text-xs font-mono">
                         {pwdState.value}
                       </code>
                       <Button
-                        variant="ghost"
+                        variant="outline"
                         size="sm"
-                        className="h-7 w-7 p-0"
+                        className="h-7 shrink-0 gap-1 px-2 text-xs"
                         onClick={() => handleCopyPassword(pwdState.value)}
                         title="Copy password"
                       >
                         <Copy className="h-3.5 w-3.5" />
+                        Copy
                       </Button>
                     </div>
                   ) : (
-                    <span className="text-xs text-muted-foreground">Hidden</span>
+                    <span className="text-xs text-muted-foreground">
+                      Use <span className="font-medium text-foreground">Reset password</span> to generate one
+                    </span>
                   )}
                 </td>
                 <td className="px-3 py-2 align-middle text-right">
                   <div className="flex justify-end gap-1.5">
-                    {!isProtected && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-7 text-xs"
-                        onClick={() => {
-                          const current = lastShownPasswords[user.id];
-                          if (current) {
-                            setVisiblePasswordUserIds((prev) => {
-                              const next = { ...prev };
-                              if (next[user.id]) delete next[user.id];
-                              else next[user.id] = true;
-                              return next;
-                            });
-                            return;
-                          }
-                          toast.info('No visible password yet. Use Reset password to generate one.');
-                        }}
-                      >
-                        {isPasswordVisible ? 'Hide password' : 'Show password'}
-                      </Button>
-                    )}
                     {!isProtected && (
                       <Button
                         variant="outline"
@@ -386,6 +393,7 @@ export function AdminUsersTable() {
                           if (!window.confirm(`Delete user ${user.email ?? user.name ?? user.id}? This cannot be undone.`)) return;
                           try {
                             await deleteAdminUser(user.id);
+                            forgetTempPassword(user.id);
                             toast.success('User deleted');
                             query.refetch();
                           } catch (e) {
@@ -436,8 +444,7 @@ export function AdminUsersTable() {
         currentUserId={currentUser?.id ?? null}
         open={dialogOpen}
         onPasswordShown={(userId, password) => {
-          setLastShownPasswords((prev) => ({ ...prev, [userId]: password }));
-          setVisiblePasswordUserIds((prev) => ({ ...prev, [userId]: true }));
+          rememberTempPassword(userId, password);
         }}
         onOpenChange={(open) => {
           setDialogOpen(open);

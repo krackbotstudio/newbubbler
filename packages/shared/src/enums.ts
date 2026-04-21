@@ -36,11 +36,12 @@ export enum OrderType {
 export enum Role {
   CUSTOMER = 'CUSTOMER',
   ADMIN = 'ADMIN',
-  PARTIAL_ADMIN = 'PARTIAL_ADMIN',
   OPS = 'OPS',
   /** Branch-scoped staff: dashboard, orders, walk-in, customers, feedback only (admin-web). */
   AGENT = 'AGENT',
   BILLING = 'BILLING',
+  /** @deprecated Prefer ADMIN/OPS/BILLING; kept for JWT/query validation and DB rows not yet migrated. */
+  PARTIAL_ADMIN = 'PARTIAL_ADMIN',
 }
 
 export enum PaymentProvider {

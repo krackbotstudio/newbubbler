@@ -18,14 +18,12 @@ export interface RevenueResult {
    * Pie chart categories for orders within the same date range.
    * Categories are partitioned to avoid overlaps for percentage math:
    * - Cancelled: status === CANCELLED
-   * - Subscription: non-cancelled AND orderType in SUBSCRIPTION/BOTH
-   * - Online: non-cancelled AND non-subscription AND orderSource === ONLINE
-   * - Walkin: non-cancelled AND non-subscription AND orderSource !== ONLINE (incl null)
+   * - Online: non-cancelled AND orderSource === ONLINE
+   * - Walkin: non-cancelled AND orderSource !== ONLINE (incl null)
    */
   orderCategories: {
     online: number;
     walkin: number;
-    subscription: number;
     cancelled: number;
   };
   breakdown: RevenueBreakdownItem[];

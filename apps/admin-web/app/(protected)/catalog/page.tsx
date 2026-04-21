@@ -22,7 +22,6 @@ export default function CatalogPage() {
   const user = getStoredUser();
   const role = user?.role ?? 'CUSTOMER';
   const isBranchHead = isBranchScopedStaff(role) && !!user?.branchId;
-  const isPartialAdmin = role === 'PARTIAL_ADMIN';
 
   const [addOpen, setAddOpen] = useState(false);
   const [manageOpen, setManageOpen] = useState(false);
@@ -61,10 +60,7 @@ export default function CatalogPage() {
     if (selectedBranchIds.length > 1) {
       setSelectedBranchIds([selectedBranchIds[0]]);
     }
-    if (isPartialAdmin && selectedBranchIds.length === 0 && branchOptions.length > 0) {
-      setSelectedBranchIds([branchOptions[0].id]);
-    }
-  }, [isBranchHead, isPartialAdmin, user?.branchId, selectedBranchIds, branchOptions]);
+  }, [isBranchHead, user?.branchId, selectedBranchIds, branchOptions]);
 
   const allItems = data?.items ?? [];
   const branchFilteredItems = useMemo(() => {
@@ -172,7 +168,7 @@ export default function CatalogPage() {
                 onChange={(e) => setSelectedBranchIds(e.target.value ? [e.target.value] : [])}
                 title="Filter catalog by branch name"
               >
-                {!isPartialAdmin && <option value="">All branches</option>}
+                <option value="">All branches</option>
                 {branchOptions.map((b) => (
                   <option key={b.id} value={b.id}>
                     {b.name ?? b.id}

@@ -27,6 +27,8 @@ export interface InvoicePdfFooter {
 export interface InvoicePdfItemLine {
   name: string;
   quantity: number;
+  /** Piece count when set; omit/null to print same as quantity. */
+  clothesCount?: number | null;
   unitPrice: number;
   amount: number;
 }

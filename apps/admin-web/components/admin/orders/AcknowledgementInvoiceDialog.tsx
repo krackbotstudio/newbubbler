@@ -70,16 +70,6 @@ export function AcknowledgementInvoiceDialog({
     : null;
   const logoUrlCacheBuster = merged?.logoUrlCacheBuster ?? branding?.updatedAt ?? undefined;
 
-  const hasSubscription = Boolean(summary.subscription && summary.subscriptionUsage);
-  const subscriptionUnit =
-    summary.subscription?.kgLimit != null
-      ? 'KG'
-      : summary.subscription?.itemsLimit != null
-        ? 'Nos'
-        : undefined;
-  const subscriptionUsageRowIndex =
-    hasSubscription && (ackInvoice.items?.length ?? 0) > 0 ? 0 : undefined;
-
   const invoiceLabelForFile = ackInvoice.code?.trim() || orderId;
 
   const buildWhatsAppMessage = useCallback(() => {
@@ -141,8 +131,6 @@ export function AcknowledgementInvoiceDialog({
             branding={brandingForView}
             logoUrlCacheBuster={logoUrlCacheBuster}
             catalogMatrix={catalogMatrix ?? null}
-            subscriptionUnit={subscriptionUnit}
-            subscriptionUsageRowIndex={subscriptionUsageRowIndex}
           />
         </div>
 

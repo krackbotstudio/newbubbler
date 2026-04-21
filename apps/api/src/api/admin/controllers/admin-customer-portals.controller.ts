@@ -28,7 +28,7 @@ interface MulterUploadFile {
 
 @Controller('admin/customer-portals')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.ADMIN, Role.PARTIAL_ADMIN, Role.OPS)
+@Roles(Role.ADMIN, Role.OPS)
 export class AdminCustomerPortalsController {
   constructor(private readonly service: AdminCustomerPortalsService) {}
 

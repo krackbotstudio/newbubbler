@@ -10,13 +10,15 @@ import type {
 type PrismaLike = Pick<PrismaClient, 'user'>;
 
 function toRecord(row: any): AdminUserRecord {
+  const branchId = row.branchId ?? null;
   return {
     id: row.id,
     name: row.name,
     email: row.email!,
     role: row.role,
-    branchId: row.branchId ?? null,
-    branchIds: Array.isArray(row.branchIds) ? row.branchIds : [],
+    branchId,
+    /** `User.branchIds` column removed; expose assigned branch as a single-element list for admin UI. */
+    branchIds: branchId ? [branchId] : [],
     isActive: row.isActive,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -77,17 +79,17 @@ export class PrismaAdminUsersRepo implements AdminUsersRepo {
     isActive: boolean;
     passwordHash?: string | null;
   }): Promise<AdminUserRecord> {
+    const effectiveBranchId = input.branchId ?? input.branchIds?.[0] ?? null;
     try {
       const row = await this.prisma.user.create({
         data: {
           name: input.name,
           email: input.email,
           role: input.role as any,
-          branchId: input.branchId ?? undefined,
-          branchIds: input.branchIds ?? [],
+          branchId: effectiveBranchId ?? undefined,
           isActive: input.isActive,
           passwordHash: input.passwordHash ?? undefined,
-        } as any,
+        },
       });
       return toRecord(row as any);
     } catch (e: any) {
@@ -110,11 +112,14 @@ export class PrismaAdminUsersRepo implements AdminUsersRepo {
       isActive?: boolean;
     },
   ): Promise<AdminUserRecord> {
-    const data: any = {};
+    const data: Record<string, unknown> = {};
     if (input.name !== undefined) data.name = input.name;
     if (input.role !== undefined) data.role = input.role as any;
-    if (input.branchId !== undefined) data.branchId = input.branchId ?? null;
-    if (input.branchIds !== undefined) data.branchIds = { set: input.branchIds };
+    if (input.branchId !== undefined) {
+      data.branchId = input.branchId ?? null;
+    } else if (input.branchIds !== undefined) {
+      data.branchId = input.branchIds.length > 0 ? input.branchIds[0]! : null;
+    }
     if (input.isActive !== undefined) data.isActive = input.isActive;
 
     const row = await this.prisma.user.update({

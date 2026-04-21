@@ -17,7 +17,7 @@ const PRESETS: RevenuePreset[] = [
 
 @Controller('admin/analytics')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.ADMIN, Role.PARTIAL_ADMIN, Role.BILLING, Role.OPS, AGENT_ROLE)
+@Roles(Role.ADMIN, Role.BILLING, Role.OPS, AGENT_ROLE)
 export class AdminAnalyticsController {
   constructor(private readonly adminAnalyticsService: AdminAnalyticsService) {}
 

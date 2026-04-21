@@ -26,9 +26,6 @@ export interface InvoicePrintViewProps {
   /** For FINAL invoice: the ack invoice (Ref block). */
   ackInvoice?: OrderAdminSummary['invoices'][number] | null;
   catalogMatrix?: CatalogMatrixResponse | null;
-  /** Subscription usage row shows Qty as "X KG" or "X Nos" when set; row index when subscription applied. */
-  subscriptionUnit?: 'KG' | 'Nos';
-  subscriptionUsageRowIndex?: number;
   /** Appended as ?v= on logo URL (e.g. admin branding `updatedAt`) so the image is not stuck cached. */
   logoUrlCacheBuster?: string | null;
 }
@@ -42,8 +39,6 @@ export const InvoicePrintView = forwardRef<HTMLDivElement, InvoicePrintViewProps
       branding,
       ackInvoice,
       catalogMatrix,
-      subscriptionUnit,
-      subscriptionUsageRowIndex,
       logoUrlCacheBuster,
     },
     ref
@@ -159,11 +154,6 @@ export const InvoicePrintView = forwardRef<HTMLDivElement, InvoicePrintViewProps
             <p className="text-gray-700 tabular-nums">
               Phone: {customer.phone?.trim() || '—'}
             </p>
-            {order.orderType === 'SUBSCRIPTION' && (
-              <p className="text-gray-600">
-                Subscription booking{summary.subscription?.planName ? ` (${summary.subscription.planName})` : ''}
-              </p>
-            )}
             {order.orderSource !== 'WALK_IN' && (
               <p>{address.addressLine}, {address.pincode}</p>
             )}
@@ -191,24 +181,6 @@ export const InvoicePrintView = forwardRef<HTMLDivElement, InvoicePrintViewProps
             )}
           </div>
         </div>
-
-        {/* Subscription utilised (green box) */}
-        {summary.subscriptionUsage && summary.subscription && (
-          <div className="rounded-md border border-green-200 bg-green-50 p-2.5 text-sm">
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-              <span className="text-green-700 font-medium" aria-hidden>✓</span>
-              <span className="text-green-800 font-medium">{summary.subscription.planName}</span>
-              <span className="text-green-800">
-                {summary.subscription.remainingPickups}/{summary.subscription.maxPickups} pickups left
-                {summary.subscription.kgLimit != null &&
-                  ` · ${Number(summary.subscription.usedKg ?? 0)}/${summary.subscription.kgLimit} kg`}
-                {summary.subscription.itemsLimit != null &&
-                  ` · ${summary.subscription.usedItemsCount ?? 0}/${summary.subscription.itemsLimit} items`}
-                {' · Applied'}
-              </span>
-            </div>
-          </div>
-        )}
 
         {/* Line items table */}
         <div className="overflow-x-auto overflow-y-visible">
@@ -253,10 +225,7 @@ export const InvoicePrintView = forwardRef<HTMLDivElement, InvoicePrintViewProps
                 </tr>
               ) : (
                 items.map((row, i) => {
-                  const isSubUsageRow = subscriptionUsageRowIndex === i && subscriptionUnit;
-                  const qtyDisplay = isSubUsageRow
-                    ? `${row.quantity} ${subscriptionUnit}`
-                    : String(row.quantity);
+                  const qtyDisplay = String(row.quantity);
                   const catItem = catalogItemForRow(row.catalogItemId ?? undefined);
                   return (
                     <tr key={i} className="border-b border-gray-200">
@@ -335,18 +304,7 @@ export const InvoicePrintView = forwardRef<HTMLDivElement, InvoicePrintViewProps
               <> · Tax ({taxPercent}%): {formatMoney(invoice.tax)}</>
             )}
           </p>
-          <p className="text-2xl font-bold">
-            {(() => {
-              const subscriptionBased =
-                invoice.orderMode === 'SUBSCRIPTION_ONLY' ||
-                invoice.orderMode === 'BOTH' ||
-                order.orderType === 'SUBSCRIPTION' ||
-                order.orderType === 'BOTH';
-              return invoice.total <= 0 && subscriptionBased
-                ? 'Prepaid'
-                : `Total: ${formatMoney(invoice.total)}`;
-            })()}
-          </p>
+          <p className="text-2xl font-bold">Total: {formatMoney(invoice.total)}</p>
         </div>
 
         {/* Comments */}

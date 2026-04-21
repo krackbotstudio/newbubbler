@@ -12,33 +12,38 @@ datasource db {
 }
 
 model User {
-  id            String         @id @default(uuid())
-  phone         String?        @unique
-  email         String?        @unique
-  passwordHash  String?
-  role          Role
-  /** For Branch Head (OPS) and Agent (AGENT): assigned branch; required when role is OPS or AGENT. */
-  branchId      String?
-  /** For PARTIAL_ADMIN: one or more branch ids they can access/manage. */
-  branchIds     String[]       @default([])
-  /** Supabase Auth user id (`sub` claim) when the account was created via email OTP signup. */
-  supabaseAuthId String?       @unique
-  /** Set when branch onboarding (logo, pincodes, etc.) is finished; null means show onboarding wizard. */
+  id                    String                 @id @default(uuid())
+  phone                 String?                @unique
+  email                 String?                @unique
+  passwordHash          String?
+  role                  Role
+  /**
+   * For Branch Head (OPS) and Agent (AGENT): assigned branch; required when role is OPS or AGENT.
+   */
+  branchId              String?
+  /**
+   * Supabase Auth user id (`sub` claim) when the account was created via email OTP signup.
+   */
+  supabaseAuthId        String?                @unique
+  /**
+   * Set when branch onboarding (logo, pincodes, etc.) is finished; null means show onboarding wizard.
+   */
   onboardingCompletedAt DateTime?
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  name          String?
-  notes         String?
-  isActive      Boolean        @default(true)
-  /** Expo push token for mobile app (CUSTOMER). Used to send push when order/subscription/invoice events occur. */
-  expoPushToken String?
-  addresses     Address[]
-  feedback      Feedback[]
-  orders        Order[]
-  subscriptions Subscription[]
-  ownedPortals  CustomerPortal[]       @relation("CustomerPortalOwner")
-  portalMemberships CustomerPortalMember[]
-  branch        Branch?        @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  name                  String?
+  notes                 String?
+  isActive              Boolean                @default(true)
+  /**
+   * Expo push token for mobile app (CUSTOMER). Used to send push when order/subscription/invoice events occur.
+   */
+  expoPushToken         String?
+  addresses             Address[]
+  feedback              Feedback[]
+  orders                Order[]
+  ownedPortals          CustomerPortal[]       @relation("CustomerPortalOwner")
+  portalMemberships     CustomerPortalMember[]
+  branch                Branch?                @relation(fields: [branchId], references: [id], onDelete: SetNull)
 }
 
 model Address {
@@ -56,7 +61,6 @@ model Address {
   updatedAt    DateTime @updatedAt
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   orders       Order[]
-  subscriptions Subscription[]
 }
 
 model ServiceArea {
@@ -128,68 +132,76 @@ model DryCleanItem {
 }
 
 model Branch {
-  id             String   @id @default(uuid())
-  name           String
-  address        String
-  phone          String?
-  email          String?
-  gstNumber      String?
-  panNumber      String?
-  footerNote     String?
-  /** Optional segment for ACK / Final invoice codes (e.g. branch code); normalized when generating invoice numbers. */
-  invoicePrefix  String?
-  /** Short brand line on printed item tags for this branch’s orders (falls back to branch name / global branding). */
-  itemTagBrandName String?
-  /** Branch-specific terms shown on invoices for this branch (PDF / snapshot). */
-  termsAndConditions String? @db.Text
-  /** Branch-specific primary brand color (hex), used by branch staff UI and branch surfaces. */
-  primaryColor    String?
-  /** Branch-specific secondary light background color (hex), replacing default pink for branch UI. */
-  secondaryColor  String?
-  logoUrl        String?
-  upiId          String?
-  upiPayeeName   String?
-  upiLink        String?
-  upiQrUrl       String?
-  isDefault      Boolean  @default(false)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  itemBranches    LaundryItemBranch[]
-  orders          Order[]
-  planBranches    SubscriptionPlanBranch[]
-  subscriptions   Subscription[]
-  serviceAreas    ServiceArea[]
-  branchHeads     User[]
-  customerPortals CustomerPortal[]
-  serviceCategories ServiceCategory[]
-  segmentCategories SegmentCategory[]
+  id                 String              @id @default(uuid())
+  name               String
+  address            String
+  phone              String?
+  email              String?
+  gstNumber          String?
+  panNumber          String?
+  footerNote         String?
+  /**
+   * Optional segment for ACK / Final invoice codes (e.g. branch code); normalized when generating invoice numbers.
+   */
+  invoicePrefix      String?
+  /**
+   * Short brand line on printed item tags for this branch’s orders (falls back to branch name / global branding).
+   */
+  itemTagBrandName   String?
+  /**
+   * Branch-specific terms shown on invoices for this branch (PDF / snapshot).
+   */
+  termsAndConditions String?             @db.Text
+  /**
+   * Branch-specific primary brand color (hex), used by branch staff UI and branch surfaces.
+   */
+  primaryColor       String?
+  /**
+   * Branch-specific secondary light background color (hex), replacing default pink for branch UI.
+   */
+  secondaryColor     String?
+  logoUrl            String?
+  upiId              String?
+  upiPayeeName       String?
+  upiLink            String?
+  upiQrUrl           String?
+  isDefault          Boolean             @default(false)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  itemBranches       LaundryItemBranch[]
+  orders             Order[]
+  serviceAreas       ServiceArea[]
+  branchHeads        User[]
+  customerPortals    CustomerPortal[]
+  serviceCategories  ServiceCategory[]
+  segmentCategories  SegmentCategory[]
 }
 
 model CustomerPortal {
-  id          String   @id @default(uuid())
-  ownerUserId String?
-  branchId    String   @unique
-  slug        String   @unique
-  brandName   String
-  logoUrl     String?
-  appIconUrl  String?
-  termsAndConditions String? @db.Text
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  owner       User?    @relation("CustomerPortalOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
-  branch      Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
-  carouselImages CustomerPortalCarouselImage[]
-  members       CustomerPortalMember[]
+  id                 String                        @id @default(uuid())
+  ownerUserId        String?
+  branchId           String                        @unique
+  slug               String                        @unique
+  brandName          String
+  logoUrl            String?
+  appIconUrl         String?
+  termsAndConditions String?                       @db.Text
+  isActive           Boolean                       @default(true)
+  createdAt          DateTime                      @default(now())
+  updatedAt          DateTime                      @updatedAt
+  owner              User?                         @relation("CustomerPortalOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
+  branch             Branch                        @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  carouselImages     CustomerPortalCarouselImage[]
+  members            CustomerPortalMember[]
 }
 
 model CustomerPortalCarouselImage {
-  id        String   @id @default(uuid())
+  id        String         @id @default(uuid())
   portalId  String
   position  Int
   imageUrl  String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
   portal    CustomerPortal @relation(fields: [portalId], references: [id], onDelete: Cascade)
 
   @@unique([portalId, position])
@@ -197,12 +209,12 @@ model CustomerPortalCarouselImage {
 }
 
 model CustomerPortalMember {
-  id             String   @id @default(uuid())
+  id             String         @id @default(uuid())
   portalId       String
   customerUserId String
-  joinedAt       DateTime @default(now())
+  joinedAt       DateTime       @default(now())
   portal         CustomerPortal @relation(fields: [portalId], references: [id], onDelete: Cascade)
-  customer       User     @relation(fields: [customerUserId], references: [id], onDelete: Cascade)
+  customer       User           @relation(fields: [customerUserId], references: [id], onDelete: Cascade)
 
   @@unique([portalId, customerUserId])
   @@index([portalId])
@@ -210,26 +222,26 @@ model CustomerPortalMember {
 }
 
 model LaundryItem {
-  id              String                   @id @default(uuid())
-  name            String                   @unique
-  active          Boolean                  @default(true)
+  id            String                    @id @default(uuid())
+  name          String                    @unique
+  active        Boolean                   @default(true)
   /// Optional icon name for this catalog item (MaterialCommunityIcons key, e.g. "tshirt-crew")
-  icon            String?
-  createdAt       DateTime                 @default(now())
-  updatedAt       DateTime                 @updatedAt
-  prices          LaundryItemPrice[]
-  orderItems      OrderItem[]
-  segmentPrices   ItemSegmentServicePrice[]
-  itemBranches    LaundryItemBranch[]
+  icon          String?
+  createdAt     DateTime                  @default(now())
+  updatedAt     DateTime                  @updatedAt
+  prices        LaundryItemPrice[]
+  orderItems    OrderItem[]
+  segmentPrices ItemSegmentServicePrice[]
+  itemBranches  LaundryItemBranch[]
 }
 
 model LaundryItemBranch {
-  id        String       @id @default(uuid())
+  id        String      @id @default(uuid())
   itemId    String
   branchId  String
   createdAt DateTime    @default(now())
-  item      LaundryItem  @relation(fields: [itemId], references: [id], onDelete: Cascade)
-  branch    Branch       @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  item      LaundryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  branch    Branch      @relation(fields: [branchId], references: [id], onDelete: Cascade)
 
   @@unique([itemId, branchId])
   @@index([branchId])
@@ -237,45 +249,45 @@ model LaundryItemBranch {
 }
 
 model ServiceCategory {
-  id                    String                   @id @default(uuid())
-  branchId              String
-  code                  String
-  label                 String
-  isActive              Boolean                  @default(true)
-  createdAt             DateTime                 @default(now())
-  branch                Branch                   @relation(fields: [branchId], references: [id], onDelete: Restrict)
-  segmentServicePrices  ItemSegmentServicePrice[]
+  id                   String                    @id @default(uuid())
+  branchId             String
+  code                 String
+  label                String
+  isActive             Boolean                   @default(true)
+  createdAt            DateTime                  @default(now())
+  branch               Branch                    @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  segmentServicePrices ItemSegmentServicePrice[]
 
   @@unique([branchId, code])
   @@index([branchId])
 }
 
 model SegmentCategory {
-  id                    String                   @id @default(uuid())
-  branchId              String
-  code                  String
-  label                 String
-  isActive              Boolean                  @default(true)
-  createdAt             DateTime                 @default(now())
-  branch                Branch                   @relation(fields: [branchId], references: [id], onDelete: Restrict)
-  segmentServicePrices  ItemSegmentServicePrice[]
+  id                   String                    @id @default(uuid())
+  branchId             String
+  code                 String
+  label                String
+  isActive             Boolean                   @default(true)
+  createdAt            DateTime                  @default(now())
+  branch               Branch                    @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  segmentServicePrices ItemSegmentServicePrice[]
 
   @@unique([branchId, code])
   @@index([branchId])
 }
 
 model ItemSegmentServicePrice {
-  id                  String          @id @default(uuid())
-  itemId              String
-  segmentCategoryId   String
-  serviceCategoryId  String
-  priceRupees         Int
-  isActive            Boolean         @default(true)
-  createdAt           DateTime        @default(now())
-  updatedAt           DateTime        @updatedAt
-  item                LaundryItem     @relation(fields: [itemId], references: [id], onDelete: Cascade)
-  serviceCategory     ServiceCategory @relation(fields: [serviceCategoryId], references: [id], onDelete: Cascade)
-  segmentCategory     SegmentCategory @relation(fields: [segmentCategoryId], references: [id], onDelete: Cascade)
+  id                String          @id @default(uuid())
+  itemId            String
+  segmentCategoryId String
+  serviceCategoryId String
+  priceRupees       Int
+  isActive          Boolean         @default(true)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  item              LaundryItem     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  serviceCategory   ServiceCategory @relation(fields: [serviceCategoryId], references: [id], onDelete: Cascade)
+  segmentCategory   SegmentCategory @relation(fields: [segmentCategoryId], references: [id], onDelete: Cascade)
 
   @@unique([itemId, segmentCategoryId, serviceCategoryId])
   @@index([itemId])
@@ -297,135 +309,47 @@ model LaundryItemPrice {
   @@index([itemId])
 }
 
-model SubscriptionPlanBranch {
-  id        String          @id @default(uuid())
-  planId    String
-  branchId  String
-  createdAt DateTime        @default(now())
-  plan      SubscriptionPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
-  branch    Branch           @relation(fields: [branchId], references: [id], onDelete: Cascade)
-
-  @@unique([planId, branchId])
-  @@index([planId])
-  @@index([branchId])
-}
-
-model SubscriptionPlan {
-  id                     String                   @id @default(uuid())
-  name                   String
-  description            String?                  @db.Text
-  redemptionMode         RedemptionMode           @default(MULTI_USE)
-  validityDays           Int
-  kgLimit                Decimal?                 @db.Decimal(10, 2)
-  minKgPerPickup         Decimal?                 @db.Decimal(10, 2)
-  applicableServiceTypes String[]
-  active                 Boolean                  @default(true)
-  createdAt              DateTime                 @default(now())
-  updatedAt              DateTime                 @updatedAt
-  variant                SubscriptionVariant
-  maxPickups             Int
-  itemsLimit             Int?
-  pricePaise             Int
-  planBranches           SubscriptionPlanBranch[]
-  subscriptions          Subscription[]
-}
-
-model Subscription {
-  id                 String              @id @default(uuid())
+model Order {
+  id                 String        @id @default(uuid())
   userId             String
-  planId             String
-  branchId           String?
-  /** Address this subscription is tied to (pincode determines branch). Cannot be changed. */
-  addressId          String?
-  /** Snapshot of address at purchase so it still displays after address is edited/deleted. */
+  orderType          OrderType     @default(INDIVIDUAL)
+  /**
+   * When set to WALK_IN, order is from walk-in counter; branch and address are branch-based.
+   */
+  orderSource        String?
+  serviceType        ServiceType
+  serviceTypes       ServiceType[] @default([])
+  addressId          String
+  /**
+   * Snapshot of address at order so it still displays after address is edited/deleted.
+   */
   addressLabel       String?
   addressLine        String?
-  validityStartDate   DateTime            @default(now())
-  remainingPickups   Int
-  expiryDate         DateTime
-  active             Boolean             @default(true)
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
-  usedKg             Decimal             @default(0) @db.Decimal(10, 2)
-  usedItemsCount     Int                 @default(0)
-  /** Effective total pickups (plan * quantity at create/extend). Used for limit check; null = use plan.maxPickups. */
-  totalMaxPickups    Int?
-  /** Effective kg limit (plan.kgLimit * quantity). null = use plan.kgLimit. */
-  totalKgLimit       Decimal?            @db.Decimal(10, 2)
-  /** Effective items limit (plan.itemsLimit * quantity). null = use plan.itemsLimit. */
-  totalItemsLimit    Int?
-  orders             Order[]
-  plan               SubscriptionPlan    @relation(fields: [planId], references: [id])
-  branch             Branch?            @relation(fields: [branchId], references: [id], onDelete: SetNull)
-  address            Address?            @relation(fields: [addressId], references: [id], onDelete: SetNull)
-  user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
-  usages             SubscriptionUsage[]
-  payment            Payment?
-  invoices           Invoice[]
-
-  @@index([addressId])
-}
-
-model SubscriptionUsage {
-  id                 String       @id @default(uuid())
-  subscriptionId     String
-  orderId            String
-  invoiceId          String?      // ACK invoice id; when set, enforces one usage per invoice+subscription
-  deductedPickups    Int          @default(1)
-  createdAt          DateTime     @default(now())
-  deductedKg         Decimal      @default(0) @db.Decimal(10, 2)
-  deductedItemsCount Int          @default(0)
-  order              Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  subscription       Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
-  invoice            Invoice?     @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
-
-  @@unique([orderId, subscriptionId])
-  @@unique([invoiceId, subscriptionId])
-  @@index([subscriptionId])
-  @@index([orderId])
-  @@index([invoiceId])
-}
-
-model Order {
-  id                String             @id @default(uuid())
-  userId            String
-  orderType         OrderType          @default(INDIVIDUAL)
-  /** When set to WALK_IN, order is from walk-in counter; branch and address are branch-based. */
-  orderSource       String?
-  serviceType       ServiceType
-  serviceTypes      ServiceType[]      @default([])
-  addressId         String
-  /** Snapshot of address at order so it still displays after address is edited/deleted. */
-  addressLabel      String?
-  addressLine       String?
-  pincode           String
-  pickupDate        DateTime
-  timeWindow        String
-  estimatedWeightKg Decimal?           @db.Decimal(10, 2)
-  actualWeightKg    Decimal?           @db.Decimal(10, 2)
-  status            OrderStatus
+  pincode            String
+  pickupDate         DateTime
+  timeWindow         String
+  estimatedWeightKg  Decimal?      @db.Decimal(10, 2)
+  actualWeightKg     Decimal?      @db.Decimal(10, 2)
+  status             OrderStatus
   cancellationReason String?
-  cancelledAt       DateTime?
-  subscriptionId    String?
-  branchId          String?
-  paymentStatus     PaymentStatus      @default(PENDING)
-  createdAt         DateTime           @default(now())
-  updatedAt         DateTime           @updatedAt
-  confirmedAt       DateTime?
-  pickedUpAt        DateTime?
-  inProgressAt      DateTime?
-  readyAt           DateTime?
-  outForDeliveryAt  DateTime?
-  deliveredAt       DateTime?
-  feedback          Feedback?
-  invoices          Invoice[]
-  address           Address            @relation(fields: [addressId], references: [id])
-  branch            Branch?            @relation(fields: [branchId], references: [id], onDelete: SetNull)
-  subscription      Subscription?      @relation(fields: [subscriptionId], references: [id])
-  user              User               @relation(fields: [userId], references: [id])
-  orderItems        OrderItem[]
-  payment           Payment?
-  subscriptionUsages SubscriptionUsage[]
+  cancelledAt        DateTime?
+  branchId           String?
+  paymentStatus      PaymentStatus @default(PENDING)
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+  confirmedAt        DateTime?
+  pickedUpAt         DateTime?
+  inProgressAt       DateTime?
+  readyAt            DateTime?
+  outForDeliveryAt   DateTime?
+  deliveredAt        DateTime?
+  feedback           Feedback?
+  invoices           Invoice[]
+  address            Address       @relation(fields: [addressId], references: [id])
+  branch             Branch?       @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  user               User          @relation(fields: [userId], references: [id])
+  orderItems         OrderItem[]
+  payment            Payment?
 
   @@index([userId, createdAt])
   @@index([status, pickupDate])
@@ -437,7 +361,6 @@ model Order {
 model Payment {
   id                String          @id @default(uuid())
   orderId           String?         @unique
-  subscriptionId    String?         @unique
   provider          PaymentProvider
   status            PaymentStatus
   amount            Int
@@ -447,7 +370,6 @@ model Payment {
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
   order             Order?          @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  subscription      Subscription?   @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
 }
 
 model OrderItem {
@@ -468,90 +390,86 @@ model OrderItem {
 }
 
 model Invoice {
-  id                     String           @id @default(uuid())
-  orderId                String?
-  subscriptionId         String?
-  code                   String?          // e.g. ACK-20250213-0001-01
-  subtotal               Int
-  tax                    Int              @default(0)
-  total                  Int
-  pdfUrl                 String?
-  brandingSnapshotJson   Json?
-  createdAt              DateTime         @default(now())
-  updatedAt              DateTime         @updatedAt
-  type                   InvoiceType
-  issuedAt               DateTime?
-  discountPaise          Int?
-  status                 InvoiceStatus
-  orderMode              InvoiceOrderMode @default(INDIVIDUAL)
-  subscriptionUtilized  Boolean          @default(false)
-  subscriptionUsageKg    Decimal?         @db.Decimal(10, 2)
-  subscriptionUsageItems Int?
-  /** When set, multiple subscriptions used for this order; each gets 1 pickup + weight/items. Array of { subscriptionId }. */
-  subscriptionUsagesJson Json?
-  paymentStatus          String           @default("DUE")
-  paymentOverrideReason  String?
-  comments               String?
-  /** When set at draft, ACK shows subscription line; subscription is activated only after Final + payment. { planId, planName, validityStartDate, pricePaise, quantityMonths } */
-  newSubscriptionSnapshotJson   Json?
-  /** When set, new subscriptions from this ACK have been created (after payment). */
-  newSubscriptionFulfilledAt    DateTime?
-  /** For SUBSCRIPTION type: plan snapshot at purchase { validTill, maxPickups, kgLimit, itemsLimit } for invoice/PDF. */
-  subscriptionPurchaseSnapshotJson Json?
-  order                          Order?           @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  subscription           Subscription?   @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
-  items                  InvoiceItem[]
-  subscriptionUsages     SubscriptionUsage[]
+  id                    String           @id @default(uuid())
+  orderId               String?
+  code                  String? // e.g. ACK-20250213-0001-01
+  subtotal              Int
+  tax                   Int              @default(0)
+  total                 Int
+  pdfUrl                String?
+  brandingSnapshotJson  Json?
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+  type                  InvoiceType
+  issuedAt              DateTime?
+  discountPaise         Int?
+  status                InvoiceStatus
+  orderMode             InvoiceOrderMode @default(INDIVIDUAL)
+  paymentStatus         String           @default("DUE")
+  paymentOverrideReason String?
+  comments              String?
+  order                 Order?           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  items                 InvoiceItem[]
 
   @@unique([orderId, type])
-  // One SUBSCRIPTION invoice per subscription enforced by partial unique index (see migration invoice_subscription_type_partial_unique)
   @@index([orderId])
-  @@index([subscriptionId])
 }
 
 model InvoiceItem {
-  id                 String          @id @default(uuid())
-  invoiceId          String
-  type               InvoiceItemType
-  name               String
-  quantity           Decimal         @default(1) @db.Decimal(10, 2)
-  unitPrice          Int
-  amount             Int
-  catalogItemId      String?
-  segmentCategoryId  String?
-  serviceCategoryId  String?
-  createdAt          DateTime        @default(now())
-  invoice            Invoice         @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  id                String          @id @default(uuid())
+  invoiceId         String
+  type              InvoiceItemType
+  name              String
+  quantity          Decimal         @default(1) @db.Decimal(10, 2)
+  /**
+   * Optional piece count for dry-clean / per-garment lines. When null, treat as same as `quantity` for display.
+   */
+  clothesCount      Decimal?        @db.Decimal(10, 2)
+  unitPrice         Int
+  amount            Int
+  catalogItemId     String?
+  segmentCategoryId String?
+  serviceCategoryId String?
+  createdAt         DateTime        @default(now())
+  invoice           Invoice         @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
 
   @@index([invoiceId])
 }
 
 model BrandingSettings {
-  id                 String   @id
-  businessName       String
-  logoUrl            String?
-  address            String
-  phone              String
-  footerNote         String?
-  panNumber          String?
-  gstNumber          String?
-  email              String?
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
-  upiId              String?
-  upiPayeeName       String?
-  upiLink            String?
-  upiQrUrl           String?
-  termsAndConditions String?
-  /** Mobile app privacy policy (editable by super admin only in brand settings). */
-  privacyPolicy      String?
-  /** Mobile app welcome screen background image (shown at 50% opacity). */
+  id                   String   @id
+  businessName         String
+  logoUrl              String?
+  address              String
+  phone                String
+  footerNote           String?
+  panNumber            String?
+  gstNumber            String?
+  email                String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  upiId                String?
+  upiPayeeName         String?
+  upiLink              String?
+  upiQrUrl             String?
+  termsAndConditions   String?
+  /**
+   * Mobile app privacy policy (editable by super admin only in brand settings).
+   */
+  privacyPolicy        String?
+  /**
+   * Mobile app welcome screen background image (shown at 50% opacity).
+   */
   welcomeBackgroundUrl String?
-  /** App icon — used as mobile app icon and admin favicon. */
+  /**
+   * App icon — used as mobile app icon and admin favicon.
+   */
   appIconUrl           String?
 }
 
-/** Home page carousel: up to 3 images, position 1–3. */
+/**
+ * Home page carousel: up to 3 images, position 1–3.
+ */
 model CarouselImage {
   id        String   @id @default(uuid())
   position  Int      @unique
@@ -584,10 +502,11 @@ model Feedback {
 enum Role {
   CUSTOMER
   ADMIN
-  PARTIAL_ADMIN
   OPS
   BILLING
   AGENT
+  /// Legacy role kept so Prisma can read rows until DB migration normalizes them to ADMIN.
+  PARTIAL_ADMIN
 }
 
 enum ServiceType {
@@ -613,8 +532,6 @@ enum OrderStatus {
 
 enum OrderType {
   INDIVIDUAL
-  SUBSCRIPTION
-  BOTH
 }
 
 enum PricingMode {
@@ -637,31 +554,17 @@ enum PaymentStatus {
 
 enum InvoiceOrderMode {
   INDIVIDUAL
-  SUBSCRIPTION_ONLY
-  BOTH
 }
 
 enum InvoiceType {
   ACKNOWLEDGEMENT
   FINAL
-  SUBSCRIPTION
 }
 
 enum InvoiceStatus {
   DRAFT
   ISSUED
   VOID
-}
-
-enum SubscriptionVariant {
-  SINGLE
-  COUPLE
-  FAMILY
-}
-
-enum RedemptionMode {
-  MULTI_USE
-  SINGLE_USE
 }
 
 enum FeedbackType {

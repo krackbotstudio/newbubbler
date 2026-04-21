@@ -7,11 +7,8 @@ async function createAckDraft(orderId: string, body: InvoiceDraftBody): Promise<
   return data;
 }
 
-async function issueAck(
-  orderId: string,
-  body?: { applySubscription?: boolean; weightKg?: number; itemsCount?: number },
-): Promise<InvoiceIssueResponse> {
-  const { data } = await api.post<InvoiceIssueResponse>(`/admin/orders/${orderId}/ack-invoice/issue`, body ?? {});
+async function issueAck(orderId: string): Promise<InvoiceIssueResponse> {
+  const { data } = await api.post<InvoiceIssueResponse>(`/admin/orders/${orderId}/ack-invoice/issue`, {});
   return data;
 }
 
@@ -48,8 +45,7 @@ export function useCreateAckDraft(orderId: string) {
 export function useIssueAck(orderId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (opts?: { applySubscription?: boolean; weightKg?: number; itemsCount?: number }) =>
-      issueAck(orderId, opts),
+    mutationFn: () => issueAck(orderId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['admin', 'orders', orderId] });
     },

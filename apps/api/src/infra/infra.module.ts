@@ -3,8 +3,6 @@ import { prisma } from './prisma/prisma-client';
 import { PrismaUnitOfWork } from './prisma/unit-of-work';
 import {
   PrismaOrdersRepo,
-  PrismaSubscriptionsRepo,
-  PrismaSubscriptionUsageRepo,
   PrismaInvoicesRepo,
   PrismaPaymentsRepo,
   PrismaAddressesRepo,
@@ -21,7 +19,6 @@ import {
   PrismaServiceCategoryRepo,
   PrismaSegmentCategoryRepo,
   PrismaItemSegmentServicePriceRepo,
-  PrismaSubscriptionPlansRepo,
   PrismaCustomersRepo,
   PrismaAnalyticsRepo,
   PrismaFeedbackRepo,
@@ -30,8 +27,6 @@ import {
 } from './prisma/repos';
 import type {
   OrdersRepo,
-  SubscriptionsRepo,
-  SubscriptionUsageRepo,
   InvoicesRepo,
   PaymentsRepo,
   UnitOfWork,
@@ -49,7 +44,6 @@ import type {
   ServiceCategoryRepo,
   SegmentCategoryRepo,
   ItemSegmentServicePriceRepo,
-  SubscriptionPlansRepo,
   CustomersRepo,
   AnalyticsRepo,
   FeedbackRepo,
@@ -63,8 +57,6 @@ import { SupabaseStorageAdapter } from './storage/supabase-storage.adapter';
 import { SimplePdfGenerator } from './pdf/simple-pdf.generator';
 
 export const ORDERS_REPO = Symbol('OrdersRepo');
-export const SUBSCRIPTIONS_REPO = Symbol('SubscriptionsRepo');
-export const SUBSCRIPTION_USAGE_REPO = Symbol('SubscriptionUsageRepo');
 export const INVOICES_REPO = Symbol('InvoicesRepo');
 export const PAYMENTS_REPO = Symbol('PaymentsRepo');
 export const UNIT_OF_WORK = Symbol('UnitOfWork');
@@ -82,7 +74,6 @@ export const LAUNDRY_ITEM_PRICES_REPO = Symbol('LaundryItemPricesRepo');
 export const SERVICE_CATEGORY_REPO = Symbol('ServiceCategoryRepo');
 export const SEGMENT_CATEGORY_REPO = Symbol('SegmentCategoryRepo');
 export const ITEM_SEGMENT_SERVICE_PRICE_REPO = Symbol('ItemSegmentServicePriceRepo');
-export const SUBSCRIPTION_PLANS_REPO = Symbol('SubscriptionPlansRepo');
 export const CUSTOMERS_REPO = Symbol('CustomersRepo');
 export const ANALYTICS_REPO = Symbol('AnalyticsRepo');
 export const FEEDBACK_REPO = Symbol('FeedbackRepo');
@@ -97,14 +88,6 @@ export const PDF_GENERATOR = Symbol('PdfGenerator');
     {
       provide: ORDERS_REPO,
       useFactory: (): OrdersRepo => new PrismaOrdersRepo(prisma),
-    },
-    {
-      provide: SUBSCRIPTIONS_REPO,
-      useFactory: (): SubscriptionsRepo => new PrismaSubscriptionsRepo(prisma),
-    },
-    {
-      provide: SUBSCRIPTION_USAGE_REPO,
-      useFactory: (): SubscriptionUsageRepo => new PrismaSubscriptionUsageRepo(prisma),
     },
     {
       provide: INVOICES_REPO,
@@ -175,10 +158,6 @@ export const PDF_GENERATOR = Symbol('PdfGenerator');
       useFactory: (): ItemSegmentServicePriceRepo => new PrismaItemSegmentServicePriceRepo(prisma),
     },
     {
-      provide: SUBSCRIPTION_PLANS_REPO,
-      useFactory: (): SubscriptionPlansRepo => new PrismaSubscriptionPlansRepo(prisma),
-    },
-    {
       provide: CUSTOMERS_REPO,
       useFactory: (): CustomersRepo => new PrismaCustomersRepo(prisma),
     },
@@ -217,8 +196,6 @@ export const PDF_GENERATOR = Symbol('PdfGenerator');
   ],
   exports: [
     ORDERS_REPO,
-    SUBSCRIPTIONS_REPO,
-    SUBSCRIPTION_USAGE_REPO,
     INVOICES_REPO,
     PAYMENTS_REPO,
     UNIT_OF_WORK,
@@ -236,7 +213,6 @@ export const PDF_GENERATOR = Symbol('PdfGenerator');
     SERVICE_CATEGORY_REPO,
     SEGMENT_CATEGORY_REPO,
     ITEM_SEGMENT_SERVICE_PRICE_REPO,
-    SUBSCRIPTION_PLANS_REPO,
     CUSTOMERS_REPO,
     ANALYTICS_REPO,
     FEEDBACK_REPO,

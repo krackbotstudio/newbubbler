@@ -1,6 +1,6 @@
 import {
+  Prisma,
   type PrismaClient,
-  type Prisma,
   InvoiceStatus as PrismaInvoiceStatus,
   InvoiceType as PrismaInvoiceType,
 } from '@prisma/client';
@@ -9,7 +9,6 @@ import type {
   AdminFinalInvoiceRow,
   AdminFinalInvoicesResult,
   AdminSubscriptionInvoiceFilters,
-  AdminSubscriptionInvoiceRow,
   AdminSubscriptionInvoicesResult,
   CreateDraftInput,
   CreateSubscriptionInvoiceInput,
@@ -19,14 +18,13 @@ import type {
   UpdateInvoiceContentInput,
 } from '../../../application/ports';
 import type { InvoiceType } from '@shared/enums';
-import { indiaDayUtcRange } from '../../../application/time/india-date';
 
 type PrismaLike = Pick<PrismaClient, 'invoice'>;
 
 function toInvoiceRecord(row: {
   id: string;
   orderId: string | null;
-  subscriptionId: string | null;
+  subscriptionId?: string | null;
   code: string | null;
   type: string;
   status: string;
@@ -55,6 +53,7 @@ function toInvoiceRecord(row: {
     type: string;
     name: string;
     quantity: unknown;
+    clothesCount?: unknown;
     unitPrice: number;
     amount: number;
     catalogItemId?: string | null;
@@ -94,6 +93,11 @@ function toInvoiceRecord(row: {
       type: i.type,
       name: i.name,
       quantity: Number(i.quantity),
+      clothesCount: (() => {
+        if (i.clothesCount == null || i.clothesCount === '') return null;
+        const n = Number(i.clothesCount as string | number);
+        return Number.isFinite(n) ? n : null;
+      })(),
       unitPrice: i.unitPrice,
       amount: i.amount,
       catalogItemId: i.catalogItemId ?? undefined,
@@ -131,12 +135,8 @@ export class PrismaInvoicesRepo implements InvoicesRepo {
     return invoice ? toInvoiceRecord(invoice) : null;
   }
 
-  async getBySubscriptionIdAndType(subscriptionId: string, type: InvoiceType): Promise<InvoiceRecord | null> {
-    const invoice = await (this.prisma as PrismaClient).invoice.findFirst({
-      where: { subscriptionId, type: type as PrismaInvoiceType },
-      include: { items: true },
-    });
-    return invoice ? toInvoiceRecord(invoice) : null;
+  async getBySubscriptionIdAndType(_subscriptionId: string, _type: InvoiceType): Promise<InvoiceRecord | null> {
+    return null;
   }
 
   async findByOrderId(orderId: string): Promise<InvoiceRecord[]> {
@@ -160,20 +160,15 @@ export class PrismaInvoicesRepo implements InvoicesRepo {
         total: input.total,
         discountPaise: input.discountPaise ?? undefined,
         brandingSnapshotJson: input.brandingSnapshotJson ?? undefined,
-        ...(input.orderMode !== undefined && { orderMode: input.orderMode as 'INDIVIDUAL' | 'SUBSCRIPTION_ONLY' | 'BOTH' }),
-        ...(input.subscriptionUtilized !== undefined && { subscriptionUtilized: input.subscriptionUtilized }),
-        ...(input.subscriptionId !== undefined && { subscriptionId: input.subscriptionId }),
-        ...(input.subscriptionUsageKg !== undefined && { subscriptionUsageKg: input.subscriptionUsageKg }),
-        ...(input.subscriptionUsageItems !== undefined && { subscriptionUsageItems: input.subscriptionUsageItems }),
-        ...(input.subscriptionUsagesJson !== undefined && { subscriptionUsagesJson: input.subscriptionUsagesJson as object }),
         ...(input.paymentStatus !== undefined && { paymentStatus: input.paymentStatus }),
         ...(input.comments !== undefined && { comments: input.comments }),
-        ...(input.newSubscriptionSnapshotJson !== undefined && { newSubscriptionSnapshotJson: input.newSubscriptionSnapshotJson as object }),
         items: {
           create: input.items.map((item) => ({
             type: item.type as import('@prisma/client').InvoiceItemType,
             name: item.name,
             quantity: item.quantity,
+            ...(item.clothesCount != null &&
+              Number.isFinite(item.clothesCount) && { clothesCount: item.clothesCount }),
             unitPrice: item.unitPrice,
             amount: item.amount,
             ...(item.catalogItemId != null && { catalogItemId: item.catalogItemId }),
@@ -181,45 +176,14 @@ export class PrismaInvoicesRepo implements InvoicesRepo {
             ...(item.serviceCategoryId != null && { serviceCategoryId: item.serviceCategoryId }),
           })),
         },
-      } as Parameters<PrismaLike['invoice']['create']>[0]['data'],
+      },
       include: { items: true },
     });
     return toInvoiceRecord(invoice);
   }
 
-  async createSubscriptionInvoice(input: CreateSubscriptionInvoiceInput): Promise<InvoiceRecord> {
-    const now = new Date();
-    const invoice = await (this.prisma as PrismaClient).invoice.create({
-      data: {
-        subscriptionId: input.subscriptionId,
-        type: PrismaInvoiceType.SUBSCRIPTION,
-        status: PrismaInvoiceStatus.ISSUED,
-        issuedAt: now,
-        subtotal: input.totalPaise,
-        tax: 0,
-        total: input.totalPaise,
-        discountPaise: 0,
-        paymentStatus: input.totalPaise > 0 ? 'DUE' : 'PAID',
-        code: input.code ?? null,
-        brandingSnapshotJson: (input.brandingSnapshotJson ?? undefined) as Prisma.InputJsonValue | undefined,
-        subscriptionPurchaseSnapshotJson: input.subscriptionPurchaseSnapshot
-          ? (input.subscriptionPurchaseSnapshot as unknown as Prisma.InputJsonValue)
-          : undefined,
-        items: {
-          create: [
-            {
-              type: 'SERVICE' as const,
-              name: input.planName,
-              quantity: 1,
-              unitPrice: input.totalPaise,
-              amount: input.totalPaise,
-            },
-          ],
-        },
-      },
-      include: { items: true },
-    });
-    return toInvoiceRecord(invoice);
+  async createSubscriptionInvoice(_input: CreateSubscriptionInvoiceInput): Promise<InvoiceRecord> {
+    throw new Error('Subscription invoices are no longer supported');
   }
 
   async updateDraft(invoiceId: string, input: UpdateDraftInput): Promise<InvoiceRecord> {
@@ -231,25 +195,20 @@ export class PrismaInvoicesRepo implements InvoicesRepo {
   }
 
   async updateInvoiceContent(invoiceId: string, input: UpdateInvoiceContentInput): Promise<InvoiceRecord> {
-    const data: Parameters<PrismaLike['invoice']['update']>[0]['data'] = {
+    const data: Prisma.InvoiceUpdateInput = {
       subtotal: input.subtotal,
       tax: input.tax,
       total: input.total,
       discountPaise: input.discountPaise ?? undefined,
       ...(input.comments !== undefined && { comments: input.comments }),
-      ...(input.orderMode !== undefined && { orderMode: input.orderMode as 'INDIVIDUAL' | 'SUBSCRIPTION_ONLY' | 'BOTH' }),
-      ...(input.subscriptionUtilized !== undefined && { subscriptionUtilized: input.subscriptionUtilized }),
-      ...(input.subscriptionId !== undefined && { subscriptionId: input.subscriptionId }),
-      ...(input.subscriptionUsageKg !== undefined && { subscriptionUsageKg: input.subscriptionUsageKg }),
-      ...(input.subscriptionUsageItems !== undefined && { subscriptionUsageItems: input.subscriptionUsageItems }),
-      ...(input.subscriptionUsagesJson !== undefined && { subscriptionUsagesJson: input.subscriptionUsagesJson as object }),
-      ...(input.newSubscriptionSnapshotJson !== undefined && { newSubscriptionSnapshotJson: input.newSubscriptionSnapshotJson as object }),
       items: {
         deleteMany: {},
         create: input.items.map((item) => ({
           type: item.type as import('@prisma/client').InvoiceItemType,
           name: item.name,
           quantity: item.quantity,
+          ...(item.clothesCount != null &&
+            Number.isFinite(item.clothesCount) && { clothesCount: item.clothesCount }),
           unitPrice: item.unitPrice,
           amount: item.amount,
           ...(item.catalogItemId != null && { catalogItemId: item.catalogItemId }),
@@ -307,102 +266,33 @@ export class PrismaInvoicesRepo implements InvoicesRepo {
       paymentOverrideReason?: string | null;
     },
   ): Promise<void> {
-    const update: Record<string, unknown> = {};
-    if (data.subscriptionUtilized !== undefined) update.subscriptionUtilized = data.subscriptionUtilized;
-    if (data.subscriptionId !== undefined) update.subscriptionId = data.subscriptionId;
-    if (data.subscriptionUsageKg !== undefined) update.subscriptionUsageKg = data.subscriptionUsageKg;
-    if (data.subscriptionUsageItems !== undefined) update.subscriptionUsageItems = data.subscriptionUsageItems;
+    const update: Prisma.InvoiceUpdateInput = {};
     if (data.paymentStatus !== undefined) update.paymentStatus = data.paymentStatus;
     if (data.paymentOverrideReason !== undefined) update.paymentOverrideReason = data.paymentOverrideReason;
     if (Object.keys(update).length === 0) return;
     await this.prisma.invoice.update({
       where: { id: invoiceId },
-      data: update as Record<string, never>,
+      data: update,
     });
   }
 
-  async setNewSubscriptionFulfilledAt(invoiceId: string, at: Date): Promise<void> {
-    await this.prisma.invoice.update({
-      where: { id: invoiceId },
-      data: { newSubscriptionFulfilledAt: at },
-    });
+  async setNewSubscriptionFulfilledAt(_invoiceId: string, _at: Date): Promise<void> {
+    return;
   }
 
-  async listSubscriptionInvoices(filters: AdminSubscriptionInvoiceFilters): Promise<AdminSubscriptionInvoicesResult> {
-    const prisma = this.prisma as PrismaClient;
-    const where: {
-      type: PrismaInvoiceType;
-      subscription?: { userId?: string; branchId?: string | null };
-      issuedAt?: { gte?: Date; lte?: Date };
-    } = {
-      type: PrismaInvoiceType.SUBSCRIPTION,
-    };
-    if (filters.customerId || filters.branchId != null) {
-      where.subscription = {};
-      if (filters.customerId) where.subscription.userId = filters.customerId;
-      if (filters.branchId != null) where.subscription.branchId = filters.branchId;
-    }
-    if (filters.dateFrom && filters.dateTo) {
-      where.issuedAt = { gte: filters.dateFrom, lte: filters.dateTo };
-    } else if (filters.dateFrom) {
-      where.issuedAt = { gte: filters.dateFrom };
-    } else if (filters.dateTo) {
-      where.issuedAt = { lte: filters.dateTo };
-    }
-    const take = filters.limit + 1;
-    const invoices = await prisma.invoice.findMany({
-      where,
-      orderBy: [{ issuedAt: 'desc' }, { id: 'desc' }],
-      take,
-      ...(filters.cursor ? { cursor: { id: filters.cursor }, skip: 1 } : {}),
-      include: {
-        items: true,
-        subscription: { include: { user: true } },
-      },
-    });
-    const hasMore = invoices.length > filters.limit;
-    const rows = (hasMore ? invoices.slice(0, filters.limit) : invoices) as Array<{
-      id: string;
-      subscriptionId: string | null;
-      code: string | null;
-      total: number;
-      issuedAt: Date | null;
-      paymentStatus: string | null;
-      items: Array<{ name: string }>;
-      subscription: { userId: string; user: { name: string | null; phone: string | null } } | null;
-    }>;
-    const data: AdminSubscriptionInvoiceRow[] = rows.map((inv) => ({
-      invoiceId: inv.id,
-      subscriptionId: inv.subscriptionId!,
-      code: inv.code,
-      total: inv.total,
-      issuedAt: inv.issuedAt,
-      paymentStatus: inv.paymentStatus ?? 'DUE',
-      customerId: inv.subscription!.userId,
-      customerName: inv.subscription!.user.name ?? null,
-      customerPhone: inv.subscription!.user.phone ?? null,
-      planName: inv.items[0]?.name ?? 'Subscription',
-    }));
-    return {
-      data,
-      nextCursor: hasMore && rows.length > 0 ? rows[rows.length - 1].id : null,
-    };
+  async listSubscriptionInvoices(_filters: AdminSubscriptionInvoiceFilters): Promise<AdminSubscriptionInvoicesResult> {
+    return { data: [], nextCursor: null };
   }
 
   async listFinalInvoices(filters: AdminFinalInvoiceFilters): Promise<AdminFinalInvoicesResult> {
     const prisma = this.prisma as PrismaClient;
     const take = filters.limit + 1;
-    const andParts: Record<string, unknown>[] = [
-      { type: { in: [PrismaInvoiceType.FINAL, PrismaInvoiceType.SUBSCRIPTION] } },
-    ];
+    const andParts: Prisma.InvoiceWhereInput[] = [{ type: PrismaInvoiceType.FINAL }];
+
     if (filters.customerId) {
-      andParts.push({
-        OR: [
-          { order: { userId: filters.customerId } },
-          { subscription: { userId: filters.customerId } },
-        ],
-      });
+      andParts.push({ order: { userId: filters.customerId } });
     }
+
     if (filters.branchId != null) {
       const serviceAreas = await prisma.serviceArea.findMany({
         where: { branchId: filters.branchId, active: true },
@@ -411,20 +301,15 @@ export class PrismaInvoicesRepo implements InvoicesRepo {
       const pincodesForBranch = serviceAreas.map((sa) => sa.pincode);
       if (pincodesForBranch.length > 0) {
         andParts.push({
-          OR: [
-            { orderId: { not: null }, order: { OR: [{ branchId: filters.branchId }, { branchId: null, pincode: { in: pincodesForBranch } }] } },
-            { subscriptionId: { not: null }, subscription: { branchId: filters.branchId } },
-          ],
+          order: {
+            OR: [{ branchId: filters.branchId }, { branchId: null, pincode: { in: pincodesForBranch } }],
+          },
         });
       } else {
-        andParts.push({
-          OR: [
-            { orderId: { not: null }, order: { branchId: filters.branchId } },
-            { subscriptionId: { not: null }, subscription: { branchId: filters.branchId } },
-          ],
-        });
+        andParts.push({ order: { branchId: filters.branchId } });
       }
     }
+
     if (filters.dateFrom && filters.dateTo) {
       andParts.push({ issuedAt: { gte: filters.dateFrom, lte: filters.dateTo } });
     } else if (filters.dateFrom) {
@@ -432,26 +317,27 @@ export class PrismaInvoicesRepo implements InvoicesRepo {
     } else if (filters.dateTo) {
       andParts.push({ issuedAt: { lte: filters.dateTo } });
     }
+
+    const where: Prisma.InvoiceWhereInput = andParts.length > 1 ? { AND: andParts } : andParts[0]!;
+
     const invoices = await prisma.invoice.findMany({
-      where: andParts.length > 1 ? { AND: andParts } : andParts[0],
+      where,
       orderBy: [{ issuedAt: 'desc' }, { id: 'desc' }],
       take,
       ...(filters.cursor ? { cursor: { id: filters.cursor }, skip: 1 } : {}),
       include: {
         items: true,
         order: { include: { user: true, payment: true, branch: true } },
-        subscription: { include: { user: true, branch: true } },
       },
     });
     const hasMore = invoices.length > filters.limit;
     const rows = hasMore ? invoices.slice(0, filters.limit) : invoices;
 
-    // Resolve branch name from ServiceArea (by pincode) for orders with no direct branch
     const pincodesToResolve = [
       ...new Set(
         rows
           .filter((inv) => inv.order && !inv.order.branch && inv.order.pincode)
-          .map((inv) => inv.order!.pincode)
+          .map((inv) => inv.order!.pincode),
       ),
     ];
     let pincodeToBranchName = new Map<string, string | null>();
@@ -473,20 +359,18 @@ export class PrismaInvoicesRepo implements InvoicesRepo {
     }
 
     const data: AdminFinalInvoiceRow[] = rows.map((inv) => {
-      const user = inv.order?.user ?? inv.subscription?.user;
+      const user = inv.order?.user;
       const invoicePaymentStatus = inv.paymentStatus ?? 'DUE';
       const orderPaid = inv.order?.payment?.status === 'CAPTURED' || inv.order?.paymentStatus === 'CAPTURED';
       const paymentStatus =
         invoicePaymentStatus === 'PAID' || orderPaid ? 'PAID' : invoicePaymentStatus;
       const orderBranchName =
         inv.order?.branch?.name ?? (inv.order?.pincode ? pincodeToBranchName.get(inv.order.pincode) ?? null : null);
-      const subscriptionBranchName = inv.subscription?.branch?.name ?? null;
-      const branchName = orderBranchName ?? subscriptionBranchName ?? null;
       return {
         invoiceId: inv.id,
         type: inv.type as 'FINAL' | 'SUBSCRIPTION',
         orderId: inv.orderId ?? null,
-        subscriptionId: inv.subscriptionId ?? null,
+        subscriptionId: null,
         code: inv.code ?? null,
         total: inv.total,
         issuedAt: inv.issuedAt,
@@ -494,8 +378,8 @@ export class PrismaInvoicesRepo implements InvoicesRepo {
         customerId: user?.id ?? '',
         customerName: user?.name ?? null,
         customerPhone: user?.phone ?? null,
-        planName: inv.type === 'SUBSCRIPTION' ? (inv.items[0]?.name ?? null) : null,
-        branchName,
+        planName: null,
+        branchName: orderBranchName,
         orderSource: inv.order?.orderSource ?? null,
       };
     });
@@ -505,14 +389,7 @@ export class PrismaInvoicesRepo implements InvoicesRepo {
     };
   }
 
-  async countSubscriptionInvoicesIssuedOnDate(dateKey: string): Promise<number> {
-    const { start, end } = indiaDayUtcRange(dateKey);
-    const prisma = this.prisma as PrismaClient;
-    return prisma.invoice.count({
-      where: {
-        type: PrismaInvoiceType.SUBSCRIPTION,
-        issuedAt: { gte: start, lt: end },
-      },
-    });
+  async countSubscriptionInvoicesIssuedOnDate(_dateKey: string): Promise<number> {
+    return 0;
   }
 }

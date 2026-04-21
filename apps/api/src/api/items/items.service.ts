@@ -1,10 +1,15 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { AppError } from '../../application/errors';
 import { listCatalogForService } from '../../application/catalog/list-catalog-for-service.use-case';
-import { listCatalogItemsWithMatrix } from '../../application/catalog/list-catalog-items-with-matrix.use-case';
+import {
+  listCatalogItemsWithMatrix,
+  type ListCatalogItemsWithMatrixOptions,
+} from '../../application/catalog/list-catalog-items-with-matrix.use-case';
 import type { ServiceType } from '@shared/enums';
 import type {
+  BranchRepo,
   CustomerPortalsRepo,
+  LaundryItemBranchRepo,
   LaundryItemsRepo,
   LaundryItemPricesRepo,
   ServiceCategoryRepo,
@@ -12,7 +17,9 @@ import type {
   ItemSegmentServicePriceRepo,
 } from '../../application/ports';
 import {
+  BRANCH_REPO,
   CUSTOMER_PORTALS_REPO,
+  LAUNDRY_ITEM_BRANCH_REPO,
   LAUNDRY_ITEMS_REPO,
   LAUNDRY_ITEM_PRICES_REPO,
   SERVICE_CATEGORY_REPO,
@@ -30,6 +37,8 @@ export class ItemsService {
     @Inject(SEGMENT_CATEGORY_REPO) private readonly segmentCategoryRepo: SegmentCategoryRepo,
     @Inject(ITEM_SEGMENT_SERVICE_PRICE_REPO) private readonly itemSegmentServicePriceRepo: ItemSegmentServicePriceRepo,
     @Inject(CUSTOMER_PORTALS_REPO) private readonly customerPortalsRepo: CustomerPortalsRepo,
+    @Inject(LAUNDRY_ITEM_BRANCH_REPO) private readonly laundryItemBranchRepo: LaundryItemBranchRepo,
+    @Inject(BRANCH_REPO) private readonly branchRepo: BranchRepo,
   ) {}
 
   async listForService(serviceType: ServiceType) {
@@ -50,14 +59,40 @@ export class ItemsService {
     return portal.branchId;
   }
 
-  async listPriceList(rawHost?: string, slugHint?: string) {
-    const branchId = await this.resolvePortalBranchId(rawHost, slugHint);
-    const result = await listCatalogItemsWithMatrix({
-      laundryItemsRepo: this.laundryItemsRepo,
-      serviceCategoryRepo: this.serviceCategoryRepo,
-      segmentCategoryRepo: this.segmentCategoryRepo,
-      itemSegmentServicePriceRepo: this.itemSegmentServicePriceRepo,
-    }, branchId ? { categoryBranchId: branchId } : undefined);
+  async listPriceList(rawHost?: string, slugHint?: string, branchIdFromQuery?: string | null) {
+    let branchId: string | null = null;
+    try {
+      branchId = await this.resolvePortalBranchId(rawHost, slugHint);
+    } catch {
+      branchId = null;
+    }
+    if (branchId == null && branchIdFromQuery?.trim()) {
+      branchId = branchIdFromQuery.trim();
+    }
+
+    let matrixOptions: ListCatalogItemsWithMatrixOptions | undefined;
+    if (branchId) {
+      const branches = await this.branchRepo.listAll();
+      const defaultBranchId = branches.find((b) => b.isDefault)?.id ?? branches[0]?.id;
+      const sharedTaxonomyBranchId =
+        defaultBranchId && defaultBranchId !== branchId ? defaultBranchId : undefined;
+      matrixOptions = {
+        categoryBranchId: branchId,
+        ...(sharedTaxonomyBranchId ? { sharedTaxonomyBranchId } : {}),
+      };
+    }
+
+    const result = await listCatalogItemsWithMatrix(
+      {
+        laundryItemsRepo: this.laundryItemsRepo,
+        serviceCategoryRepo: this.serviceCategoryRepo,
+        segmentCategoryRepo: this.segmentCategoryRepo,
+        itemSegmentServicePriceRepo: this.itemSegmentServicePriceRepo,
+      },
+      matrixOptions,
+    );
+
+    const branchLinkMap = branchId ? await this.laundryItemBranchRepo.getItemIdToBranchIdsMap() : null;
 
     const activeSegmentLabelById = new Map(
       result.segmentCategories
@@ -72,6 +107,13 @@ export class ItemsService {
 
     return result.items
       .filter((item) => item.active)
+      .filter((item) => {
+        if (!branchId || !branchLinkMap) return true;
+        const linked = branchLinkMap.get(item.id);
+        /** Same rule as admin catalog branch filter: org-wide (no junction rows) or explicitly linked to this branch. */
+        if (linked == null || linked.length === 0) return true;
+        return linked.includes(branchId);
+      })
       .map((item) => {
         const lineMap = new Map<string, { segment: string; service: string; priceRupees: number }>();
         for (const row of item.segmentPrices) {

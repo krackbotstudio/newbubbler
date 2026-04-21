@@ -33,7 +33,7 @@ export type OrderStatus =
   | 'DELIVERED'
   | 'CANCELLED';
 
-export type OrderType = 'INDIVIDUAL' | 'SUBSCRIPTION' | 'BOTH';
+export type OrderType = 'INDIVIDUAL';
 
 export interface OrderRecord {
   id: string;
@@ -50,7 +50,6 @@ export interface OrderRecord {
   estimatedWeightKg: number | null;
   actualWeightKg: number | null;
   status: OrderStatus;
-  subscriptionId: string | null;
   paymentStatus: string;
   createdAt: string;
   updatedAt: string;
@@ -78,7 +77,7 @@ export interface AdminOrderListRow extends OrderRecord {
   billTaxPaise: number | null;
   /** Discount for the shown bill (paise). */
   billDiscountPaise: number | null;
-  /** Invoice type: Individual, Subscription, Zero, Both. */
+  /** Invoice type label for display (e.g. Individual). */
   billTypeLabel?: string;
   /** When ACK invoice was issued (if any). */
   ackIssuedAt?: string | null;
@@ -139,6 +138,8 @@ export interface OrderAdminSummary {
     invoicePrefix?: string | null;
     itemTagBrandName?: string | null;
     logoUrl?: string | null;
+    primaryColor?: string | null;
+    secondaryColor?: string | null;
     updatedAt?: string;
   } | null;
   orderItems: Array<{
@@ -151,35 +152,6 @@ export interface OrderAdminSummary {
     unitPricePaise: number | null;
     amountPaise: number | null;
   }>;
-  subscription: {
-    id: string;
-    planName: string;
-    remainingPickups: number;
-    maxPickups: number;
-    usedKg: number;
-    usedItemsCount: number;
-    kgLimit: number | null;
-    itemsLimit: number | null;
-    expiryDate: string;
-    active: boolean;
-  } | null;
-  /** All active subscriptions for the customer; for multi-select on ACK. */
-  activeSubscriptions: Array<{
-    id: string;
-    planName: string;
-    remainingPickups: number;
-    maxPickups: number;
-    usedKg: number;
-    usedItemsCount: number;
-    kgLimit: number | null;
-    itemsLimit: number | null;
-    expiryDate: string;
-  }>;
-  subscriptionUsage: {
-    deductedPickups: number;
-    deductedKg: number;
-    deductedItemsCount: number;
-  } | null;
   invoices: Array<{
     id: string;
     type: string;
@@ -193,14 +165,14 @@ export interface OrderAdminSummary {
     comments: string | null;
     issuedAt: string | null;
     pdfUrl: string | null;
-    /** ACK new subscription snapshot(s); single object or array. Used to show selected subscription summary. */
-    newSubscriptionSnapshotJson?: unknown;
     /** Branding stored with this invoice (logo, address, PAN, GST) so any user sees same company branding. */
     brandingSnapshotJson?: InvoiceBrandingSnapshot | null;
     items?: Array<{
       type: string;
       name: string;
       quantity: number;
+      /** Optional piece count; null/omitted means same as quantity for display/PDF. */
+      clothesCount?: number | null;
       unitPrice: number;
       amount: number;
       catalogItemId?: string | null;

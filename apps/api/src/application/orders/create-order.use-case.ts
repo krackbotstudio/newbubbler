@@ -2,9 +2,6 @@ import { ServiceType, OrderType } from '@shared/enums';
 import { AppError } from '../errors';
 import type {
   OrdersRepo,
-  SubscriptionsRepo,
-  SubscriptionUsageRepo,
-  UnitOfWork,
   ServiceAreaRepo,
   SlotConfigRepo,
   SlotIdentifier,
@@ -37,10 +34,6 @@ export interface CreateOrderParams {
 
 export interface CreateOrderDeps {
   ordersRepo: OrdersRepo;
-  subscriptionsRepo: SubscriptionsRepo;
-  subscriptionUsageRepo: SubscriptionUsageRepo;
-  /** When provided and subscriptionId is set, create + usage + decrement run in a single transaction. */
-  unitOfWork?: UnitOfWork;
   serviceAreaRepo: ServiceAreaRepo;
   slotConfigRepo: SlotConfigRepo;
   holidaysRepo: HolidaysRepo;
@@ -54,7 +47,6 @@ export async function createOrder(
 ): Promise<{ orderId: string }> {
   const {
     ordersRepo,
-    subscriptionsRepo,
     serviceAreaRepo,
     slotConfigRepo,
     holidaysRepo,
@@ -62,8 +54,7 @@ export async function createOrder(
     addressesRepo,
   } = deps;
 
-  const orderType = params.orderType ?? OrderType.INDIVIDUAL;
-  let subscriptionForAddress: { id: string; addressId: string | null; branchId: string | null } | null = null;
+  const orderType = OrderType.INDIVIDUAL;
 
   // Server-side: slot must not be in the past
   const slotStart = getSlotStartInIndia(params.pickupDate, params.timeWindow);
@@ -81,53 +72,19 @@ export async function createOrder(
   let serviceTypes: ServiceType[];
   let primaryServiceType: ServiceType;
 
-  if (orderType === OrderType.SUBSCRIPTION) {
-    // Subscription order: must use existing subscription (purchased first in customer console)
-    if (!params.subscriptionId) {
-      throw new AppError('SUBSCRIPTION_REQUIRED', 'Subscription is required. Purchase a subscription first to book a subscription order.');
-    }
-    const sub = await subscriptionsRepo.getById(params.subscriptionId);
-    if (!sub) {
-      throw new AppError('SUBSCRIPTION_EXPIRED', 'Subscription not found. Purchase a subscription first to book a subscription order.');
-    }
-    if (sub.userId !== params.userId) {
-      throw new AppError('SUBSCRIPTION_NOT_OWNED', 'Subscription does not belong to this customer');
-    }
-    if (!sub.active) {
-      throw new AppError('SUBSCRIPTION_EXPIRED', 'Subscription is not active');
-    }
-    if (sub.expiryDate < new Date()) {
-      throw new AppError('SUBSCRIPTION_EXPIRED', 'Subscription has expired');
-    }
-    if (sub.remainingPickups < 1) {
-      throw new AppError('NO_REMAINING_PICKUPS', 'No pickups remaining on subscription');
-    }
-    const activeOrder = await ordersRepo.findActiveBySubscriptionId(params.subscriptionId);
-    if (activeOrder) {
-      throw new AppError(
-        'SUBSCRIPTION_HAS_ACTIVE_ORDER',
-        'You already have an active order with this subscription. Please wait until it is delivered to book again.',
-        { subscriptionId: params.subscriptionId, activeOrderId: activeOrder.id },
-      );
-    }
-    primaryServiceType = ServiceType.WASH_FOLD;
-    serviceTypes = [ServiceType.WASH_FOLD];
-    subscriptionForAddress = { id: params.subscriptionId!, addressId: sub.addressId, branchId: sub.branchId };
-  } else {
-    if (params.subscriptionId) {
-      throw new AppError('INDIVIDUAL_NO_SUBSCRIPTION', 'Subscription ID must not be set for individual booking');
-    }
-    serviceTypes =
-      params.services && params.services.length > 0
-        ? params.services
-        : Array.isArray(params.services) && params.services.length === 0
-          ? []
-          : [params.serviceType];
-    if (!serviceTypes.length) {
-      throw new AppError('SERVICES_REQUIRED', 'At least one service is required for individual booking');
-    }
-    primaryServiceType = serviceTypes[0]!;
+  if (params.subscriptionId) {
+    throw new AppError('INDIVIDUAL_NO_SUBSCRIPTION', 'Subscription ID is not supported');
   }
+  serviceTypes =
+    params.services && params.services.length > 0
+      ? params.services
+      : Array.isArray(params.services) && params.services.length === 0
+        ? []
+        : [params.serviceType];
+  if (!serviceTypes.length) {
+    throw new AppError('SERVICES_REQUIRED', 'At least one service is required for booking');
+  }
+  primaryServiceType = serviceTypes[0]!;
 
   // Resolve address and branch: for subscription orders with locked address, use subscription's address and branch
   let effectiveAddressId = params.addressId;
@@ -136,20 +93,9 @@ export async function createOrder(
   /** Snapshot of address at order time (label + addressLine) so it doesn't change if user edits/deletes address. */
   let addressSnapshot: { label: string | null; addressLine: string } | null = null;
 
-  if (subscriptionForAddress?.addressId && subscriptionForAddress?.branchId) {
-    const subAddress = await addressesRepo.getByIdForUser(subscriptionForAddress.addressId, params.userId);
-    if (!subAddress) {
-      throw new AppError('SUBSCRIPTION_ADDRESS_INVALID', 'This subscription is tied to an address that no longer exists.');
-    }
-    effectiveAddressId = subscriptionForAddress.addressId;
-    effectivePincode = subAddress.pincode;
-    branchId = subscriptionForAddress.branchId;
-    addressSnapshot = { label: subAddress.label?.trim() ?? null, addressLine: subAddress.addressLine?.trim() ?? '' };
-  } else {
-    const address = await addressesRepo.getByIdForUser(effectiveAddressId, params.userId);
-    if (address) {
-      addressSnapshot = { label: address.label?.trim() ?? null, addressLine: address.addressLine?.trim() ?? '' };
-    }
+  const address = await addressesRepo.getByIdForUser(effectiveAddressId, params.userId);
+  if (address) {
+    addressSnapshot = { label: address.label?.trim() ?? null, addressLine: address.addressLine?.trim() ?? '' };
   }
 
   if (branchId === null) {
@@ -226,7 +172,7 @@ export async function createOrder(
 
   const createInput = {
     userId: params.userId,
-    orderType: params.orderType ?? OrderType.INDIVIDUAL,
+    orderType,
     serviceType: primaryServiceType,
     serviceTypes,
     addressId: effectiveAddressId,
@@ -236,12 +182,11 @@ export async function createOrder(
     pickupDate: params.pickupDate,
     timeWindow: params.timeWindow,
     estimatedWeightKg: params.estimatedWeightKg ?? null,
-    subscriptionId: params.subscriptionId ?? null,
+    subscriptionId: null,
     branchId, // Branch serving this pincode (subscription orders use subscription's branch)
     orderSource: 'ONLINE', // Customer app (mobile) – distinct from WALK_IN / Admin simulation
   };
 
-  // Subscription is linked to order but deduction happens at ACK (pickup confirmation), not here.
   const order = await ordersRepo.create(createInput);
   return { orderId: order.id };
 }

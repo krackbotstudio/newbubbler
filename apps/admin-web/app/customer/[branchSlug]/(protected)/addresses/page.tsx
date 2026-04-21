@@ -26,7 +26,6 @@ type AddressFormState = {
   houseNo: string;
   streetArea: string;
   city: string;
-  addressLine: string;
   pincode: string;
   googleMapUrl: string;
   isDefault: boolean;
@@ -37,16 +36,13 @@ const EMPTY_FORM: AddressFormState = {
   houseNo: '',
   streetArea: '',
   city: '',
-  addressLine: '',
   pincode: '',
   googleMapUrl: '',
   isDefault: false,
 };
 
 function buildAddressLine(form: AddressFormState): string {
-  return [form.houseNo.trim(), form.streetArea.trim(), form.addressLine.trim(), form.city.trim()]
-    .filter(Boolean)
-    .join(', ');
+  return [form.houseNo.trim(), form.streetArea.trim(), form.city.trim()].filter(Boolean).join(', ');
 }
 
 export default function CustomerFlowAddressesPage() {
@@ -68,12 +64,14 @@ export default function CustomerFlowAddressesPage() {
   const [error, setError] = useState<string | null>(null);
   const [mapResolveLoading, setMapResolveLoading] = useState(false);
   const [areaRequestSuccess, setAreaRequestSuccess] = useState<string | null>(null);
+  const [portalBranchId, setPortalBranchId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!branchSlug) return;
     void fetchPortalPublic(branchSlug).then((p) => {
       if (p?.primaryColor) setPrimary(p.primaryColor);
       if (p?.secondaryColor) setSecondary(p.secondaryColor);
+      setPortalBranchId(p?.branchId?.trim() ? p.branchId.trim() : null);
     });
   }, [branchSlug]);
 
@@ -96,12 +94,20 @@ export default function CustomerFlowAddressesPage() {
     setShowAdd(false);
     setError(null);
     setAreaRequestSuccess(null);
+    let houseNo = (addr.houseNo ?? '').trim();
+    let streetArea = (addr.streetArea ?? '').trim();
+    let city = (addr.city ?? '').trim();
+    if (!houseNo && !streetArea && !city) {
+      const parts = (addr.addressLine || '').trim().split(',').map((p) => p.trim()).filter(Boolean);
+      houseNo = parts[0] ?? '';
+      streetArea = parts.length >= 3 ? parts.slice(1, -1).join(', ') : (parts[1] ?? '');
+      city = parts.length >= 2 ? (parts[parts.length - 1] ?? '') : '';
+    }
     setForm({
       label: addr.label || 'Home',
-      houseNo: addr.houseNo || '',
-      streetArea: addr.streetArea || '',
-      city: addr.city || '',
-      addressLine: addr.addressLine || '',
+      houseNo,
+      streetArea,
+      city,
       pincode: (addr.pincode || '').replace(/\D/g, '').slice(0, 6),
       googleMapUrl: addr.googleMapUrl || '',
       isDefault: !!addr.isDefault,
@@ -114,10 +120,14 @@ export default function CustomerFlowAddressesPage() {
       setServiceability(null);
       return;
     }
+    if (!portalBranchId) {
+      setServiceability(null);
+      return;
+    }
     setCheckingServiceability(true);
     setServiceability(null);
     try {
-      const result = await checkPincodeServiceability(pc);
+      const result = await checkPincodeServiceability(pc, portalBranchId);
       setServiceability(result);
     } catch {
       setServiceability({ pincode: pc, serviceable: false, message: 'Could not check serviceability.' });
@@ -130,7 +140,7 @@ export default function CustomerFlowAddressesPage() {
     if (!showAdd && !editingId) return;
     void checkServiceabilityNow(form.pincode);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form.pincode, showAdd, editingId]);
+  }, [form.pincode, showAdd, editingId, portalBranchId]);
 
   async function handleResolveMapLink() {
     const url = form.googleMapUrl.trim();
@@ -150,8 +160,7 @@ export default function CustomerFlowAddressesPage() {
       }
       setForm((f) => ({
         ...f,
-        addressLine: result.addressLine || f.addressLine,
-        streetArea: result.area || f.streetArea,
+        streetArea: [result.street, result.area].filter(Boolean).join(', ') || result.area || f.streetArea,
         city: result.city || f.city,
         pincode: (result.pincode || f.pincode).replace(/\D/g, '').slice(0, 6),
       }));
@@ -175,7 +184,7 @@ export default function CustomerFlowAddressesPage() {
     if (!houseNo) return setError('Please enter House / Flat no.');
     if (!streetArea) return setError('Please enter Street & area.');
     if (!city) return setError('Please enter City.');
-    if (!mergedAddressLine) return setError('Please enter full address.');
+    if (!mergedAddressLine) return setError('Please enter house, street & area, and city.');
     if (pincode.length !== 6) return setError('Please enter a valid 6-digit pincode.');
     if (!serviceability?.serviceable) {
       return setError('This pincode is not serviceable. Use "Request to serve my area" below.');
@@ -319,7 +328,7 @@ export default function CustomerFlowAddressesPage() {
                   style={{ borderColor: cardBorder, backgroundColor: '#ffffff' }}
                 />
                 <Button type="button" variant="outline" onClick={() => void handleResolveMapLink()} disabled={mapResolveLoading}>
-                  {mapResolveLoading ? 'Resolving�' : 'Use map link to autofill'}
+                  {mapResolveLoading ? 'Resolving…' : 'Use map link to autofill'}
                 </Button>
               </div>
 
@@ -336,10 +345,6 @@ export default function CustomerFlowAddressesPage() {
                 <Input value={form.city} onChange={(e) => setForm((f) => ({ ...f, city: e.target.value }))} style={{ borderColor: cardBorder, backgroundColor: '#ffffff' }} />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-semibold" style={{ color: textPrimary }}>Full address (optional; auto-filled from map)</label>
-                <Input value={form.addressLine} onChange={(e) => setForm((f) => ({ ...f, addressLine: e.target.value }))} style={{ borderColor: cardBorder, backgroundColor: '#ffffff' }} />
-              </div>
-              <div className="space-y-2">
                 <label className="text-sm font-semibold" style={{ color: textPrimary }}>Pincode (6 digits)</label>
                 <Input
                   value={form.pincode}
@@ -348,7 +353,7 @@ export default function CustomerFlowAddressesPage() {
                 />
               </div>
 
-              {checkingServiceability ? <p className="text-sm" style={{ color: textMuted }}>Checking serviceability�</p> : null}
+              {checkingServiceability ? <p className="text-sm" style={{ color: textMuted }}>Checking serviceability…</p> : null}
               {!checkingServiceability && serviceability ? (
                 serviceability.serviceable ? (
                   <div className="rounded-lg border p-3" style={{ borderColor: `color-mix(in srgb, ${primary} 30%, #bbf7d0)` }}>
@@ -377,7 +382,7 @@ export default function CustomerFlowAddressesPage() {
 
               <div className="flex gap-2">
                 <Button type="submit" disabled={savingAddress} style={{ backgroundColor: primary }}>
-                  {savingAddress ? 'Saving�' : editingId ? 'Update address' : 'Save address'}
+                  {savingAddress ? 'Saving…' : editingId ? 'Update address' : 'Save address'}
                 </Button>
                 <Button type="button" variant="outline" onClick={resetForm}>Cancel</Button>
               </div>

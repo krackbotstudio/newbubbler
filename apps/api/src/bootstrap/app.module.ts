@@ -6,8 +6,6 @@ import { InvoicesModule } from '../api/invoices/invoices.module';
 import { FeedbackModule } from '../api/feedback/feedback.module';
 import { AdminModule } from '../api/admin/admin.module';
 import { ItemsModule } from '../api/items/items.module';
-import { SubscriptionPlansModule } from '../api/subscription-plans/subscription-plans.module';
-import { SubscriptionsModule } from '../api/subscriptions/subscriptions.module';
 import { AddressesModule } from '../api/addresses/addresses.module';
 import { ServiceabilityModule } from '../api/serviceability/serviceability.module';
 import { AssetsModule } from '../api/assets/assets.module';
@@ -25,8 +23,6 @@ import { PortalModule } from '../api/portal/portal.module';
     FeedbackModule,
     AdminModule,
     ItemsModule,
-    SubscriptionPlansModule,
-    SubscriptionsModule,
     AddressesModule,
     ServiceabilityModule,
     SlotsModule,
