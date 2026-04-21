@@ -882,6 +882,7 @@ export class PrismaOrdersRepo implements OrdersRepo {
             status: order.payment.status,
             amount: order.payment.amount,
             note: order.payment.failureReason ?? null,
+            createdAt: order.payment.createdAt,
           }
         : null,
     };

@@ -166,7 +166,14 @@ export interface OrderAdminSummary {
       serviceLabel?: string | null;
     }>;
   }>;
-  payment: { id: string; provider: string; status: string; amount: number; note?: string | null } | null;
+  payment: {
+    id: string;
+    provider: string;
+    status: string;
+    amount: number;
+    note?: string | null;
+    createdAt: Date;
+  } | null;
 }
 
 export interface OrdersRepo {

@@ -216,5 +216,7 @@ export interface OrderAdminSummary {
     status: string;
     amount: number;
     note?: string | null;
+    /** ISO timestamp from API when the payment row was created */
+    createdAt: string;
   } | null;
 }
