@@ -1115,10 +1115,12 @@ export default function OrderDetailPage() {
                 <img
                   src={`${invoiceHeaderLogoPath.startsWith('http') ? invoiceHeaderLogoPath : `${getApiOrigin()}${invoiceHeaderLogoPath}`}${(invoiceHeaderLogoPath.startsWith('http') ? invoiceHeaderLogoPath : `${getApiOrigin()}${invoiceHeaderLogoPath}`).includes('?') ? '&' : '?'}v=${encodeURIComponent(invoiceHeaderLogoCacheKey)}`}
                   alt="Logo"
-                  className="h-14 w-auto object-contain"
+                  className="invoice-header-logo-img h-28 w-auto max-w-[340px] object-contain"
                 />
               ) : (
-                <div className="h-14 w-24 rounded bg-muted flex items-center justify-center text-xs text-muted-foreground">Logo</div>
+                <div className="invoice-header-logo-img flex h-28 w-36 items-center justify-center rounded bg-muted text-xs text-muted-foreground">
+                  Logo
+                </div>
               )}
             </div>
           </div>
@@ -1282,10 +1284,12 @@ export default function OrderDetailPage() {
                 <img
                   src={`${invoiceHeaderLogoPath.startsWith('http') ? invoiceHeaderLogoPath : `${getApiOrigin()}${invoiceHeaderLogoPath}`}${(invoiceHeaderLogoPath.startsWith('http') ? invoiceHeaderLogoPath : `${getApiOrigin()}${invoiceHeaderLogoPath}`).includes('?') ? '&' : '?'}v=${encodeURIComponent(invoiceHeaderLogoCacheKey)}`}
                   alt="Logo"
-                  className="h-14 w-auto object-contain"
+                  className="invoice-header-logo-img h-28 w-auto max-w-[340px] object-contain"
                 />
               ) : (
-                <div className="h-14 w-24 rounded bg-muted flex items-center justify-center text-xs text-muted-foreground">Logo</div>
+                <div className="invoice-header-logo-img flex h-28 w-36 items-center justify-center rounded bg-muted text-xs text-muted-foreground">
+                  Logo
+                </div>
               )}
             </div>
           </div>
@@ -1518,3 +1522,4 @@ export default function OrderDetailPage() {
     </>
   );
 }
+

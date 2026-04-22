@@ -96,10 +96,10 @@ export const InvoicePrintView = forwardRef<HTMLDivElement, InvoicePrintViewProps
               <img
                 src={resolvedLogo}
                 alt="Logo"
-                className="h-14 w-auto max-w-[200px] object-contain"
+                className="invoice-header-logo-img h-28 w-auto max-w-[340px] object-contain"
               />
             ) : (
-              <div className="h-14 w-24 rounded bg-gray-200 flex items-center justify-center text-xs text-gray-500">
+              <div className="invoice-header-logo-img flex h-28 w-36 items-center justify-center rounded bg-gray-200 text-xs text-gray-500">
                 Logo
               </div>
             )}
@@ -361,3 +361,4 @@ export const InvoicePrintView = forwardRef<HTMLDivElement, InvoicePrintViewProps
     );
   }
 );
+
