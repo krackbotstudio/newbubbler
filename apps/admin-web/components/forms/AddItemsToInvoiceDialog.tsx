@@ -134,14 +134,7 @@ function qtyToDraftString(q: number): string {
   return String(rounded);
 }
 
-/** Optional “no. of clothes”; blank or invalid → undefined (treated same as quantity on the invoice). */
-function parseOptionalClothesDraft(draft: string): number | undefined {
-  const t = draft.trim().replace(',', '.');
-  if (t === '' || t === '.') return undefined;
-  const n = Number(t);
-  if (!Number.isFinite(n) || n < 0.01) return undefined;
-  return n;
-}
+const REMARKS_MAX = 500;
 
 export function AddItemsToInvoiceDialog({
   open,
@@ -183,14 +176,14 @@ export function AddItemsToInvoiceDialog({
   const [qtyByItem, setQtyByItem] = useState<Record<string, number>>({});
   const [itemSearch, setItemSearch] = useState('');
   const [configQtyDraft, setConfigQtyDraft] = useState('1');
-  const [configClothesDraft, setConfigClothesDraft] = useState('');
+  const [configRemarksDraft, setConfigRemarksDraft] = useState('');
 
   useEffect(() => {
     if (!open) setItemSearch('');
   }, [open]);
 
   useEffect(() => {
-    if (!configItemId) setConfigClothesDraft('');
+    if (!configItemId) setConfigRemarksDraft('');
   }, [configItemId]);
 
   useEffect(() => {
@@ -241,7 +234,7 @@ export function AddItemsToInvoiceDialog({
       : null;
 
   const handleAdd = useCallback(
-    (itemId: string, qty: number, clothesCount?: number) => {
+    (itemId: string, qty: number, remarks?: string) => {
       const item = catalogMatrix.items.find((i) => i.id === itemId);
       if (!item) return;
       const segmentId = segmentByItem[itemId];
@@ -251,13 +244,12 @@ export function AddItemsToInvoiceDialog({
       if (unitPaise == null) return;
       const amount = Math.round(qty * unitPaise);
       setQtyByItem((prev) => ({ ...prev, [itemId]: qty }));
+      const r = remarks?.trim().slice(0, REMARKS_MAX) ?? '';
       onAddLine({
         type: 'DRYCLEAN_ITEM',
         name: item.name,
         quantity: qty,
-        ...(clothesCount != null && Number.isFinite(clothesCount) && clothesCount >= 0.01
-          ? { clothesCount }
-          : {}),
+        ...(r ? { remarks: r } : {}),
         unitPricePaise: unitPaise,
         amountPaise: amount,
         catalogItemId: itemId,
@@ -271,7 +263,7 @@ export function AddItemsToInvoiceDialog({
   );
 
   const openConfig = (itemId: string) => {
-    setConfigClothesDraft('');
+    setConfigRemarksDraft('');
     setConfigItemId(itemId);
     const segs = getSegmentsForItem(catalogMatrix, itemId);
     if (!segmentByItem[itemId] && segs.length) {
@@ -375,7 +367,7 @@ export function AddItemsToInvoiceDialog({
                   ))}
                 </select>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-x-6 gap-y-3">
                 <div>
                   <label className="text-xs font-medium text-muted-foreground block mb-1.5">Qty</label>
                   <div
@@ -415,7 +407,7 @@ export function AddItemsToInvoiceDialog({
                 </div>
                 <div>
                   <label className="text-xs font-medium text-muted-foreground block mb-1.5">
-                    No. of clothes
+                    Remarks
                   </label>
                   <div
                     className="rounded-md border-2"
@@ -426,22 +418,18 @@ export function AddItemsToInvoiceDialog({
                   >
                     <Input
                       type="text"
-                      inputMode="decimal"
                       autoComplete="off"
-                      value={configClothesDraft}
+                      value={configRemarksDraft}
                       onChange={(e) => {
-                        let v = e.target.value.replace(',', '.');
-                        if (v === '' || /^\d*\.?\d*$/.test(v)) {
-                          setConfigClothesDraft(v);
-                        }
+                        setConfigRemarksDraft(e.target.value.slice(0, REMARKS_MAX));
                       }}
                       placeholder="—"
-                      className="h-10 border-0 bg-transparent shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 rounded-none px-3"
+                      className="h-10 border-0 bg-transparent text-sm font-normal leading-snug shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 rounded-none px-3 [&:not(:placeholder-shown)]:font-normal [&:not(:placeholder-shown)]:text-neutral-900"
                       style={{ color: qtyInputColor }}
-                      aria-label="Number of clothes (optional)"
+                      aria-label="Remarks (optional)"
                     />
                   </div>
-                  <p className="mt-1 text-xs text-muted-foreground">Optional. Blank = same as Qty.</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Optional. Shown on the invoice for this line.</p>
                 </div>
               </div>
               {configTotalPaise != null && (
@@ -461,8 +449,8 @@ export function AddItemsToInvoiceDialog({
                 onClick={() => {
                   const q = parseValidInvoiceQty(configQtyDraft);
                   if (q == null || !configItemId) return;
-                  const clothes = parseOptionalClothesDraft(configClothesDraft);
-                  handleAdd(configItemId, q, clothes);
+                  const remarks = configRemarksDraft.trim().slice(0, REMARKS_MAX);
+                  handleAdd(configItemId, q, remarks || undefined);
                 }}
                 disabled={!configSegmentId || !configServiceId || parsedConfigQty == null}
               >

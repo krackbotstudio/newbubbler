@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   Patch,
   Post,
@@ -32,11 +33,32 @@ export class AdminUsersController {
       query.active === 'true' ? true : query.active === 'false' ? false : undefined;
 
     const user = req.user as AuthUser;
+    /** String checks avoid relying on `Role` enum members matching query strings at runtime. */
+    if (user.role === 'OPS') {
+      if (!user.branchId) {
+        throw new ForbiddenException('Branch head is not assigned to a branch.');
+      }
+      return this.adminUsersService.list({
+        branchHeadList: {
+          branchId: user.branchId,
+          includeUserId: user.id,
+          includeUserEmail: user.email ?? null,
+          agentsOnly: query.role === 'AGENT',
+          selfAsBranchHeadOnly: query.role === 'OPS',
+        },
+        active,
+        search: query.search,
+        limit,
+        cursor: query.cursor,
+        actorRole: user.role,
+      });
+    }
+
     const branchId =
-      user.role === Role.OPS ? (user.branchId ?? undefined) : (query.branchId ?? undefined);
+      query.branchId && String(query.branchId).trim() !== '' ? String(query.branchId).trim() : undefined;
 
     return this.adminUsersService.list({
-      role: query.role,
+      role: query.role as Role | undefined,
       active,
       search: query.search,
       branchId,
@@ -47,7 +69,7 @@ export class AdminUsersController {
   }
 
   @Post()
-  @Roles(Role.ADMIN, Role.OPS)
+  @Roles(Role.ADMIN)
   async create(@Body() dto: CreateAdminUserDto, @Req() req: { user: AuthUser }) {
     return this.adminUsersService.create(
       {
@@ -62,7 +84,7 @@ export class AdminUsersController {
   }
 
   @Patch(':id')
-  @Roles(Role.ADMIN)
+  @Roles(Role.ADMIN, Role.OPS)
   async update(@Param('id') id: string, @Body() dto: UpdateAdminUserDto, @Req() req: any) {
     const currentUser = req.user as AuthUser;
     return this.adminUsersService.update(
@@ -78,15 +100,15 @@ export class AdminUsersController {
   }
 
   @Post(':id/reset-password')
-  @Roles(Role.ADMIN)
-  async resetPassword(@Param('id') id: string) {
-    return this.adminUsersService.resetPassword(id);
+  @Roles(Role.ADMIN, Role.OPS)
+  async resetPassword(@Param('id') id: string, @Req() req: { user: AuthUser }) {
+    return this.adminUsersService.resetPassword(id, req.user);
   }
 
   @Delete(':id')
-  @Roles(Role.ADMIN)
-  async delete(@Param('id') id: string) {
-    await this.adminUsersService.delete(id);
+  @Roles(Role.ADMIN, Role.OPS)
+  async delete(@Param('id') id: string, @Req() req: { user: AuthUser }) {
+    await this.adminUsersService.delete(id, req.user);
   }
 }
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { getStoredUser, isBranchScopedStaff, type Role } from "@/lib/auth";
+import { getStoredUser, isBranchScopedStaff, type AuthUser, type Role } from "@/lib/auth";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -51,18 +51,39 @@ export function AdminUserDialog({
   const [error, setError] = useState<unknown>(null);
 
   const { data: branches = [] } = useBranches();
-  const actor = useMemo(() => getStoredUser(), []);
-  void actor;
-  const branchOptions = branches;
-  const allowedRoleOptions: Role[] = ["ADMIN", "OPS", "AGENT"];
+  /** Refreshed whenever the dialog opens so role/branch locks match the signed-in user. */
+  const actor = useMemo((): AuthUser | null => (open ? getStoredUser() : null), [open]);
+  const isOpsEditing = actor?.role === "OPS" && mode === "edit" && !!user;
+
+  const branchOptions = useMemo(() => {
+    if (actor?.role === "OPS" && actor.branchId) {
+      return branches.filter((b) => b.id === actor.branchId);
+    }
+    return branches;
+  }, [actor, branches]);
+
+  const allowedRoleOptions: Role[] = useMemo(() => {
+    if (!actor || actor.role === "ADMIN" || actor.role === "BILLING") {
+      return ["ADMIN", "OPS", "AGENT"];
+    }
+    if (actor.role === "OPS" && mode === "edit" && user) {
+      if (user.id === actor.id) return ["OPS"];
+      if (user.role === "AGENT") return ["AGENT"];
+    }
+    return ["ADMIN", "OPS", "AGENT"];
+  }, [actor, mode, user]);
+
+  const roleSelectLocked = isOpsEditing && allowedRoleOptions.length === 1;
+  const branchSelectLocked = isOpsEditing && role !== "" && isBranchScopedStaff(role);
 
   useEffect(() => {
     if (open) {
+      const a = getStoredUser();
       if (mode === "edit" && user) {
         setName(user.name ?? "");
         setEmail(user.email);
         setRole(user.role);
-        setBranchId(user.branchId ?? "");
+        setBranchId(a?.role === "OPS" && a.branchId ? a.branchId : user.branchId ?? "");
         setIsActive(user.isActive);
       } else {
         setName("");
@@ -78,11 +99,17 @@ export function AdminUserDialog({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!role) {
+    const a = getStoredUser();
+    if (mode === "create" && a?.role === "OPS") {
+      setError("Branch heads cannot create new users.");
+      return;
+    }
+    const effectiveRole = a?.role === "OPS" && mode === "edit" && user ? (user.role as Role) : (role as Role);
+    if (!effectiveRole) {
       setError("Role is required");
       return;
     }
-    if (isBranchScopedStaff(role) && !branchId) {
+    if (isBranchScopedStaff(effectiveRole) && !branchId && !(a?.role === "OPS" && a.branchId)) {
       setError("Branch is required for Branch Head and Agent");
       return;
     }
@@ -108,19 +135,26 @@ export function AdminUserDialog({
         const { user: newUser, tempPassword } = await createAdminUser({
           name: name || null,
           email,
-          role,
-          branchId: isBranchScopedStaff(role) ? branchId || null : null,
+          role: role as Role,
+          branchId: isBranchScopedStaff(role as Role) ? branchId || null : null,
           isActive,
         });
         if (tempPassword && newUser) {
           onPasswordShown?.(newUser.id, tempPassword);
         }
       } else if (mode === "edit" && user) {
+        const r = (a?.role === "OPS" ? user.role : role) as Role;
+        const branchForUpdate =
+          a?.role === "OPS" && a.branchId && isBranchScopedStaff(r)
+            ? a.branchId
+            : isBranchScopedStaff(r)
+              ? branchId || null
+              : null;
         await updateAdminUser({
           id: user.id,
           name: name || null,
-          role,
-          branchId: isBranchScopedStaff(role) ? branchId || null : null,
+          role: r,
+          branchId: branchForUpdate,
           isActive,
         });
       }
@@ -155,6 +189,8 @@ export function AdminUserDialog({
   /** `role` state is `Role | ""` until selected; narrow before `isBranchScopedStaff(Role)`. */
   const branchFieldVisible = role !== "" && isBranchScopedStaff(role);
   const canManageTargetUser = true;
+  const submitDisabledReason =
+    submitting || !canManageTargetUser || (mode === "create" && actor?.role === "OPS");
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -200,6 +236,7 @@ export function AdminUserDialog({
                 setRole(newRole);
                 if (!isBranchScopedStaff(newRole)) setBranchId("");
               }}
+              disabled={roleSelectLocked}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Select role" />
@@ -218,6 +255,7 @@ export function AdminUserDialog({
                 value={branchId || ""}
                 onValueChange={setBranchId}
                 required
+                disabled={branchSelectLocked}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select branch (required)" />
@@ -277,7 +315,7 @@ export function AdminUserDialog({
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={submitting || !canManageTargetUser}>
+            <Button type="submit" disabled={submitDisabledReason}>
               {submitting ? "Saving..." : "Save"}
             </Button>
           </div>

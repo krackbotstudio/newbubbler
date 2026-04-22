@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { Role } from '@/lib/auth';
 import {
@@ -58,11 +58,10 @@ interface FiltersState {
   branchId: string;
 }
 
-function useAdminUsers(filters: FiltersState) {
-  const [cursor, setCursor] = useState<string | null>(null);
-
+function useAdminUsers(filters: FiltersState, cursor: string | null, enabled: boolean) {
   const query = useQuery<AdminUsersResponse>({
     queryKey: ['admin-users', filters, cursor],
+    enabled,
     queryFn: () =>
       fetchAdminUsers({
         role: filters.role === 'ALL' ? undefined : (filters.role as Role),
@@ -74,11 +73,7 @@ function useAdminUsers(filters: FiltersState) {
       }),
   });
 
-  return {
-    query,
-    cursor,
-    setCursor,
-  };
+  return { query };
 }
 
 export function AdminUsersTable() {
@@ -88,6 +83,13 @@ export function AdminUsersTable() {
     search: '',
     branchId: '',
   });
+  /** Kept in parent so filter changes can reset cursor in the same handler (avoids stale cursor + wrong/empty pages). */
+  const [listCursor, setListCursor] = useState<string | null>(null);
+
+  function patchFilters(patch: Partial<FiltersState>) {
+    setListCursor(null);
+    setFilters((prev) => ({ ...prev, ...patch }));
+  }
   const [dialogUser, setDialogUser] = useState<AdminUser | null>(null);
   const [dialogMode, setDialogMode] = useState<'create' | 'edit'>('create');
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -116,9 +118,46 @@ export function AdminUsersTable() {
     });
   }
 
-  const { query, cursor, setCursor } = useAdminUsers(filters);
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
+  /** Avoid listing until we know Admin vs Branch Head so filters/query stay aligned. */
+  const [authHydrated, setAuthHydrated] = useState(false);
+  useEffect(() => {
+    setCurrentUser(getStoredUser());
+    setAuthHydrated(true);
+  }, []);
+
   const { data: branches = [] } = useBranches();
+
+  const isAdmin = currentUser?.role === 'ADMIN';
+  const isOpsBranchHead = currentUser?.role === 'OPS' && !!currentUser?.branchId;
+  const branchOptions = restrictBranchesForUser(branches, currentUser);
+  const roleFilterOptions: Array<{ value: FiltersState['role']; label: string }> = useMemo(() => {
+    if (isOpsBranchHead) {
+      return [
+        { value: 'ALL', label: 'All roles' },
+        { value: 'OPS', label: 'Branch Head' },
+        { value: 'AGENT', label: 'Agent' },
+      ];
+    }
+    return [
+      { value: 'ALL', label: 'All roles' },
+      { value: 'ADMIN', label: 'Admin' },
+      { value: 'OPS', label: 'Branch Head' },
+      { value: 'AGENT', label: 'Agent' },
+    ];
+  }, [isOpsBranchHead]);
+
+  /** First paint used admin role options; reset invalid role before calling the API as Branch Head. */
+  useEffect(() => {
+    if (!authHydrated || currentUser?.role !== 'OPS') return;
+    const allowed: ReadonlyArray<FiltersState['role']> = ['ALL', 'OPS', 'AGENT'];
+    if (!allowed.includes(filters.role)) {
+      setListCursor(null);
+      setFilters((prev) => ({ ...prev, role: 'ALL' }));
+    }
+  }, [authHydrated, currentUser?.role, filters.role]);
+
+  const { query } = useAdminUsers(filters, listCursor, authHydrated);
 
   async function handleResetPasswordInTable(user: AdminUser) {
     setResettingUserId(user.id);
@@ -138,22 +177,29 @@ export function AdminUsersTable() {
     toast.success('Password copied');
   }
 
-  useEffect(() => {
-    setCurrentUser(getStoredUser());
-  }, []);
-  const isAdmin = currentUser?.role === 'ADMIN';
-  const branchOptions = restrictBranchesForUser(branches, currentUser);
-  const roleFilterOptions: Array<{ value: FiltersState['role']; label: string }> = [
-    { value: 'ALL', label: 'All roles' },
-    { value: 'ADMIN', label: 'Admin' },
-    { value: 'OPS', label: 'Branch Head' },
-    { value: 'AGENT', label: 'Agent' },
-    { value: 'PARTIAL_ADMIN', label: 'Partial admin (legacy)' },
-  ];
-  useEffect(() => {
-    if (!isAdmin) return;
-    if (filters.branchId) return;
-  }, [isAdmin, filters.branchId, branchOptions]);
+  function sameBranchAsActor(user: AdminUser): boolean {
+    if (!currentUser?.branchId) return false;
+    return user.branchId === currentUser.branchId;
+  }
+
+  /** Branch heads may reset their own password or an agent’s; admins can reset any non-protected user. */
+  function rowCanResetPassword(user: AdminUser): boolean {
+    if (isAdmin) return true;
+    if (!isOpsBranchHead) return false;
+    if (currentUser && user.id === currentUser.id) return true;
+    return user.role === 'AGENT' && sameBranchAsActor(user);
+  }
+
+  /** Branch heads edit agents only (not their own row). */
+  function rowCanEdit(user: AdminUser): boolean {
+    if (isAdmin) return true;
+    if (!isOpsBranchHead || !sameBranchAsActor(user)) return false;
+    return user.role === 'AGENT';
+  }
+
+  function rowCanDelete(_user: AdminUser): boolean {
+    return isAdmin;
+  }
   const data = query.data;
   const getPasswordState = (userId: string) => {
     const pwd = lastShownPasswords[userId];
@@ -165,91 +211,112 @@ export function AdminUsersTable() {
 
   return (
     <div className="space-y-4">
-      <div className="relative z-10 flex flex-wrap items-end gap-3">
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium uppercase text-muted-foreground">Role</label>
-          <Select
-            value={filters.role}
-            onValueChange={(value) =>
-              setFilters((prev) => ({ ...prev, role: value as FiltersState['role'] }))
-            }
-          >
-            <SelectTrigger className="w-[160px]">
-              <SelectValue placeholder="All roles" />
-            </SelectTrigger>
-            <SelectContent>
-              {roleFilterOptions.map((opt) => (
-                <SelectItem key={opt.value} value={opt.value}>
-                  {opt.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        {isAdmin && (
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium uppercase text-muted-foreground">Branch</label>
+      <div className="relative z-50 rounded-lg border border-border/70 bg-muted/15 p-3 sm:p-4">
+        <div className="flex min-w-0 flex-nowrap items-end gap-3 overflow-x-auto pb-0.5 md:overflow-visible">
+          <div className="relative z-50 w-[11.5rem] shrink-0 sm:w-[12.5rem]">
+            <label className="mb-1 block text-xs font-medium uppercase text-muted-foreground">
+              Role
+            </label>
             <Select
-              value={filters.branchId || '__ALL__'}
+              value={filters.role}
               onValueChange={(value) =>
-                setFilters((prev) => ({ ...prev, branchId: value === '__ALL__' ? '' : value }))
+                patchFilters({ role: value as FiltersState['role'] })
               }
             >
-              <SelectTrigger className="w-[190px]">
-                <SelectValue placeholder="All branches" />
+              <SelectTrigger className="h-10 w-full">
+                <SelectValue placeholder="All roles" />
               </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__ALL__">All branches</SelectItem>
-                {branchOptions.map((b) => (
-                  <SelectItem key={b.id} value={b.id}>
-                    {b.name ?? b.id}
+              <SelectContent
+                position="popper"
+                side="bottom"
+                align="start"
+                sideOffset={6}
+                collisionPadding={16}
+                className="max-h-72 w-[var(--radix-select-trigger-width)] min-w-[var(--radix-select-trigger-width)] border border-neutral-200 bg-white text-neutral-900 shadow-lg ring-0 dark:bg-white dark:text-neutral-900"
+              >
+                {roleFilterOptions.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
-        )}
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium uppercase text-muted-foreground">
-            Active only
-          </label>
-          <div className="flex items-center gap-2">
-            <Switch
-              checked={filters.activeOnly}
-              onCheckedChange={(checked) =>
-                setFilters((prev) => ({ ...prev, activeOnly: checked }))
-              }
-            />
-            <span className="text-xs text-muted-foreground">
-              {filters.activeOnly ? 'Active only' : 'All'}
-            </span>
+          {isAdmin && (
+            <div className="relative z-50 w-[12.5rem] shrink-0 sm:w-[14rem]">
+              <label className="mb-1 block text-xs font-medium uppercase text-muted-foreground">
+                Branch
+              </label>
+              <Select
+                value={filters.branchId || '__ALL__'}
+                onValueChange={(value) =>
+                  patchFilters({ branchId: value === '__ALL__' ? '' : value })
+                }
+              >
+                <SelectTrigger className="h-10 w-full">
+                  <SelectValue placeholder="All branches" />
+                </SelectTrigger>
+                <SelectContent
+                  position="popper"
+                  side="bottom"
+                  align="start"
+                  sideOffset={6}
+                  collisionPadding={16}
+                  className="max-h-72 w-[var(--radix-select-trigger-width)] min-w-[var(--radix-select-trigger-width)] border border-neutral-200 bg-white text-neutral-900 shadow-lg ring-0 dark:bg-white dark:text-neutral-900"
+                >
+                  <SelectItem value="__ALL__">All branches</SelectItem>
+                  {branchOptions.map((b) => (
+                    <SelectItem key={b.id} value={b.id}>
+                      {b.name ?? b.id}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          <div className="shrink-0">
+            <label className="mb-1 block text-xs font-medium uppercase text-muted-foreground">
+              Active only
+            </label>
+            <div className="flex h-10 items-center gap-2">
+              <Switch
+                checked={filters.activeOnly}
+                onCheckedChange={(checked) => patchFilters({ activeOnly: checked })}
+              />
+              <span className="whitespace-nowrap text-xs text-muted-foreground">
+                {filters.activeOnly ? 'Active only' : 'All'}
+              </span>
+            </div>
           </div>
+          <div className="min-w-[12rem] flex-1 basis-[min(100%,16rem)]">
+            <label className="mb-1 block text-xs font-medium uppercase text-muted-foreground">
+              Search
+            </label>
+            <Input
+              className="h-10 w-full min-w-0"
+              placeholder="Search by name or email"
+              value={filters.search}
+              onChange={(e) => patchFilters({ search: e.target.value })}
+            />
+          </div>
+          {isAdmin && (
+            <div className="ms-auto shrink-0">
+              <Button
+                className="h-10 whitespace-nowrap px-4"
+                onClick={() => {
+                  setDialogMode('create');
+                  setDialogUser(null);
+                  setDialogOpen(true);
+                }}
+              >
+                New admin user
+              </Button>
+            </div>
+          )}
         </div>
-        <div className="flex flex-1 flex-col gap-1 min-w-[200px]">
-          <label className="text-xs font-medium uppercase text-muted-foreground">
-            Search
-          </label>
-          <Input
-            placeholder="Search by name or email"
-            value={filters.search}
-            onChange={(e) => setFilters((prev) => ({ ...prev, search: e.target.value }))}
-          />
-        </div>
-        <div className="flex-1" />
-        {isAdmin && (
-          <Button
-            onClick={() => {
-              setDialogMode('create');
-              setDialogUser(null);
-              setDialogOpen(true);
-            }}
-          >
-            New admin user
-          </Button>
-        )}
       </div>
 
-      <div className="relative z-0 rounded-md border">
+      <div className="relative z-0 mt-6 rounded-md border">
         <table className="w-full text-sm">
           <thead className="bg-muted/50 text-left text-xs font-medium uppercase text-muted-foreground">
             <tr>
@@ -314,9 +381,7 @@ export function AdminUsersTable() {
                       ? 'Branch Head'
                       : user.role === 'AGENT'
                         ? 'Agent'
-                        : user.role === 'PARTIAL_ADMIN'
-                          ? 'Partial admin (legacy)'
-                          : user.role}
+                        : user.role}
                   </span>
                 </td>
                 <td className="px-3 py-2 align-middle">
@@ -360,7 +425,7 @@ export function AdminUsersTable() {
                 </td>
                 <td className="px-3 py-2 align-middle text-right">
                   <div className="flex justify-end gap-1.5">
-                    {!isProtected && (
+                    {!isProtected && rowCanResetPassword(user) && (
                       <Button
                         variant="outline"
                         size="sm"
@@ -371,7 +436,7 @@ export function AdminUsersTable() {
                         {resettingUserId === user.id ? 'Resetting…' : 'Reset password'}
                       </Button>
                     )}
-                    {!isProtected && (
+                    {!isProtected && rowCanEdit(user) && (
                     <Button
                       variant="outline"
                       size="sm"
@@ -384,7 +449,7 @@ export function AdminUsersTable() {
                       Edit
                     </Button>
                     )}
-                    {!isProtected && (
+                    {!isProtected && rowCanDelete(user) && (
                       <Button
                         variant="outline"
                         size="sm"
@@ -422,8 +487,8 @@ export function AdminUsersTable() {
           <Button
             variant="outline"
             size="sm"
-            disabled={!cursor}
-            onClick={() => setCursor(null)}
+            disabled={!listCursor}
+            onClick={() => setListCursor(null)}
           >
             First page
           </Button>
@@ -431,7 +496,7 @@ export function AdminUsersTable() {
             variant="outline"
             size="sm"
             disabled={!data?.nextCursor}
-            onClick={() => setCursor(data?.nextCursor ?? null)}
+            onClick={() => setListCursor(data?.nextCursor ?? null)}
           >
             Next
           </Button>

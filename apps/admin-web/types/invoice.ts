@@ -9,8 +9,8 @@ export interface InvoiceDraftItem {
   type: InvoiceItemType;
   name: string;
   quantity: number;
-  /** Piece count for dry-clean lines; omit or leave unset to treat as same as quantity. */
-  clothesCount?: number;
+  /** Per-line remarks (ACK / Final invoices and PDF). Max 500 chars. */
+  remarks?: string;
   unitPricePaise: number;
   amountPaise?: number;
   /** Catalog matrix: item id for Item → Segment → Service cascading */

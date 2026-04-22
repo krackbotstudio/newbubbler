@@ -6,9 +6,7 @@ export type Role =
   | 'OPS'
   | 'AGENT'
   | 'BILLING'
-  | 'CUSTOMER'
-  /** Legacy; normalize to ADMIN/OPS in DB when possible */
-  | 'PARTIAL_ADMIN';
+  | 'CUSTOMER';
 
 export interface AuthUser {
   id: string;
@@ -34,7 +32,7 @@ export function restrictBranchesForUser<T extends BranchLike>(
 
 /** Branch Head or Agent: assigned a single branch for data access. */
 export function isBranchScopedStaff(role: Role): boolean {
-  return role === 'OPS' || role === 'AGENT' || role === 'PARTIAL_ADMIN';
+  return role === 'OPS' || role === 'AGENT';
 }
 
 /** Branch filter is fixed to `branchId` (no “all branches” for OPS/AGENT with an assignment). */
@@ -116,11 +114,11 @@ export function canAccessPaymentEdit(role: Role): boolean {
 }
 
 export function canAccessOrders(role: Role): boolean {
-  return ['ADMIN', 'OPS', 'BILLING', 'AGENT', 'PARTIAL_ADMIN'].includes(role);
+  return ['ADMIN', 'OPS', 'BILLING', 'AGENT'].includes(role);
 }
 
 export function canAccessBrandingEdit(role: Role): boolean {
-  return role === 'ADMIN' || role === 'BILLING' || role === 'OPS' || role === 'PARTIAL_ADMIN';
+  return role === 'ADMIN' || role === 'BILLING' || role === 'OPS';
 }
 
 export function canAccessCustomersEdit(role: Role): boolean {

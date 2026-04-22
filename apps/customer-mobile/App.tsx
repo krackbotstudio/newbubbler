@@ -287,8 +287,17 @@ export default function App() {
     setBranchPincodeLoading(false);
   }, [step]);
 
+  /** Fresh search when opening the in-app branch switcher (post-login). */
   useEffect(() => {
-    if (step !== 'selectBranch') return;
+    if (!branchMenuVisible) return;
+    setBranchSearchQuery('');
+    setBranchPincodeQuery('');
+    setBranchesPincodeFilteredList(null);
+    setBranchPincodeLoading(false);
+  }, [branchMenuVisible]);
+
+  useEffect(() => {
+    if (step !== 'selectBranch' && !branchMenuVisible) return;
     const pc = branchPincodeQuery.replace(/\D/g, '').slice(0, 6);
     if (pc.length !== 6) {
       setBranchesPincodeFilteredList(null);
@@ -313,7 +322,7 @@ export default function App() {
       cancelled = true;
       clearTimeout(tid);
     };
-  }, [branchPincodeQuery, step]);
+  }, [branchPincodeQuery, step, branchMenuVisible]);
 
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof document === 'undefined') return;
@@ -861,6 +870,24 @@ export default function App() {
       cancelled = true;
     };
   }, [step, homeScreen, token, selectedOrderId, fetchAddresses]);
+
+  /** Multi-branch: if the header branch changes while viewing an order from another branch, go to Orders. */
+  useEffect(() => {
+    if (step !== 'done' || homeScreen !== 'orderDetail') return;
+    if (!orderDetail || !customerContextBranch?.id) return;
+    const orderBranch = String(orderDetail.branchId ?? '').trim();
+    const ctxBranch = customerContextBranch.id.trim();
+    if (!orderBranch || !ctxBranch) return;
+    if (orderBranch === ctxBranch) return;
+    setFeedbackModalVisible(false);
+    setOrderDetail(null);
+    setSelectedOrderId(null);
+    setOrderInvoices([]);
+    setInvoiceError(null);
+    setError(null);
+    setHomeScreen('myOrders');
+    if (token) void fetchOrders();
+  }, [step, homeScreen, orderDetail, customerContextBranch?.id, token, fetchOrders]);
 
   // When an order is completed and paid, ask the customer for rating feedback (once per order).
   useEffect(() => {
@@ -3179,6 +3206,12 @@ export default function App() {
                                 item.serviceLabel?.trim() || null,
                               ].filter(Boolean) as string[];
                               const meta = metaParts.length ? metaParts.join(' · ') : null;
+                              const remarksRaw = typeof item.remarks === 'string' && item.remarks.trim() ? item.remarks.trim() : '';
+                              const remarksLine =
+                                remarksRaw ||
+                                (item.clothesCount != null && Number.isFinite(Number(item.clothesCount))
+                                  ? String(item.clothesCount)
+                                  : '');
                               return (
                                 <View key={item.id} style={styles.invoiceItemRow}>
                                   {iconUri ? (
@@ -3195,6 +3228,12 @@ export default function App() {
                                     {meta ? (
                                       <Text style={styles.muted} numberOfLines={1}>
                                         {meta}
+                                      </Text>
+                                    ) : null}
+                                    {remarksLine ? (
+                                      <Text style={[styles.muted, { marginTop: 2, fontSize: 12 }]} numberOfLines={4}>
+                                        <Text style={{ fontWeight: '600', color: colors.text }}>Remarks: </Text>
+                                        {remarksLine}
                                       </Text>
                                     ) : null}
                                   </View>
@@ -3789,12 +3828,51 @@ export default function App() {
                   <MaterialIcons name="close" size={22} color={colors.primary} />
                 </TouchableOpacity>
               </View>
+              <View style={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: colors.borderLight }}>
+                <Text style={[styles.muted, { fontSize: 13, fontWeight: '600', marginBottom: 4 }]}>Search by branch name</Text>
+                <TextInput
+                  style={[styles.input, styles.branchSearchInput]}
+                  placeholder="Type a branch name…"
+                  placeholderTextColor={colors.textSecondary}
+                  value={branchSearchQuery}
+                  onChangeText={setBranchSearchQuery}
+                  autoCorrect={false}
+                  autoCapitalize="none"
+                  accessibilityLabel="Search branches by name"
+                />
+                <Text style={[styles.muted, { fontSize: 13, fontWeight: '600', marginBottom: 4, marginTop: 10 }]}>Search by pincode</Text>
+                <TextInput
+                  style={[styles.input, styles.branchPincodeInput]}
+                  placeholder="6-digit pincode — who serves this area?"
+                  placeholderTextColor={colors.textSecondary}
+                  value={branchPincodeQuery}
+                  onChangeText={(t) => setBranchPincodeQuery(t.replace(/\D/g, '').slice(0, 6))}
+                  keyboardType="number-pad"
+                  maxLength={6}
+                  accessibilityLabel="Search branches by pincode"
+                />
+                {branchPincodeQuery.length > 0 && branchPincodeQuery.replace(/\D/g, '').length < 6 ? (
+                  <Text style={[styles.muted, { marginTop: 4 }]}>Enter all 6 digits to see branches for that pincode.</Text>
+                ) : null}
+                {branchPincodeLoading ? <Text style={[styles.muted, { marginTop: 6 }]}>Looking up branches…</Text> : null}
+              </View>
               <ScrollView
                 style={styles.notificationsListScroll}
                 contentContainerStyle={styles.notificationsListContent}
                 showsVerticalScrollIndicator
+                keyboardShouldPersistTaps="handled"
               >
-                {customerBranchesList.map((b) => {
+                {filteredCustomerBranches.length === 0 ? (
+                  <Text style={[styles.muted, { paddingHorizontal: 16, paddingTop: 12 }]}>
+                    {branchesPincodeFilteredList &&
+                    branchPincodeQuery.replace(/\D/g, '').length === 6 &&
+                    !branchPincodeLoading &&
+                    branchesPincodeFilteredList.length === 0
+                      ? 'No branches serve this pincode yet.'
+                      : 'No branches match your search.'}
+                  </Text>
+                ) : null}
+                {filteredCustomerBranches.map((b) => {
                   const selected = customerContextBranch?.id === b.id;
                   const rawLogoUri = brandingLogoFullUrl(b.logoUrl?.trim() ? b.logoUrl : null);
                   const logoUri =

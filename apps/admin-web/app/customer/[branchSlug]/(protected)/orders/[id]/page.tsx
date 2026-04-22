@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useCustomerFlowOrder, useCustomerFlowOrderInvoices } from '@/hooks/customer-flow/use-orders';
 import { useCustomerFlowFeedbackEligibility } from '@/hooks/customer-flow/use-feedback-eligibility';
@@ -29,6 +29,14 @@ function orderStatusLabel(status: string): string {
   return map[s] ?? status;
 }
 
+function invoiceLineRemarksDisplay(item: { remarks?: string | null; clothesCount?: number | null }): string | null {
+  const r = typeof item.remarks === 'string' && item.remarks.trim() ? item.remarks.trim() : '';
+  if (r) return r;
+  const cc = item.clothesCount;
+  if (cc != null && Number.isFinite(Number(cc))) return String(cc);
+  return null;
+}
+
 function serviceTypeDisplayLabel(serviceType: string): string {
   const s = (serviceType || '').toUpperCase().replace(/-/g, '_').trim();
   const map: Record<string, string> = {
@@ -45,12 +53,13 @@ function serviceTypeDisplayLabel(serviceType: string): string {
 
 export default function CustomerFlowOrderDetailPage() {
   const params = useParams<{ branchSlug: string; id: string }>();
+  const router = useRouter();
   const id = typeof params.id === 'string' ? params.id : null;
   const branchSlug = typeof params.branchSlug === 'string' ? params.branchSlug : '';
   const base = `/customer/${branchSlug}`;
-  const { data: order, isLoading, error } = useCustomerFlowOrder(id);
-  const { data: orderInvoices = [], isLoading: invoicesLoading } = useCustomerFlowOrderInvoices(id);
-  const feedbackEligibility = useCustomerFlowFeedbackEligibility(id);
+  const { data: order, isLoading, error } = useCustomerFlowOrder(id, branchSlug);
+  const { data: orderInvoices = [], isLoading: invoicesLoading } = useCustomerFlowOrderInvoices(id, branchSlug);
+  const feedbackEligibility = useCustomerFlowFeedbackEligibility(id, branchSlug);
   const submitFeedback = useSubmitCustomerFlowOrderFeedback();
   // Keep SSR/CSR first paint deterministic to avoid hydration mismatch.
   const [primary, setPrimary] = useState('#8a1459');
@@ -68,6 +77,16 @@ export default function CustomerFlowOrderDetailPage() {
       if (p?.secondaryColor) setSecondary(p.secondaryColor);
     });
   }, [branchSlug]);
+
+  const orderOutsidePortal = useMemo(() => {
+    if (!error) return false;
+    return getCustomerFlowApiError(error).code === 'ORDER_ACCESS_DENIED';
+  }, [error]);
+
+  useLayoutEffect(() => {
+    if (!orderOutsidePortal || !branchSlug) return;
+    router.replace(`${base}/orders`);
+  }, [orderOutsidePortal, branchSlug, router, base]);
   const cardBg = useMemo(() => secondary, [primary, secondary]);
   const cardBorder = useMemo(() => `color-mix(in srgb, ${secondary} 78%, #d1d5db)`, [primary, secondary]);
   const textPrimary = useMemo(() => `color-mix(in srgb, ${primary} 80%, #111827)`, [primary]);
@@ -126,6 +145,16 @@ export default function CustomerFlowOrderDetailPage() {
     return (
       <div className="min-h-screen p-4" style={{ backgroundColor: "#ffffff" }}>
         <Skeleton className="h-64 w-full max-w-lg" style={{ backgroundColor: cardBg }} />
+      </div>
+    );
+  }
+
+  if (orderOutsidePortal) {
+    return (
+      <div className="flex min-h-screen items-center justify-center p-4" style={{ backgroundColor: '#ffffff' }}>
+        <p className="text-sm" style={{ color: textMuted }}>
+          Opening orders for this branch…
+        </p>
       </div>
     );
   }
@@ -290,6 +319,7 @@ export default function CustomerFlowOrderDetailPage() {
                             {items.map((item) => {
                               const metaParts = [item.segmentLabel?.trim() || null, item.serviceLabel?.trim() || null].filter(Boolean) as string[];
                               const meta = metaParts.length ? metaParts.join(' · ') : null;
+                              const remarksLine = invoiceLineRemarksDisplay(item);
                               const src = iconUrl(item.icon);
                               return (
                                 <div key={item.id} className="flex items-start gap-2">
@@ -303,6 +333,15 @@ export default function CustomerFlowOrderDetailPage() {
                                     </p>
                                     {meta ? (
                                       <p className="text-xs" style={{ color: textMuted }}>{meta}</p>
+                                    ) : null}
+                                    {remarksLine ? (
+                                      <p
+                                        className="mt-0.5 text-xs whitespace-pre-wrap break-words"
+                                        style={{ color: textMuted }}
+                                      >
+                                        <span className="font-medium" style={{ color: textPrimary }}>Remarks: </span>
+                                        {remarksLine}
+                                      </p>
                                     ) : null}
                                   </div>
                                   <p className="text-sm font-semibold" style={{ color: textPrimary }}>

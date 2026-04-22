@@ -65,6 +65,16 @@ export const InvoicePrintView = forwardRef<HTMLDivElement, InvoicePrintViewProps
       return catalogMatrix.items.find((x) => x.id === catalogItemId);
     }
 
+    function lineRemarksDisplay(row: (typeof items)[number]): string {
+      const r = typeof (row as { remarks?: string | null }).remarks === 'string' && (row as { remarks?: string }).remarks?.trim()
+        ? (row as { remarks: string }).remarks.trim()
+        : '';
+      if (r) return r;
+      const cc = (row as { clothesCount?: number | null }).clothesCount;
+      if (cc != null && Number.isFinite(Number(cc))) return String(cc);
+      return '';
+    }
+
     function logoSrc(): string | null {
       const raw = branding?.logoUrl;
       if (!raw?.trim()) return null;
@@ -78,7 +88,7 @@ export const InvoicePrintView = forwardRef<HTMLDivElement, InvoicePrintViewProps
     const resolvedLogo = logoSrc();
 
     return (
-      <div ref={ref} className="bg-white text-black p-6 max-w-2xl mx-auto space-y-4 invoice-print-view">
+      <div ref={ref} className="invoice-print-view mx-auto max-w-6xl space-y-4 bg-white p-6 text-black">
         {/* Centered logo only (branch / business name appear in the details block below) */}
         <div className="flex border-b pb-4 items-center justify-center invoice-print-header-logo">
           <div className="flex-shrink-0 flex justify-center">
@@ -199,7 +209,12 @@ export const InvoicePrintView = forwardRef<HTMLDivElement, InvoicePrintViewProps
                     <th className="text-left py-2">Name</th>
                   </>
                 )}
-                <th className="text-right py-2">Qty</th>
+                <th className="whitespace-nowrap py-2 pr-8 text-right text-xs font-semibold uppercase tracking-wide text-gray-600 sm:pr-10">
+                  Qty
+                </th>
+                <th className="min-w-[7rem] whitespace-nowrap border-l border-gray-200 py-2 pl-5 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 sm:pl-6">
+                  Remarks
+                </th>
                 {useMatrix ? (
                   <>
                     <th className="text-right py-2">Service cost (₹)</th>
@@ -217,7 +232,7 @@ export const InvoicePrintView = forwardRef<HTMLDivElement, InvoicePrintViewProps
               {items.length === 0 ? (
                 <tr className="border-b">
                   <td
-                    colSpan={useMatrix ? 6 : 5}
+                    colSpan={useMatrix ? 7 : 6}
                     className="py-3 text-center text-gray-500"
                   >
                     NA
@@ -226,6 +241,7 @@ export const InvoicePrintView = forwardRef<HTMLDivElement, InvoicePrintViewProps
               ) : (
                 items.map((row, i) => {
                   const qtyDisplay = String(row.quantity);
+                  const remarksDisplay = lineRemarksDisplay(row);
                   const catItem = catalogItemForRow(row.catalogItemId ?? undefined);
                   return (
                     <tr key={i} className="border-b border-gray-200">
@@ -273,7 +289,12 @@ export const InvoicePrintView = forwardRef<HTMLDivElement, InvoicePrintViewProps
                           </td>
                         </>
                       )}
-                      <td className="align-middle py-2.5 text-right">{qtyDisplay}</td>
+                      <td className="align-middle py-2.5 pr-8 text-right text-sm font-medium tabular-nums text-gray-900 sm:pr-10">
+                        {qtyDisplay}
+                      </td>
+                      <td className="max-w-[18rem] whitespace-normal break-words border-l border-gray-200 py-2.5 pl-5 text-left text-sm font-medium leading-snug text-gray-900 sm:pl-6">
+                        {remarksDisplay || '—'}
+                      </td>
                       {useMatrix ? (
                         <>
                           <td className="align-middle py-2.5 text-right">{formatMoney(row.unitPrice)}</td>

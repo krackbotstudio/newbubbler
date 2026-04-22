@@ -7,9 +7,9 @@ export interface FeedbackEligibility {
   alreadySubmitted: boolean;
 }
 
-export function useCustomerFlowFeedbackEligibility(orderId: string | null) {
+export function useCustomerFlowFeedbackEligibility(orderId: string | null, branchSlug: string) {
   return useQuery({
-    queryKey: ['customer-flow', 'orders', orderId, 'feedback-eligibility'],
+    queryKey: ['customer-flow', 'orders', orderId, 'feedback-eligibility', branchSlug],
     queryFn: async (): Promise<FeedbackEligibility> => {
       if (!orderId) throw new Error('No order id');
       const { data } = await customerFlowApi.get<FeedbackEligibility>(
@@ -17,6 +17,6 @@ export function useCustomerFlowFeedbackEligibility(orderId: string | null) {
       );
       return data;
     },
-    enabled: !!orderId,
+    enabled: !!orderId && !!branchSlug,
   });
 }

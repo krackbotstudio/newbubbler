@@ -161,6 +161,7 @@ export interface OrderAdminSummary {
       name: string;
       quantity: number;
       clothesCount?: number | null;
+      remarks?: string | null;
       unitPrice: number;
       amount: number;
       catalogItemId?: string | null;

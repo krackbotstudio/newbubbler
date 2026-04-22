@@ -34,8 +34,8 @@ export interface InvoiceLineRow {
   type: InvoiceItemType;
   name: string;
   quantity: number;
-  /** Piece count; omit when blank so billing/PDF treats it as quantity. */
-  clothesCount?: number;
+  /** Per-line remarks (invoice print / PDF). Omit when blank. */
+  remarks?: string;
   unitPricePaise: number;
   amountPaise?: number;
   /** Catalog matrix line: item + segment + service for edit dropdowns */
@@ -255,7 +255,8 @@ export function InvoiceBuilder({
   const [addItemsDialogOpen, setAddItemsDialogOpen] = useState(false);
   /** While editing line qty, hold raw string so decimals like "2." work; commit on blur. */
   const [qtyDraftByRowIndex, setQtyDraftByRowIndex] = useState<Record<number, string>>({});
-  const [clothesDraftByRowIndex, setClothesDraftByRowIndex] = useState<Record<number, string>>({});
+  const REMARKS_MAX = 500;
+  const [remarksDraftByRowIndex, setRemarksDraftByRowIndex] = useState<Record<number, string>>({});
   const [tagDialogRowIndex, setTagDialogRowIndex] = useState<number | null>(null);
   /** Draft strings so Tax % and Discount can be cleared and retyped; commit on blur. */
   const [taxPercentDraft, setTaxPercentDraft] = useState<string | null>(null);
@@ -444,19 +445,17 @@ export function InvoiceBuilder({
   function updateLine(index: number, patch: Partial<InvoiceLineRow>) {
     const row = items[index];
     if (!row) return;
-    const { clothesCount: patchClothes, ...patchRest } = patch;
+    const { remarks: patchRemarks, ...patchRest } = patch;
     const updated: InvoiceLineRow = {
       ...row,
       ...patchRest,
       quantity: patch.quantity ?? row.quantity,
       unitPricePaise: patch.unitPricePaise ?? row.unitPricePaise,
     };
-    if ('clothesCount' in patch) {
-      if (patchClothes != null && Number.isFinite(patchClothes) && patchClothes >= 0.01) {
-        updated.clothesCount = patchClothes;
-      } else {
-        delete (updated as { clothesCount?: number }).clothesCount;
-      }
+    if ('remarks' in patch) {
+      const t = (patchRemarks ?? '').trim().slice(0, REMARKS_MAX);
+      if (t) (updated as { remarks?: string }).remarks = t;
+      else delete (updated as { remarks?: string }).remarks;
     }
     if (useMatrix && updated.catalogItemId && updated.segmentCategoryId && updated.serviceCategoryId) {
       const unit = getMatrixPriceForRow(updated);
@@ -580,9 +579,9 @@ export function InvoiceBuilder({
             <tr className="border-b">
               {useMatrix ? (
                 <>
-                  <th className="text-left py-2">Item</th>
-                  <th className="text-left py-2">Segment</th>
-                  <th className="text-left py-2">Service</th>
+                  <th className="min-w-[11rem] py-2 text-left sm:min-w-[12rem]">Item</th>
+                  <th className="min-w-[8.5rem] py-2 text-left sm:min-w-[9rem]">Segment</th>
+                  <th className="min-w-[9.5rem] py-2 text-left sm:min-w-[10.5rem]">Service</th>
                 </>
               ) : (
                 <>
@@ -590,12 +589,14 @@ export function InvoiceBuilder({
                   <th className="text-left py-2">Name</th>
                 </>
               )}
-              <th className="text-right py-2">Qty</th>
+              <th className="whitespace-nowrap py-2 pr-8 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground sm:pr-10">
+                Qty
+              </th>
               <th
-                className="text-right py-2 text-xs font-medium whitespace-nowrap max-w-[6.5rem]"
-                title="Optional; leave blank to use the same value as Qty."
+                className="min-w-[7rem] max-w-[18rem] whitespace-nowrap border-l border-border/70 py-2 pl-5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground sm:pl-6"
+                title="Optional notes for this line (printed on invoice)."
               >
-                No. of clothes
+                Remarks
               </th>
               {useMatrix ? (
                 <>
@@ -616,7 +617,7 @@ export function InvoiceBuilder({
           <tbody>
             {items.length === 0 ? (
               <tr className="border-b">
-                <td
+                  <td
                   colSpan={(useMatrix ? 7 : 6) + (allowMutation || tagPrintOrderLabel ? 1 : 0)}
                   className="py-3 text-center text-muted-foreground"
                 >
@@ -664,7 +665,7 @@ export function InvoiceBuilder({
                                 });
                               }}
                             >
-                              <SelectTrigger className="h-8 w-full max-w-[160px] [&>span]:!flex [&>span]:!flex-row [&>span]:!items-center">
+                              <SelectTrigger className="h-8 w-full min-w-0 [&>span]:!flex [&>span]:!flex-row [&>span]:!items-center">
                                 <span className="flex flex-row items-center gap-2 min-h-0 min-w-0 flex-1 overflow-hidden">
                                   {(() => {
                                     const it = catalogMatrix.items.find((x) => x.id === row.catalogItemId);
@@ -718,38 +719,57 @@ export function InvoiceBuilder({
                         </td>
                         <td className="align-middle py-2">
                           {allowMutation ? (
-                            <select
-                              className="h-8 w-full max-w-[120px] rounded border pl-2 pr-6 text-sm"
-                              value={row.segmentCategoryId}
-                              onChange={(e) => {
-                                const newSegId = e.target.value;
-                                const svcs = getServicesForItemAndSegment(row.catalogItemId!, newSegId);
-                                const firstSvcId = svcs[0]?.id ?? '';
-                                updateLine(i, {
-                                  segmentCategoryId: newSegId,
-                                  serviceCategoryId: firstSvcId,
-                                });
-                              }}
-                            >
-                              {rowSegments.map((s) => (
-                                <option key={s.id} value={s.id}>{s.label}</option>
-                              ))}
-                            </select>
+                            rowSegments.length === 0 ? (
+                              <span className="text-sm text-muted-foreground">—</span>
+                            ) : (
+                              <Select
+                                value={row.segmentCategoryId ?? ''}
+                                onValueChange={(newSegId) => {
+                                  const svcs = getServicesForItemAndSegment(row.catalogItemId!, newSegId);
+                                  const firstSvcId = svcs[0]?.id ?? '';
+                                  updateLine(i, {
+                                    segmentCategoryId: newSegId,
+                                    serviceCategoryId: firstSvcId,
+                                  });
+                                }}
+                              >
+                                <SelectTrigger className="h-8 w-full min-w-[7.5rem]">
+                                  <SelectValue placeholder="Segment" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {rowSegments.map((s) => (
+                                    <SelectItem key={s.id} value={s.id}>
+                                      {s.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            )
                           ) : (
                             catalogMatrix.segmentCategories.find((s) => s.id === row.segmentCategoryId)?.label ?? row.segmentCategoryId
                           )}
                         </td>
                         <td className="align-middle py-2">
                           {allowMutation ? (
-                            <select
-                              className="h-8 w-full max-w-[120px] rounded border pl-2 pr-6 text-sm"
-                              value={row.serviceCategoryId}
-                              onChange={(e) => updateLine(i, { serviceCategoryId: e.target.value })}
-                            >
-                              {rowServices.map((s) => (
-                                <option key={s.id} value={s.id}>{s.label}</option>
-                              ))}
-                            </select>
+                            rowServices.length === 0 ? (
+                              <span className="text-sm text-muted-foreground">—</span>
+                            ) : (
+                              <Select
+                                value={row.serviceCategoryId ?? ''}
+                                onValueChange={(id) => updateLine(i, { serviceCategoryId: id })}
+                              >
+                                <SelectTrigger className="h-8 w-full min-w-[8rem]">
+                                  <SelectValue placeholder="Service" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {rowServices.map((s) => (
+                                    <SelectItem key={s.id} value={s.id}>
+                                      {s.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            )
                           ) : (
                             catalogMatrix.serviceCategories.find((s) => s.id === row.serviceCategoryId)?.label ?? row.serviceCategoryId
                           )}
@@ -790,14 +810,14 @@ export function InvoiceBuilder({
                       </td>
                     </>
                   )}
-                  <td className="align-middle py-2 text-right">
+                  <td className="align-middle py-2 pr-8 text-right sm:pr-10">
                     <span className="inline-flex items-center justify-end gap-1">
                       {allowMutation ? (
                         <Input
                           type="text"
                           inputMode="decimal"
                           autoComplete="off"
-                          className="h-8 w-[4.25rem] text-right tabular-nums"
+                          className="h-9 w-[4.5rem] text-right text-sm font-medium tabular-nums text-foreground [&:not(:placeholder-shown)]:font-medium [&:not(:placeholder-shown)]:text-foreground"
                           value={
                             qtyDraftByRowIndex[i] !== undefined
                               ? qtyDraftByRowIndex[i]
@@ -833,69 +853,49 @@ export function InvoiceBuilder({
                           }}
                         />
                       ) : (
-                        row.quantity
+                        <span className="tabular-nums text-sm font-medium text-foreground">{row.quantity}</span>
                       )}
                     </span>
                   </td>
-                  <td className="align-middle py-2 text-right">
-                    <span className="inline-flex items-center justify-end gap-1">
-                      {allowMutation ? (
-                        <Input
-                          type="text"
-                          inputMode="decimal"
-                          autoComplete="off"
-                          className="h-8 w-[4.25rem] text-right tabular-nums"
-                          placeholder="—"
-                          value={
-                            clothesDraftByRowIndex[i] !== undefined
-                              ? clothesDraftByRowIndex[i]
-                              : row.clothesCount != null && Number.isFinite(row.clothesCount)
-                                ? String(row.clothesCount)
-                                : ''
-                          }
-                          onFocus={() => {
-                            setClothesDraftByRowIndex((p) => ({
-                              ...p,
-                              [i]:
-                                p[i] ??
-                                (row.clothesCount != null && Number.isFinite(row.clothesCount)
-                                  ? String(row.clothesCount)
-                                  : ''),
-                            }));
-                          }}
-                          onChange={(e) => {
-                            let v = e.target.value.replace(',', '.');
-                            if (v === '' || /^\d*\.?\d*$/.test(v)) {
-                              setClothesDraftByRowIndex((p) => ({ ...p, [i]: v }));
-                            }
-                          }}
-                          onBlur={(e) => {
-                            const rawDraft = e.target.value.replace(',', '.').trim();
-                            setClothesDraftByRowIndex((p) => {
-                              const next = { ...p };
-                              delete next[i];
-                              return next;
-                            });
-                            if (rawDraft === '' || rawDraft === '.') {
-                              updateLine(i, { clothesCount: undefined });
-                              return;
-                            }
-                            const n = Number(rawDraft);
-                            if (!Number.isFinite(n) || n < 0.01) {
-                              updateLine(i, { clothesCount: undefined });
-                            } else {
-                              updateLine(i, { clothesCount: n });
-                            }
-                          }}
-                        />
-                      ) : (
-                        <span className="tabular-nums">
-                          {row.clothesCount != null && Number.isFinite(row.clothesCount)
-                            ? row.clothesCount
-                            : row.quantity}
-                        </span>
-                      )}
-                    </span>
+                  <td className="align-middle border-l border-border/70 py-2 pl-5 sm:pl-6">
+                    {allowMutation ? (
+                      <Input
+                        type="text"
+                        autoComplete="off"
+                        className="h-9 min-w-[7rem] max-w-[16rem] text-sm font-normal leading-snug text-foreground antialiased placeholder:font-normal [&:not(:placeholder-shown)]:font-normal [&:not(:placeholder-shown)]:text-foreground"
+                        placeholder="—"
+                        maxLength={REMARKS_MAX}
+                        value={
+                          remarksDraftByRowIndex[i] !== undefined
+                            ? remarksDraftByRowIndex[i]
+                            : (row.remarks ?? '')
+                        }
+                        onFocus={() => {
+                          setRemarksDraftByRowIndex((p) => ({
+                            ...p,
+                            [i]: p[i] ?? (row.remarks ?? ''),
+                          }));
+                        }}
+                        onChange={(e) => {
+                          const v = e.target.value.slice(0, REMARKS_MAX);
+                          setRemarksDraftByRowIndex((p) => ({ ...p, [i]: v }));
+                        }}
+                        onBlur={(e) => {
+                          const raw = e.target.value.trim().slice(0, REMARKS_MAX);
+                          setRemarksDraftByRowIndex((p) => {
+                            const next = { ...p };
+                            delete next[i];
+                            return next;
+                          });
+                          updateLine(i, { remarks: raw || undefined });
+                        }}
+                        aria-label="Remarks (optional)"
+                      />
+                    ) : (
+                      <span className="block max-w-[16rem] whitespace-normal break-words text-sm font-medium leading-snug text-foreground">
+                        {(row.remarks ?? '').trim() || '—'}
+                      </span>
+                    )}
                   </td>
                   <td className="align-middle py-2 text-right">
                     {formatMoney(row.unitPricePaise)}

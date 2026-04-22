@@ -21,8 +21,11 @@ export function useSubmitCustomerFlowOrderFeedback() {
       return data;
     },
     onSuccess: (_, { orderId }) => {
-      queryClient.invalidateQueries({ queryKey: ['customer-flow', 'orders', orderId, 'feedback-eligibility'] });
-      queryClient.invalidateQueries({ queryKey: ['customer-flow', 'orders', orderId] });
+      queryClient.invalidateQueries({
+        queryKey: ['customer-flow', 'orders', orderId, 'feedback-eligibility'],
+        exact: false,
+      });
+      queryClient.invalidateQueries({ queryKey: ['customer-flow', 'orders', orderId], exact: false });
       toast.success('Feedback submitted');
     },
     onError: (err) => {

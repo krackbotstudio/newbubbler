@@ -40,10 +40,10 @@ function serviceTypeDisplayLabel(serviceType: string): string {
 }
 
 export default function CustomerFlowOrdersPage() {
-  const { data: orders, isLoading, error } = useCustomerFlowOrders();
   const params = useParams<{ branchSlug: string }>();
   const branchSlug = typeof params.branchSlug === 'string' ? params.branchSlug : '';
   const base = `/customer/${branchSlug}`;
+  const { data: orders, isLoading, error } = useCustomerFlowOrders(branchSlug);
   // Deterministic SSR/CSR first paint to avoid hydration mismatch.
   const [primary, setPrimary] = useState('#8a1459');
   const [secondary, setSecondary] = useState('#f4e8f0');
@@ -93,7 +93,7 @@ export default function CustomerFlowOrdersPage() {
         <header className="mb-4">
           <h1 className="text-2xl font-bold" style={{ color: textPrimary }}>Orders</h1>
           <p className="mt-1 text-sm" style={{ color: textMuted }}>
-            All orders (ongoing and completed) with status and utilisation.
+            Orders for this branch (ongoing and completed) with status and utilisation.
           </p>
         </header>
 

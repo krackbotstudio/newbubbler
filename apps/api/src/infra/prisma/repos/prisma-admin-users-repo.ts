@@ -29,28 +29,109 @@ export class PrismaAdminUsersRepo implements AdminUsersRepo {
   constructor(private readonly prisma: PrismaLike) {}
 
   async listAdmin(filters: AdminUsersFilters): Promise<AdminUsersResult> {
-    const { role, roles, active, search, branchId, branchIds, limit, cursor } = filters;
+    const { role, roles, active, search, branchId, branchIds, branchHeadList, limit, cursor } =
+      filters;
 
-    // Use `not: CUSTOMER` so we do not send `AGENT` in SQL until Postgres enum includes it (avoids 22P02 before migrate).
     const where: any = {};
-    if (Array.isArray(roles) && roles.length > 0) {
-      where.role = { in: roles };
+
+    if (branchHeadList) {
+      const {
+        branchId: bhBid,
+        includeUserId,
+        includeUserEmail,
+        agentsOnly,
+        selfAsBranchHeadOnly,
+      } = branchHeadList;
+
+      const buildSelfClause = (): object => {
+        const m: object[] = [{ id: includeUserId }];
+        if (includeUserEmail) {
+          m.push({
+            email: { equals: includeUserEmail, mode: 'insensitive' as const },
+          });
+        }
+        return m.length === 1 ? m[0]! : { OR: m };
+      };
+
+      if (selfAsBranchHeadOnly) {
+        const selfClause = buildSelfClause();
+        const parts: object[] = [
+          selfClause,
+          { role: 'OPS' as const },
+          { branchId: bhBid },
+        ];
+        if (active !== undefined) {
+          parts.push({ isActive: active });
+        }
+        if (search) {
+          parts.push({
+            OR: [
+              { email: { contains: search, mode: 'insensitive' as const } },
+              { name: { contains: search, mode: 'insensitive' as const } },
+            ],
+          });
+        }
+        Object.assign(where, { AND: parts });
+      } else if (agentsOnly) {
+        const parts: object[] = [{ branchId: bhBid, role: 'AGENT' as const }];
+        if (active !== undefined) {
+          parts.push({ isActive: active });
+        }
+        if (search) {
+          parts.push({
+            OR: [
+              { email: { contains: search, mode: 'insensitive' as const } },
+              { name: { contains: search, mode: 'insensitive' as const } },
+            ],
+          });
+        }
+        Object.assign(where, parts.length === 1 ? parts[0] : { AND: parts });
+      } else {
+        /**
+         * All roles: staff in this branch (OPS + AGENT) OR the signed-in user (by id/email),
+         * so the branch head row still appears if JWT branchId and DB branchId were ever out of sync.
+         */
+        const selfClause = buildSelfClause();
+        const branchStaff: object = {
+          branchId: bhBid,
+          role: { in: ['OPS' as const, 'AGENT' as const] },
+        };
+        const scope: object = { OR: [selfClause, branchStaff] };
+        const parts: object[] = [scope];
+        if (active !== undefined) {
+          parts.push({ isActive: active });
+        }
+        if (search) {
+          parts.push({
+            OR: [
+              { email: { contains: search, mode: 'insensitive' as const } },
+              { name: { contains: search, mode: 'insensitive' as const } },
+            ],
+          });
+        }
+        Object.assign(where, parts.length === 1 ? parts[0] : { AND: parts });
+      }
     } else {
-      where.role = role ? role : { not: 'CUSTOMER' };
-    }
-    if (branchId) {
-      where.branchId = branchId;
-    } else if (Array.isArray(branchIds) && branchIds.length > 0) {
-      where.branchId = { in: branchIds };
-    }
-    if (active !== undefined) {
-      where.isActive = active;
-    }
-    if (search) {
-      where.OR = [
-        { email: { contains: search, mode: 'insensitive' as const } },
-        { name: { contains: search, mode: 'insensitive' as const } },
-      ];
+      // Use `not: CUSTOMER` so we do not send `AGENT` in SQL until Postgres enum includes it (avoids 22P02 before migrate).
+      if (Array.isArray(roles) && roles.length > 0) {
+        where.role = { in: roles };
+      } else {
+        where.role = role ? role : { not: 'CUSTOMER' };
+      }
+      if (branchId) {
+        where.branchId = branchId;
+      } else if (Array.isArray(branchIds) && branchIds.length > 0) {
+        where.branchId = { in: branchIds };
+      }
+      if (active !== undefined) {
+        where.isActive = active;
+      }
+      if (search) {
+        where.OR = [
+          { email: { contains: search, mode: 'insensitive' as const } },
+          { name: { contains: search, mode: 'insensitive' as const } },
+        ];
+      }
     }
 
     const take = limit ?? 20;

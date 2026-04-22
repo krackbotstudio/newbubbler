@@ -18,6 +18,7 @@ export interface CreateAckInvoiceDraftInput {
     name: string;
     quantity: number;
     clothesCount?: number | null;
+    remarks?: string | null;
     unitPrice: number;
     amount?: number;
     catalogItemId?: string | null;
@@ -90,6 +91,10 @@ export async function createAckInvoiceDraft(
     ...(input.items[idx]?.clothesCount != null &&
       Number.isFinite(input.items[idx]!.clothesCount!) && {
         clothesCount: input.items[idx]!.clothesCount,
+      }),
+    ...(input.items[idx]?.remarks != null &&
+      String(input.items[idx]!.remarks).trim() !== '' && {
+        remarks: String(input.items[idx]!.remarks).trim().slice(0, 500),
       }),
     unitPrice: i.unitPrice,
     amount: totals.items[idx]?.amount ?? i.amount,

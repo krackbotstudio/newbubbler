@@ -20,6 +20,18 @@ export interface AdminUsersFilters {
   branchId?: string;
   /** When set, filter users to any of these branches. */
   branchIds?: string[];
+  /**
+   * Branch head (OPS) list: agents in `branchId` plus always `includeUserId` (self).
+   * When `agentsOnly`, only agents in the branch (role filter “Agent” in UI).
+   * When `selfAsBranchHeadOnly`, only the signed-in branch head row (OPS in branch).
+   */
+  branchHeadList?: {
+    branchId: string;
+    includeUserId: string;
+    includeUserEmail?: string | null;
+    agentsOnly?: boolean;
+    selfAsBranchHeadOnly?: boolean;
+  };
   limit: number;
   cursor?: string;
 }

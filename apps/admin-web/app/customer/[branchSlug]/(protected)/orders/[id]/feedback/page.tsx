@@ -24,7 +24,7 @@ export default function CustomerFlowOrderFeedbackPage() {
   const orderId = typeof params.id === 'string' ? params.id : null;
   const branchSlug = typeof params.branchSlug === 'string' ? params.branchSlug : '';
   const base = `/customer/${branchSlug}`;
-  const { data: eligibility, isLoading: eligLoading } = useCustomerFlowFeedbackEligibility(orderId);
+  const { data: eligibility, isLoading: eligLoading } = useCustomerFlowFeedbackEligibility(orderId, branchSlug);
   const submitFeedback = useSubmitCustomerFlowOrderFeedback();
   const [primary, setPrimary] = useState(getStoredPortal()?.primaryColor ?? '#8a1459');
   const [secondary, setSecondary] = useState(getStoredPortal()?.secondaryColor ?? '#f4e8f0');

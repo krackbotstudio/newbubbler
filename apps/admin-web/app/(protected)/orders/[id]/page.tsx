@@ -47,6 +47,40 @@ function parseInvoiceItemClothesCount(raw: unknown): number | undefined {
   return Number.isFinite(n) && n >= 0.01 ? n : undefined;
 }
 
+const INVOICE_REMARKS_MAX = 500;
+
+type InvoiceApiItem = {
+  type: string;
+  name: string;
+  quantity: unknown;
+  clothesCount?: unknown;
+  remarks?: unknown;
+  unitPrice: number;
+  amount: number;
+  catalogItemId?: string | null;
+  segmentCategoryId?: string | null;
+  serviceCategoryId?: string | null;
+};
+
+/** Maps API invoice lines to builder rows; legacy `clothesCount`-only rows become remarks text. */
+function invoiceApiItemToLineRow(i: InvoiceApiItem): InvoiceLineRow {
+  const remarksFromApi = typeof i.remarks === 'string' && i.remarks.trim() ? i.remarks.trim() : '';
+  const clothesCount = parseInvoiceItemClothesCount(i.clothesCount);
+  const legacyNumeric = clothesCount != null ? String(clothesCount) : '';
+  const remarks = (remarksFromApi || legacyNumeric).slice(0, INVOICE_REMARKS_MAX);
+  return {
+    type: (i.type || 'SERVICE') as InvoiceLineRow['type'],
+    name: i.name,
+    quantity: Number(i.quantity),
+    ...(remarks ? { remarks } : {}),
+    unitPricePaise: i.unitPrice,
+    amountPaise: i.amount,
+    catalogItemId: i.catalogItemId ?? undefined,
+    segmentCategoryId: i.segmentCategoryId ?? undefined,
+    serviceCategoryId: i.serviceCategoryId ?? undefined,
+  };
+}
+
 const STATUS_FLOW: OrderStatus[] = [
   'BOOKING_CONFIRMED',
   'PICKED_UP',
@@ -157,22 +191,7 @@ export default function OrderDetailPage() {
       if (!hasHydratedAck.current) {
         hasHydratedAck.current = true;
         if (ack.items?.length) {
-          setAckItems(
-            ack.items.map((i) => {
-              const clothesCount = parseInvoiceItemClothesCount(i.clothesCount);
-              return {
-                type: (i.type || 'SERVICE') as InvoiceLineRow['type'],
-                name: i.name,
-                quantity: i.quantity,
-                ...(clothesCount != null ? { clothesCount } : {}),
-                unitPricePaise: i.unitPrice,
-                amountPaise: i.amount,
-                catalogItemId: i.catalogItemId ?? undefined,
-                segmentCategoryId: i.segmentCategoryId ?? undefined,
-                serviceCategoryId: i.serviceCategoryId ?? undefined,
-              };
-            }),
-          );
+          setAckItems(ack.items.map((i) => invoiceApiItemToLineRow(i as InvoiceApiItem)));
         }
         if (ack.subtotal != null && ack.tax != null) {
           const discPaise = ack.discountPaise ?? 0;
@@ -195,22 +214,7 @@ export default function OrderDetailPage() {
     if (finalInv?.items?.length) {
       hasPrefilledFinal.current = true;
       hasHydratedFinal.current = true;
-      setFinalItems(
-        finalInv.items.map((i) => {
-          const clothesCount = parseInvoiceItemClothesCount(i.clothesCount);
-          return {
-            type: (i.type || 'SERVICE') as InvoiceLineRow['type'],
-            name: i.name,
-            quantity: i.quantity,
-            ...(clothesCount != null ? { clothesCount } : {}),
-            unitPricePaise: i.unitPrice,
-            amountPaise: i.amount,
-            catalogItemId: i.catalogItemId ?? undefined,
-            segmentCategoryId: i.segmentCategoryId ?? undefined,
-            serviceCategoryId: i.serviceCategoryId ?? undefined,
-          };
-        }),
-      );
+      setFinalItems(finalInv.items.map((i) => invoiceApiItemToLineRow(i as InvoiceApiItem)));
       if (finalInv.subtotal != null && finalInv.tax != null) {
         const discPaise = finalInv.discountPaise ?? 0;
         const taxable = Math.max(0, finalInv.subtotal - discPaise);
@@ -223,22 +227,7 @@ export default function OrderDetailPage() {
       hasPrefilledFinal.current = true;
       const ackItems = ack?.items;
       if (ackItems?.length) {
-        setFinalItems(
-          ackItems.map((i) => {
-            const clothesCount = parseInvoiceItemClothesCount(i.clothesCount);
-            return {
-              type: (i.type || 'SERVICE') as InvoiceLineRow['type'],
-              name: i.name,
-              quantity: i.quantity,
-              ...(clothesCount != null ? { clothesCount } : {}),
-              unitPricePaise: i.unitPrice,
-              amountPaise: i.amount,
-              catalogItemId: i.catalogItemId ?? undefined,
-              segmentCategoryId: i.segmentCategoryId ?? undefined,
-              serviceCategoryId: i.serviceCategoryId ?? undefined,
-            };
-          }),
-        );
+        setFinalItems(ackItems.map((i) => invoiceApiItemToLineRow(i as InvoiceApiItem)));
       }
       if (ack.subtotal != null && ack.tax != null) {
         const discPaise = ack.discountPaise ?? 0;
@@ -251,6 +240,7 @@ export default function OrderDetailPage() {
           ? Math.round(((ack.discountPaise ?? 0) / ack.subtotal!) * 100)
           : (ack.discountPaise ?? 0)
       );
+      setFinalComments(ack.comments ?? '');
     }
   }, [summary, ackDiscountType]);
 
@@ -263,22 +253,7 @@ export default function OrderDetailPage() {
     if (ack?.status !== 'ISSUED' || finalInv?.items?.length) return;
 
     if (ack.items?.length) {
-      setFinalItems(
-        ack.items.map((i) => {
-          const clothesCount = parseInvoiceItemClothesCount(i.clothesCount);
-          return {
-            type: (i.type || 'SERVICE') as InvoiceLineRow['type'],
-            name: i.name,
-            quantity: i.quantity,
-            ...(clothesCount != null ? { clothesCount } : {}),
-            unitPricePaise: i.unitPrice,
-            amountPaise: i.amount,
-            catalogItemId: i.catalogItemId ?? undefined,
-            segmentCategoryId: i.segmentCategoryId ?? undefined,
-            serviceCategoryId: i.serviceCategoryId ?? undefined,
-          };
-        }),
-      );
+      setFinalItems(ack.items.map((i) => invoiceApiItemToLineRow(i as InvoiceApiItem)));
     }
 
     if (ack.subtotal != null && ack.tax != null) {
@@ -410,9 +385,10 @@ export default function OrderDetailPage() {
         catalogItemId: i.catalogItemId,
         segmentCategoryId: i.segmentCategoryId,
         serviceCategoryId: i.serviceCategoryId,
-        ...(i.clothesCount != null &&
-          Number.isFinite(i.clothesCount) &&
-          i.clothesCount >= 0.01 && { clothesCount: i.clothesCount }),
+        ...(i.remarks != null &&
+          String(i.remarks).trim() !== '' && {
+            remarks: String(i.remarks).trim().slice(0, INVOICE_REMARKS_MAX),
+          }),
       })),
       taxPaise,
       discountPaise,
@@ -443,9 +419,10 @@ export default function OrderDetailPage() {
         catalogItemId: i.catalogItemId,
         segmentCategoryId: i.segmentCategoryId,
         serviceCategoryId: i.serviceCategoryId,
-        ...(i.clothesCount != null &&
-          Number.isFinite(i.clothesCount) &&
-          i.clothesCount >= 0.01 && { clothesCount: i.clothesCount }),
+        ...(i.remarks != null &&
+          String(i.remarks).trim() !== '' && {
+            remarks: String(i.remarks).trim().slice(0, INVOICE_REMARKS_MAX),
+          }),
       })),
       taxPaise,
       discountPaise,
@@ -983,7 +960,12 @@ export default function OrderDetailPage() {
                     <thead>
                       <tr className="border-b bg-muted/50">
                         <th className="text-left py-2 px-3">Item</th>
-                        <th className="text-right py-2 px-3">Qty</th>
+                        <th className="whitespace-nowrap py-2 pl-3 pr-10 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          Qty
+                        </th>
+                        <th className="whitespace-nowrap border-l border-border/70 py-2 pl-5 pr-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          Remarks
+                        </th>
                         <th className="text-right py-2 px-3">Amount</th>
                       </tr>
                     </thead>
@@ -1007,7 +989,12 @@ export default function OrderDetailPage() {
                                 <div className="text-xs text-muted-foreground mt-0.5">{detail}</div>
                               ) : null}
                             </td>
-                            <td className="py-2 px-3 text-right tabular-nums">{row.quantity}</td>
+                            <td className="py-2 pl-3 pr-10 text-right text-sm font-medium tabular-nums text-foreground">
+                              {row.quantity}
+                            </td>
+                            <td className="max-w-[16rem] whitespace-normal break-words border-l border-border/70 py-2 pl-5 pr-3 text-left text-sm font-medium leading-snug text-foreground">
+                              {(row.remarks ?? '').trim() || '—'}
+                            </td>
                             <td className="py-2 px-3 text-right tabular-nums">{formatMoney(lineAmount)}</td>
                           </tr>
                         );
@@ -1120,7 +1107,7 @@ export default function OrderDetailPage() {
         <p className="text-sm text-muted-foreground mb-3 ack-print-hide">Acknowledgement invoice cannot be edited after Final invoice is submitted.</p>
       )}
       <Card className="bg-transparent border-0 shadow-none">
-        <CardContent className="space-y-4 pt-6">
+        <CardContent className="mx-auto w-full max-w-6xl space-y-4 pt-6">
           {/* Header: centered logo only */}
           <div className="flex border-b pb-4 items-center justify-center">
             <div className="flex-shrink-0 flex justify-center">
@@ -1284,7 +1271,7 @@ export default function OrderDetailPage() {
         )}
         <div
           ref={finalPrintAreaRef}
-          className="mx-auto w-full max-w-2xl rounded-lg bg-white p-6 shadow-sm invoice-print-view space-y-4 [color-scheme:light]"
+          className="mx-auto w-full max-w-6xl rounded-lg bg-white p-6 shadow-sm invoice-print-view space-y-4 [color-scheme:light]"
         >
         <CardContent className="space-y-4 p-0">
           {/* Header: centered logo only */}

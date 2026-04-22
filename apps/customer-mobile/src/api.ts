@@ -553,6 +553,8 @@ export interface OrderInvoiceItem {
   quantity: number;
   unitPrice: number;
   amount: number;
+  remarks?: string | null;
+  clothesCount?: number | null;
   catalogItemId?: string | null;
   icon?: string | null;
   /** Optional catalog-matrix info (when invoice line is tied to a segment/service category). */

@@ -33,6 +33,8 @@ export class AdminInvoicesService {
         quantity: number;
         unitPricePaise: number;
         amountPaise?: number;
+        clothesCount?: number;
+        remarks?: string | null;
         catalogItemId?: string | null;
         segmentCategoryId?: string | null;
         serviceCategoryId?: string | null;
@@ -48,6 +50,8 @@ export class AdminInvoicesService {
       quantity: i.quantity,
       unitPrice: i.unitPricePaise,
       amount: i.amountPaise,
+      ...(i.clothesCount != null && Number.isFinite(i.clothesCount) && { clothesCount: i.clothesCount }),
+      ...(i.remarks != null && String(i.remarks).trim() !== '' && { remarks: String(i.remarks).trim() }),
       catalogItemId: i.catalogItemId,
       segmentCategoryId: i.segmentCategoryId,
       serviceCategoryId: i.serviceCategoryId,
@@ -80,6 +84,8 @@ export class AdminInvoicesService {
         quantity: number;
         unitPricePaise: number;
         amountPaise?: number;
+        clothesCount?: number;
+        remarks?: string | null;
         catalogItemId?: string | null;
         segmentCategoryId?: string | null;
         serviceCategoryId?: string | null;
@@ -95,6 +101,8 @@ export class AdminInvoicesService {
       quantity: i.quantity,
       unitPrice: i.unitPricePaise,
       amount: i.amountPaise,
+      ...(i.clothesCount != null && Number.isFinite(i.clothesCount) && { clothesCount: i.clothesCount }),
+      ...(i.remarks != null && String(i.remarks).trim() !== '' && { remarks: String(i.remarks).trim() }),
       catalogItemId: i.catalogItemId,
       segmentCategoryId: i.segmentCategoryId,
       serviceCategoryId: i.serviceCategoryId,

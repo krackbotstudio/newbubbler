@@ -12,9 +12,7 @@ export const ROLE_PERMISSIONS: Record<
 > = {
   ADMIN: { allow: ['*'] },
   BILLING: { allow: ['*'] },
-  OPS: { denyRoutes: ['/admin-users'] },
-  /** Same route guard pattern as branch head until account is migrated off PARTIAL_ADMIN. */
-  PARTIAL_ADMIN: { denyRoutes: ['/admin-users'] },
+  OPS: {},
   AGENT: {
     allow: ['/dashboard', '/orders', '/feedback'],
     navHide: ['/orders', '/customers'],
@@ -22,7 +20,7 @@ export const ROLE_PERMISSIONS: Record<
   CUSTOMER: { denyRoutes: ['*'] },
 };
 
-const OPS_DENIED_ROUTES = ROLE_PERMISSIONS.OPS.denyRoutes as string[];
+const OPS_DENIED_ROUTES = ROLE_PERMISSIONS.OPS.denyRoutes ?? [];
 
 /**
  * Returns true if the user role can access the given pathname.

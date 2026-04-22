@@ -114,6 +114,10 @@ export async function listInvoicesForOrder(
         quantity: item.quantity,
         unitPrice: item.unitPrice,
         amount: item.amount,
+        ...(item.remarks != null &&
+          String(item.remarks).trim() !== '' && { remarks: String(item.remarks).trim() }),
+        ...(item.clothesCount != null &&
+          Number.isFinite(Number(item.clothesCount)) && { clothesCount: Number(item.clothesCount) }),
         ...(item.catalogItemId != null && { catalogItemId: item.catalogItemId }),
         ...(item.catalogItemId != null && { icon: iconMap[item.catalogItemId] ?? null }),
         ...(item.segmentCategoryId != null && { segmentCategoryId: item.segmentCategoryId }),

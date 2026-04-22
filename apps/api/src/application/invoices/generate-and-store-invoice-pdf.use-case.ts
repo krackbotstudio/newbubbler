@@ -114,6 +114,7 @@ export async function generateAndStoreInvoicePdf(
       name: i.name,
       quantity: i.quantity,
       clothesCount: i.clothesCount ?? null,
+      remarks: i.remarks ?? null,
       unitPrice: i.unitPrice,
       amount: i.amount,
     })),

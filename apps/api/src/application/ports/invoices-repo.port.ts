@@ -8,6 +8,8 @@ export interface InvoiceItemRecord {
   quantity: number;
   /** When null/undefined, UI treats as same as `quantity`. */
   clothesCount?: number | null;
+  /** Free-text per line (invoice / PDF “Remarks”). */
+  remarks?: string | null;
   unitPrice: number;
   amount: number;
   catalogItemId?: string | null;
@@ -63,6 +65,7 @@ export interface CreateDraftInput {
     name: string;
     quantity: number;
     clothesCount?: number | null;
+    remarks?: string | null;
     unitPrice: number;
     amount: number;
     catalogItemId?: string | null;
@@ -91,6 +94,7 @@ export interface UpdateDraftInput {
     name: string;
     quantity: number;
     clothesCount?: number | null;
+    remarks?: string | null;
     unitPrice: number;
     amount: number;
     catalogItemId?: string | null;

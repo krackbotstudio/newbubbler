@@ -806,7 +806,7 @@ export class PrismaOrdersRepo implements OrdersRepo {
         subscriptionUsageItems: null,
         newSubscriptionSnapshotJson: undefined,
         brandingSnapshotJson: (inv as { brandingSnapshotJson?: unknown }).brandingSnapshotJson ?? undefined,
-        items: (inv as { items?: Array<{ type: string; name: string; quantity: unknown; clothesCount?: unknown; unitPrice: number; amount: number; catalogItemId?: string | null; segmentCategoryId?: string | null; serviceCategoryId?: string | null }> }).items?.map((i) => ({
+        items: (inv as { items?: Array<{ type: string; name: string; quantity: unknown; clothesCount?: unknown; remarks?: string | null; unitPrice: number; amount: number; catalogItemId?: string | null; segmentCategoryId?: string | null; serviceCategoryId?: string | null }> }).items?.map((i) => ({
           type: i.type,
           name: i.name,
           quantity: Number(i.quantity),
@@ -815,6 +815,7 @@ export class PrismaOrdersRepo implements OrdersRepo {
             const n = Number(i.clothesCount as string | number);
             return Number.isFinite(n) ? n : null;
           })(),
+          remarks: i.remarks?.trim() ? i.remarks.trim() : null,
           unitPrice: i.unitPrice,
           amount: i.amount,
           ...(i.catalogItemId != null && { catalogItemId: i.catalogItemId }),

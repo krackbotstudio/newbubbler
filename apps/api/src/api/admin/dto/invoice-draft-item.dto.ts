@@ -1,4 +1,4 @@
-import { IsEnum, IsString, IsInt, IsNumber, Min, IsOptional } from 'class-validator';
+import { IsEnum, IsString, IsInt, IsNumber, Min, IsOptional, MaxLength } from 'class-validator';
 import { InvoiceItemType } from '@shared/enums';
 import { Type } from 'class-transformer';
 
@@ -14,12 +14,18 @@ export class InvoiceDraftItemDto {
   @Min(0.1)
   quantity!: number;
 
-  /** Optional piece count; omit to mean “same as quantity” on the client. */
+  /** Optional piece count (legacy); omit to mean “same as quantity” on the client. */
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
   @Min(0.01)
   clothesCount?: number;
+
+  /** Per-line remarks (shown on invoice / PDF). */
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  remarks?: string | null;
 
   @Type(() => Number)
   @IsInt()

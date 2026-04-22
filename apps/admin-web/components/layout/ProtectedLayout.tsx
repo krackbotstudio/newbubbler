@@ -94,11 +94,6 @@ export function ProtectedLayout({ children }: { children: React.ReactNode }) {
       }
       return;
     }
-    if (user.role === 'PARTIAL_ADMIN' && isOpsDeniedRoute(pathname ?? '')) {
-      toast.error('No access');
-      router.replace(OPS_DEFAULT_REDIRECT);
-      return;
-    }
     if (user.role === 'AGENT' && !canAccessRoute('AGENT', pathname ?? '')) {
       toast.error('No access');
       router.replace(AGENT_DEFAULT_REDIRECT);

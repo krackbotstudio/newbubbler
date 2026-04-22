@@ -1,10 +1,22 @@
-import { IsEnum, IsOptional, IsString, IsIn } from 'class-validator';
-import { Role } from '@shared/enums';
+import { IsOptional, IsString, IsIn } from 'class-validator';
+
+/**
+ * Must be string literals — do not derive from `Role` enum. A stale or duplicated `@shared/enums`
+ * build can leave `Role.AGENT` undefined at runtime, which makes `@IsIn([...Role])` drop AGENT from
+ * validation and reject `?role=AGENT` with a message ending in `BILLING, "`.
+ */
+export const ADMIN_USERS_LIST_ROLE_QUERY_VALUES = [
+  'CUSTOMER',
+  'ADMIN',
+  'OPS',
+  'BILLING',
+  'AGENT',
+] as const;
 
 export class ListAdminUsersQueryDto {
   @IsOptional()
-  @IsEnum(Role)
-  role?: Role;
+  @IsIn([...ADMIN_USERS_LIST_ROLE_QUERY_VALUES])
+  role?: (typeof ADMIN_USERS_LIST_ROLE_QUERY_VALUES)[number];
 
   @IsOptional()
   @IsIn(['true', 'false'])

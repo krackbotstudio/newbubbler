@@ -29,6 +29,8 @@ export interface InvoicePdfItemLine {
   quantity: number;
   /** Piece count when set; omit/null to print same as quantity. */
   clothesCount?: number | null;
+  /** Free-text per line; takes precedence over clothesCount for the “Remarks” column when set. */
+  remarks?: string | null;
   unitPrice: number;
   amount: number;
 }

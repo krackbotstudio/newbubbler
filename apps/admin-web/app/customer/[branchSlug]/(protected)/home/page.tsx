@@ -50,7 +50,7 @@ export default function CustomerFlowHomePage() {
   const [portal, setPortal] = useState<PortalPublic | null>(() => getStoredPortal());
   const [carouselIndex, setCarouselIndex] = useState(0);
   const { data: me } = useCustomerFlowMe();
-  const { data: orders = [] } = useCustomerFlowOrders();
+  const { data: orders = [] } = useCustomerFlowOrders(branchSlug);
 
   useEffect(() => {
     if (!branchSlug) return;

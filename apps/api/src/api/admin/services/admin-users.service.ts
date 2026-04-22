@@ -12,7 +12,11 @@ import {
   updateAdminUser,
   type UpdateAdminUserInput,
 } from '../../../application/admin-users/update-admin-user.use-case';
-import type { AdminUsersRepo, AdminUsersFilters } from '../../../application/ports';
+import type {
+  AdminUsersRepo,
+  AdminUsersFilters,
+  AdminUserRecord,
+} from '../../../application/ports';
 import { ADMIN_USERS_REPO } from '../../../infra/infra.module';
 import { AppError } from '../../../application/errors';
 import type { AuthUser } from '../../common/roles.guard';
@@ -29,6 +33,13 @@ function isProtectedAdminEmail(email: string | null | undefined): boolean {
   return (email ?? '').trim().toLowerCase() === PROTECTED_ADMIN_EMAIL;
 }
 
+function requireOpsBranchId(actor: AuthUser): string {
+  const bid = actor.branchId ?? '';
+  if (!bid) {
+    throw new AppError('FORBIDDEN', 'Branch head is not assigned to a branch.');
+  }
+  return bid;
+}
 
 @Injectable()
 export class AdminUsersService {
@@ -42,33 +53,36 @@ export class AdminUsersService {
   }
 
   async list(filters: AdminUsersFilters) {
-    return listAdminUsers(filters, this.deps);
+    const result = await listAdminUsers(filters, this.deps);
+    const bh = filters.branchHeadList;
+    /**
+     * Branch head “All roles”: if the signed-in user row is missing from the page (query edge cases,
+     * id/email drift, etc.), merge it in so they always see themselves alongside branch staff.
+     */
+    if (
+      bh &&
+      !bh.agentsOnly &&
+      !bh.selfAsBranchHeadOnly &&
+      filters.actorRole === Role.OPS
+    ) {
+      const hasSelf = result.data.some((u) => u.id === bh.includeUserId);
+      if (!hasSelf) {
+        const self = await this.adminUsersRepo.getById(bh.includeUserId);
+        if (self) {
+          const limit = filters.limit ?? 20;
+          const merged = [self, ...result.data].sort(
+            (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+          );
+          result.data = merged.slice(0, limit);
+        }
+      }
+    }
+    return result;
   }
 
   async create(input: CreateAdminUserInput, actor?: AuthUser) {
     if (actor?.role === Role.OPS) {
-      if (input.role === Role.ADMIN || input.role === Role.BILLING) {
-        throw new AppError('FORBIDDEN', 'Branch heads cannot create platform admin users');
-      }
-      if (input.role !== Role.OPS && input.role !== Role.AGENT) {
-        throw new AppError('FEEDBACK_INVALID', 'Branch heads can only create Branch Head or Agent accounts');
-      }
-      const bid = actor.branchId;
-      if (!bid || input.branchId !== bid) {
-        throw new AppError('BRANCH_REQUIRED', 'New staff must belong to your branch');
-      }
-      if (input.role === Role.OPS) {
-        const n = await this.adminUsersRepo.countByBranchAndRole(bid, 'OPS');
-        if (n >= 2) {
-          throw new AppError('QUOTA', 'This branch already has the maximum of 2 branch head accounts');
-        }
-      }
-      if (input.role === Role.AGENT) {
-        const n = await this.adminUsersRepo.countByBranchAndRole(bid, 'AGENT');
-        if (n >= 2) {
-          throw new AppError('QUOTA', 'This branch already has the maximum of 2 agent accounts');
-        }
-      }
+      throw new AppError('FORBIDDEN', 'Branch heads cannot create admin users');
     }
 
     if (!CREATABLE_STAFF_ROLES.includes(input.role)) {
@@ -126,10 +140,13 @@ export class AdminUsersService {
         userId: currentUser.id,
       });
     }
+    if (currentUser.role === Role.OPS) {
+      this.assertOpsCanUpdate(currentUser, targetUser, input);
+    }
     return updateAdminUser(input, this.deps);
   }
 
-  async resetPassword(userId: string): Promise<{ tempPassword: string }> {
+  async resetPassword(userId: string, actor: AuthUser): Promise<{ tempPassword: string }> {
     const user = await this.adminUsersRepo.getById(userId);
     if (!user) {
       throw new AppError('NOT_FOUND', 'User not found', { userId });
@@ -139,12 +156,15 @@ export class AdminUsersService {
         email: PROTECTED_ADMIN_EMAIL,
       });
     }
+    if (actor.role === Role.OPS) {
+      this.assertOpsCanResetPassword(actor, user);
+    }
     const tempPassword = generateTempPassword(12);
     await this.adminUsersRepo.setPasswordHash(userId, hashAdminPassword(tempPassword));
     return { tempPassword };
   }
 
-  async delete(userId: string): Promise<void> {
+  async delete(userId: string, actor: AuthUser): Promise<void> {
     const user = await this.adminUsersRepo.getById(userId);
     if (!user) {
       throw new AppError('NOT_FOUND', 'User not found', { userId });
@@ -154,7 +174,59 @@ export class AdminUsersService {
         email: PROTECTED_ADMIN_EMAIL,
       });
     }
+    if (actor.role === Role.OPS) {
+      this.assertOpsCannotDelete();
+    }
     await this.adminUsersRepo.deleteUser(userId);
   }
+
+  private assertOpsCannotDelete(): void {
+    throw new AppError('FORBIDDEN', 'Branch heads cannot delete admin users.');
+  }
+
+  private assertOpsCanUpdate(
+    actor: AuthUser,
+    target: AdminUserRecord,
+    input: UpdateAdminUserInput,
+  ): void {
+    const bid = requireOpsBranchId(actor);
+    if (target.branchId !== bid) {
+      throw new AppError('FORBIDDEN', 'You cannot edit users outside your branch.');
+    }
+    if (target.id === actor.id) {
+      throw new AppError(
+        'FORBIDDEN',
+        'Branch heads cannot edit their own account here. Use Reset password if needed.',
+      );
+    }
+    if (target.role === Role.AGENT) {
+      if (input.role != null && input.role !== Role.AGENT) {
+        throw new AppError('FORBIDDEN', 'You cannot change this user’s role.');
+      }
+      if (input.branchId !== undefined && input.branchId !== bid) {
+        throw new AppError('FORBIDDEN', 'Agents must stay in your branch.');
+      }
+      return;
+    }
+    throw new AppError('FORBIDDEN', 'You can only edit agent accounts in your branch.');
+  }
+
+  private assertOpsCanResetPassword(actor: AuthUser, target: AdminUserRecord): void {
+    const bid = requireOpsBranchId(actor);
+    if (target.branchId !== bid) {
+      throw new AppError('FORBIDDEN', 'You cannot reset passwords for users outside your branch.');
+    }
+    if (target.role === Role.AGENT) {
+      return;
+    }
+    if (target.role === Role.OPS && target.id === actor.id) {
+      return;
+    }
+    throw new AppError(
+      'FORBIDDEN',
+      'You can only reset passwords for agents in your branch or your own account.',
+    );
+  }
+
 }
 

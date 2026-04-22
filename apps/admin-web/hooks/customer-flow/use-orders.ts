@@ -32,6 +32,10 @@ export interface OrderInvoiceItem {
   quantity: number;
   unitPrice: number;
   amount: number;
+  /** Per-line remarks (same as admin invoice / PDF). */
+  remarks?: string | null;
+  /** Legacy line detail when remarks were not stored separately. */
+  clothesCount?: number | null;
   catalogItemId?: string | null;
   icon?: string | null;
   segmentCategoryId?: string | null;
@@ -54,37 +58,38 @@ export interface OrderInvoice {
   items?: OrderInvoiceItem[];
 }
 
-export function useCustomerFlowOrders() {
+export function useCustomerFlowOrders(branchSlug: string) {
   return useQuery({
-    queryKey: ['customer-flow', 'orders'],
+    queryKey: ['customer-flow', 'orders', branchSlug],
     queryFn: async (): Promise<OrderListItem[]> => {
       const { data } = await customerFlowApi.get<OrderListItem[]>('/orders');
       return data;
     },
+    enabled: !!branchSlug,
   });
 }
 
-export function useCustomerFlowOrder(id: string | null) {
+export function useCustomerFlowOrder(id: string | null, branchSlug: string) {
   return useQuery({
-    queryKey: ['customer-flow', 'orders', id],
+    queryKey: ['customer-flow', 'orders', id, branchSlug],
     queryFn: async (): Promise<OrderDetail> => {
       if (!id) throw new Error('No order id');
       const { data } = await customerFlowApi.get<OrderDetail>(`/orders/${id}`);
       return data;
     },
-    enabled: !!id,
+    enabled: !!id && !!branchSlug,
   });
 }
 
-export function useCustomerFlowOrderInvoices(id: string | null) {
+export function useCustomerFlowOrderInvoices(id: string | null, branchSlug: string) {
   return useQuery({
-    queryKey: ['customer-flow', 'orders', id, 'invoices'],
+    queryKey: ['customer-flow', 'orders', id, 'invoices', branchSlug],
     queryFn: async (): Promise<OrderInvoice[]> => {
       if (!id) throw new Error('No order id');
       const { data } = await customerFlowApi.get<OrderInvoice[]>(`/orders/${id}/invoices`);
       return data;
     },
-    enabled: !!id,
+    enabled: !!id && !!branchSlug,
   });
 }
 

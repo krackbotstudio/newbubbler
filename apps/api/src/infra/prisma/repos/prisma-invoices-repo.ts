@@ -54,6 +54,7 @@ function toInvoiceRecord(row: {
     name: string;
     quantity: unknown;
     clothesCount?: unknown;
+    remarks?: string | null;
     unitPrice: number;
     amount: number;
     catalogItemId?: string | null;
@@ -98,6 +99,7 @@ function toInvoiceRecord(row: {
         const n = Number(i.clothesCount as string | number);
         return Number.isFinite(n) ? n : null;
       })(),
+      remarks: i.remarks?.trim() ? i.remarks.trim() : null,
       unitPrice: i.unitPrice,
       amount: i.amount,
       catalogItemId: i.catalogItemId ?? undefined,
@@ -169,6 +171,7 @@ export class PrismaInvoicesRepo implements InvoicesRepo {
             quantity: item.quantity,
             ...(item.clothesCount != null &&
               Number.isFinite(item.clothesCount) && { clothesCount: item.clothesCount }),
+            ...(item.remarks != null && String(item.remarks).trim() !== '' && { remarks: String(item.remarks).trim() }),
             unitPrice: item.unitPrice,
             amount: item.amount,
             ...(item.catalogItemId != null && { catalogItemId: item.catalogItemId }),
@@ -209,6 +212,7 @@ export class PrismaInvoicesRepo implements InvoicesRepo {
           quantity: item.quantity,
           ...(item.clothesCount != null &&
             Number.isFinite(item.clothesCount) && { clothesCount: item.clothesCount }),
+          ...(item.remarks != null && String(item.remarks).trim() !== '' && { remarks: String(item.remarks).trim() }),
           unitPrice: item.unitPrice,
           amount: item.amount,
           ...(item.catalogItemId != null && { catalogItemId: item.catalogItemId }),

@@ -425,6 +425,8 @@ model InvoiceItem {
    * Optional piece count for dry-clean / per-garment lines. When null, treat as same as `quantity` for display.
    */
   clothesCount      Decimal?        @db.Decimal(10, 2)
+  /** Free-text per line (shown as “Remarks” on invoices/PDF). */
+  remarks           String?
   unitPrice         Int
   amount            Int
   catalogItemId     String?
@@ -505,8 +507,6 @@ enum Role {
   OPS
   BILLING
   AGENT
-  /// Legacy role kept so Prisma can read rows until DB migration normalizes them to ADMIN.
-  PARTIAL_ADMIN
 }
 
 enum ServiceType {

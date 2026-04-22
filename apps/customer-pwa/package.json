@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "prisma:generate": "node -e \"process.exit(0)\"",
+    "prisma:generate:safe": "npm run prisma:generate:safe --prefix ../..",
     "build:api": "npm run build",
     "dev": "node scripts/expo-dev-web.cjs --clear",
     "start": "node scripts/expo-dev-web.cjs",

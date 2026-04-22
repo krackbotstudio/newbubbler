@@ -115,7 +115,7 @@ From now on, every deployment will automatically:
 
 No additional steps needed! 🎉
 
-## Subdomain Setup For Partial Admin Portals
+## Subdomain setup for customer portals
 
 To support shareable customer links like `https://{slug}.bubbler.krackbot.com`, configure:
 

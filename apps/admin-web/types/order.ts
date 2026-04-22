@@ -171,8 +171,9 @@ export interface OrderAdminSummary {
       type: string;
       name: string;
       quantity: number;
-      /** Optional piece count; null/omitted means same as quantity for display/PDF. */
+      /** Optional piece count (legacy); null/omitted means same as quantity for display/PDF. */
       clothesCount?: number | null;
+      remarks?: string | null;
       unitPrice: number;
       amount: number;
       catalogItemId?: string | null;
