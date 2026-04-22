@@ -44,10 +44,10 @@ import dotenv from 'dotenv';
   if (process.env.NODE_ENV !== 'production') {
     const raw = process.env.ALLOW_DEV_SIGNUP_BYPASS?.trim().toLowerCase();
     const bypassOn = raw === 'true' || raw === '1' || raw === 'yes';
-    const jwtSet = Boolean(process.env.SUPABASE_JWT_SECRET?.trim());
+    const brevoSet = Boolean(process.env.BREVO_API_KEY?.trim() && process.env.BREVO_SENDER_EMAIL?.trim());
     // eslint-disable-next-line no-console
     console.log(
-      `[api] NODE_ENV=${process.env.NODE_ENV ?? '(unset)'}; admin signup dev bypass: ${bypassOn ? 'on' : 'off'}; SUPABASE_JWT_SECRET: ${jwtSet ? 'set' : 'missing (paste JWT secret from Supabase → Settings → API)'}`,
+      `[api] NODE_ENV=${process.env.NODE_ENV ?? '(unset)'}; admin signup dev bypass: ${bypassOn ? 'on' : 'off'}; Brevo OTP config: ${brevoSet ? 'set' : 'missing (set BREVO_API_KEY + BREVO_SENDER_EMAIL)'}`,
     );
   }
 })();

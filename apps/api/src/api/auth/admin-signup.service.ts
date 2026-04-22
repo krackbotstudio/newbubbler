@@ -16,9 +16,14 @@ import { prisma } from '../../infra/prisma/prisma-client';
 import { STORAGE_ADAPTER } from '../../infra/infra.module';
 import type { StorageAdapter } from '../../application/ports';
 import { hashAdminPassword } from './password.util';
-import type { SupabaseJwtPayload } from './supabase-jwt.guard';
 import type { AdminSignupCompleteDto } from './dto/admin-signup-complete.dto';
 import type { AuthUser } from '../common/roles.guard';
+
+type PendingSignupOtp = {
+  otp: string;
+  expiresAtMs: number;
+  sentAtMs: number;
+};
 
 function sanitizeOriginalName(name: string): string {
   return (name || 'file').replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 100) || 'file';
@@ -33,6 +38,8 @@ function extFromOriginalName(name: string): string {
 
 @Injectable()
 export class AdminSignupService {
+  private readonly signupOtps = new Map<string, PendingSignupOtp>();
+
   constructor(
     @Inject(STORAGE_ADAPTER) private readonly storageAdapter: StorageAdapter,
   ) {}
@@ -56,23 +63,121 @@ export class AdminSignupService {
       : `/api/assets/branding/branches/${fileName}`;
   }
 
-  /**
-   * Issues a short-lived JWT in Supabase user shape so {@link SupabaseJwtGuard} accepts it on
-   * POST auth/admin/signup/complete. Only when {@link DevSignupBypassGuard} passed.
-   */
-  issueDevSupabaseAccessToken(email: string): { accessToken: string } {
-    const secret = process.env.SUPABASE_JWT_SECRET?.trim();
-    if (!secret) {
+  private get signupOtpTtlMinutes(): number {
+    const raw = Number(process.env.BREVO_SIGNUP_OTP_TTL_MINUTES ?? 10);
+    if (!Number.isFinite(raw)) return 10;
+    return Math.min(30, Math.max(3, Math.floor(raw)));
+  }
+
+  private get allowDevSignupBypass(): boolean {
+    const raw = process.env.ALLOW_DEV_SIGNUP_BYPASS?.trim().toLowerCase();
+    return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on';
+  }
+
+  private createSixDigitOtp(): string {
+    return String(Math.floor(100000 + Math.random() * 900000));
+  }
+
+  private async sendBrevoSignupOtp(email: string, otp: string): Promise<void> {
+    const apiKey = process.env.BREVO_API_KEY?.trim();
+    const senderEmail = process.env.BREVO_SENDER_EMAIL?.trim();
+    const senderName = process.env.BREVO_SENDER_NAME?.trim() || 'Bubbler';
+    if (!apiKey || !senderEmail) {
       throw new BadRequestException(
-        'Set SUPABASE_JWT_SECRET in apps/api/.env (Supabase Dashboard → Settings → API → JWT Secret) to use dev signup bypass.',
+        'Email verification is not configured. Set BREVO_API_KEY and BREVO_SENDER_EMAIL in apps/api/.env.',
       );
     }
-    const normalized = email.trim().toLowerCase();
-    const sub = randomUUID();
+    const subject = process.env.BREVO_SIGNUP_OTP_SUBJECT?.trim() || 'Your Bubbler verification code';
+    const ttl = this.signupOtpTtlMinutes;
+    const htmlContent = `
+      <div style="font-family: Arial, sans-serif; color:#111;">
+        <p>Your verification code is:</p>
+        <p style="font-size: 22px; font-weight: 700; letter-spacing: 4px; margin: 8px 0;">${otp}</p>
+        <p>This code expires in ${ttl} minutes.</p>
+      </div>
+    `;
+    const textContent = `Your verification code is ${otp}. It expires in ${ttl} minutes.`;
+    const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'api-key': apiKey,
+      },
+      body: JSON.stringify({
+        sender: { email: senderEmail, name: senderName },
+        to: [{ email }],
+        subject,
+        htmlContent,
+        textContent,
+      }),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new BadRequestException(`Could not send verification email (${res.status}). ${body || ''}`.trim());
+    }
+  }
+
+  async requestEmailOtp(emailRaw: string): Promise<{ ok: true }> {
+    const email = emailRaw.trim().toLowerCase();
+    this.assertSignupEmailAllowed(email);
+
+    const existingSameEmail = await prisma.user.findFirst({
+      where: { email: { equals: email, mode: 'insensitive' } },
+      select: { role: true },
+    });
+    if (existingSameEmail) {
+      if (existingSameEmail.role !== Role.CUSTOMER) {
+        throw new ConflictException('An admin account with this email already exists. Sign in instead.');
+      }
+      throw new ConflictException(
+        'This email is already registered as a customer account. Use a different email for branch signup, or contact support.',
+      );
+    }
+
+    const otp = this.allowDevSignupBypass ? '123456' : this.createSixDigitOtp();
+    await this.sendBrevoSignupOtp(email, otp);
+    const now = Date.now();
+    this.signupOtps.set(email, {
+      otp,
+      sentAtMs: now,
+      expiresAtMs: now + this.signupOtpTtlMinutes * 60 * 1000,
+    });
+    return { ok: true };
+  }
+
+  async verifyEmailOtp(params: { email: string; otp: string }): Promise<{ accessToken: string }> {
+    const email = params.email.trim().toLowerCase();
+    const otp = params.otp.trim();
+    if (this.allowDevSignupBypass && otp === '123456') {
+      const accessToken = jwt.sign(
+        {
+          purpose: 'admin_signup',
+          email,
+        },
+        this.jwtSecret,
+        { expiresIn: '20m' },
+      );
+      return { accessToken };
+    }
+    const pending = this.signupOtps.get(email);
+    if (!pending) {
+      throw new UnauthorizedException('No pending verification for this email. Request a new code.');
+    }
+    if (Date.now() > pending.expiresAtMs) {
+      this.signupOtps.delete(email);
+      throw new UnauthorizedException('Verification code expired. Request a new code.');
+    }
+    if (pending.otp !== otp) {
+      throw new UnauthorizedException('Invalid verification code.');
+    }
+    this.signupOtps.delete(email);
     const accessToken = jwt.sign(
-      { sub, email: normalized, aud: 'authenticated', role: 'authenticated' },
-      secret,
-      { expiresIn: '15m', algorithm: 'HS256' },
+      {
+        purpose: 'admin_signup',
+        email,
+      },
+      this.jwtSecret,
+      { expiresIn: '20m' },
     );
     return { accessToken };
   }
@@ -91,7 +196,7 @@ export class AdminSignupService {
   }
 
   async complete(
-    supabaseUser: SupabaseJwtPayload,
+    verifiedEmail: string,
     dto: AdminSignupCompleteDto,
     branchLogo?: Express.Multer.File,
   ): Promise<{
@@ -99,20 +204,15 @@ export class AdminSignupService {
     user: { id: string; email: string; role: Role; branchId: string | null };
     onboardingCompletedAt: string | null;
   }> {
-    const emailFromToken = (supabaseUser.email ?? '').trim().toLowerCase();
+    const emailFromToken = verifiedEmail.trim().toLowerCase();
     if (!emailFromToken) {
-      throw new UnauthorizedException('Email missing from Supabase token');
+      throw new UnauthorizedException('Email missing from verified signup token');
     }
     if (dto.email.trim().toLowerCase() !== emailFromToken) {
       throw new BadRequestException('Email does not match the verified session');
     }
 
     this.assertSignupEmailAllowed(emailFromToken);
-
-    const sub = supabaseUser.sub;
-    if (!sub) {
-      throw new UnauthorizedException('Invalid Supabase subject');
-    }
 
     const existingSameEmail = await prisma.user.findFirst({
       where: { email: { equals: emailFromToken, mode: 'insensitive' } },
@@ -124,13 +224,6 @@ export class AdminSignupService {
       throw new ConflictException(
         'This email is already registered as a customer account. Use a different email for branch signup, or contact support.',
       );
-    }
-
-    const existingBySub = await prisma.user.findFirst({
-      where: { supabaseAuthId: sub },
-    });
-    if (existingBySub) {
-      throw new ConflictException('This Supabase account is already linked to a user');
     }
 
     const branchCount = await prisma.branch.count();
@@ -181,7 +274,6 @@ export class AdminSignupService {
             role: Role.OPS,
             branchId: branch.id,
             passwordHash,
-            supabaseAuthId: sub,
             onboardingCompletedAt: null,
             isActive: true,
           },
@@ -196,11 +288,6 @@ export class AdminSignupService {
         if (fields.includes('email')) {
           throw new ConflictException(
             'This email is already registered. Use a different email or sign in.',
-          );
-        }
-        if (fields.includes('supabaseAuthId')) {
-          throw new ConflictException(
-            'This signup session was already used. Go back, request a new code, and try again.',
           );
         }
         throw new ConflictException('Could not create this account because a unique field already exists.');

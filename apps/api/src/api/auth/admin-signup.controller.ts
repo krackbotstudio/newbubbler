@@ -19,11 +19,10 @@ import { Roles } from '../common/roles.decorator';
 import { RolesGuard, type AuthUser } from '../common/roles.guard';
 import { CurrentUser } from '../common/current-user.decorator';
 import { AGENT_ROLE } from '../common/agent-role';
-import { SupabaseJwtGuard, type SupabaseJwtPayload } from './supabase-jwt.guard';
-import { DevSignupBypassGuard } from './dev-signup-bypass.guard';
+import { AdminSignupTokenGuard } from './admin-signup-token.guard';
 import { AdminSignupService } from './admin-signup.service';
 import { AdminSignupCompleteDto } from './dto/admin-signup-complete.dto';
-import { DevSignupSessionDto } from './dto/dev-signup-session.dto';
+import { AdminSignupEmailOtpRequestDto, AdminSignupEmailOtpVerifyDto } from './dto/admin-signup-email-otp.dto';
 
 const signupBranchLogoUpload = {
   storage: memoryStorage(),
@@ -51,22 +50,27 @@ export class AdminSignupController {
     return this.adminSignupService.getProfile(user.id);
   }
 
-  /** Local testing only: mint a JWT SupabaseJwtGuard accepts, without calling Supabase Auth. */
-  @Post('signup/dev-supabase-session')
-  @UseGuards(DevSignupBypassGuard)
-  async devSupabaseSession(@Body() dto: DevSignupSessionDto) {
-    return this.adminSignupService.issueDevSupabaseAccessToken(dto.email);
+  /** Send branch-signup OTP to email via Brevo. */
+  @Post('signup/request-email-otp')
+  async requestEmailOtp(@Body() dto: AdminSignupEmailOtpRequestDto) {
+    return this.adminSignupService.requestEmailOtp(dto.email);
+  }
+
+  /** Verify emailed OTP and issue short-lived signup token for /signup/complete. */
+  @Post('signup/verify-email-otp')
+  async verifyEmailOtp(@Body() dto: AdminSignupEmailOtpVerifyDto) {
+    return this.adminSignupService.verifyEmailOtp(dto);
   }
 
   @Post('signup/complete')
-  @UseGuards(SupabaseJwtGuard)
+  @UseGuards(AdminSignupTokenGuard)
   @UseInterceptors(FileInterceptor('branchLogo', signupBranchLogoUpload))
   async complete(
-    @Req() req: { supabaseUser: SupabaseJwtPayload },
+    @Req() req: { signupEmail: string },
     @Body() dto: AdminSignupCompleteDto,
     @UploadedFile() branchLogo?: Express.Multer.File,
   ) {
-    return this.adminSignupService.complete(req.supabaseUser, dto, branchLogo);
+    return this.adminSignupService.complete(req.signupEmail, dto, branchLogo);
   }
 
   @Post('onboarding/finish')

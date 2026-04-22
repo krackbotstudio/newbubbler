@@ -71,3 +71,31 @@
     @apply space-y-1.5;
   }
 }
+
+/* Sonner toast theme aligned to branch/admin primary + secondary tokens */
+[data-sonner-toaster] [data-sonner-toast] {
+  background: hsl(var(--secondary)) !important;
+  color: hsl(var(--secondary-foreground)) !important;
+  border: 1px solid hsl(var(--primary) / 0.32) !important;
+  box-shadow: 0 8px 24px hsl(var(--primary) / 0.16) !important;
+}
+
+[data-sonner-toaster] [data-sonner-toast] [data-title] {
+  color: hsl(var(--secondary-foreground)) !important;
+}
+
+[data-sonner-toaster] [data-sonner-toast] [data-description] {
+  color: hsl(var(--secondary-foreground) / 0.86) !important;
+}
+
+[data-sonner-toaster] [data-sonner-toast] [data-button] {
+  background: hsl(var(--primary)) !important;
+  color: hsl(var(--primary-foreground)) !important;
+  border: 1px solid hsl(var(--primary)) !important;
+}
+
+[data-sonner-toaster] [data-sonner-toast] [data-close-button] {
+  background: hsl(var(--secondary)) !important;
+  color: hsl(var(--secondary-foreground)) !important;
+  border: 1px solid hsl(var(--primary) / 0.28) !important;
+}

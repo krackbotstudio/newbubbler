@@ -5,18 +5,17 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { z } from 'zod';
-import { api } from '@/lib/api';
+import { api, getApiError } from '@/lib/api';
 import { setToken, setStoredUser, type AuthUser } from '@/lib/auth';
-import { getSupabaseBrowserClient, isSupabaseConfigured } from '@/lib/supabase-browser';
 import { usePublicBranding } from '@/hooks/useBranding';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ErrorDisplay } from '@/components/shared/ErrorDisplay';
 import { getApiOrigin } from '@/lib/api';
 
-/** Supabase email OTP length can be 6 or 8 (and may change with project settings). */
+/** Brevo email OTP is 6 digits. */
 const EMAIL_OTP_MIN_LEN = 6;
-const EMAIL_OTP_MAX_LEN = 8;
+const EMAIL_OTP_MAX_LEN = 6;
 
 const emailSchema = z.object({
   email: z.string().email('Invalid email'),
@@ -71,8 +70,6 @@ const accountSchema = z
 type Step = 'email' | 'otp' | 'account';
 
 const RESEND_COOLDOWN_SEC = 60;
-/** After Supabase email rate limit, wait longer before allowing another send from this browser. */
-const RATE_LIMIT_COOLDOWN_SEC = 90;
 
 /** Sample OTP for local dev when `NEXT_PUBLIC_DEV_SIGNUP_OTP` is set (any truthy value). */
 const DEV_SIGNUP_OTP_SAMPLE = '123456';
@@ -87,21 +84,17 @@ function getDevSignupOtp(): string | null {
   return isDevSignupBypassEnabled() ? DEV_SIGNUP_OTP_SAMPLE : null;
 }
 
-function isSupabaseEmailRateLimit(err: unknown): boolean {
-  if (!err || typeof err !== 'object') return false;
-  const o = err as { message?: unknown; code?: unknown };
-  const code = typeof o.code === 'string' ? o.code : '';
-  const msg = typeof o.message === 'string' ? o.message.toLowerCase() : '';
-  return code === 'over_email_send_rate_limit' || msg.includes('rate limit') || msg.includes('over_email_send');
-}
-
-async function requestSignupEmailOtp(emailAddr: string): Promise<void> {
-  const supabase = getSupabaseBrowserClient();
-  const { error: otpErr } = await supabase.auth.signInWithOtp({
-    email: emailAddr,
-    options: { shouldCreateUser: true },
-  });
-  if (otpErr) throw otpErr;
+function normalizeSignupEmailStepError(err: unknown): Error {
+  const apiErr = getApiError(err);
+  const msg = (apiErr.message || '').toLowerCase();
+  if (
+    apiErr.status === 409 ||
+    msg.includes('already exists') ||
+    msg.includes('already registered')
+  ) {
+    return new Error('This email already has an account. Please sign in or use a different email.');
+  }
+  return new Error(apiErr.message || 'Could not send verification code. Try again.');
 }
 
 export default function SignupPage() {
@@ -126,7 +119,7 @@ export default function SignupPage() {
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
-  const devSupabaseAccessTokenRef = useRef<string | null>(null);
+  const signupAccessTokenRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (resendCooldown <= 0) return;
@@ -142,7 +135,6 @@ export default function SignupPage() {
       : `${getApiOrigin()}${publicBranding.logoUrl}`
     : null;
 
-  const supabaseReady = isSupabaseConfigured();
   const devSignupOtp = getDevSignupOtp();
 
   async function sendOtp(e: React.FormEvent) {
@@ -153,29 +145,22 @@ export default function SignupPage() {
       setError(new Error(parsed.error.errors[0]?.message ?? 'Invalid email'));
       return;
     }
-    if (!devSignupOtp && !supabaseReady) {
-      setError(new Error('Email sign-up is not available right now.'));
-      return;
-    }
     setLoading(true);
     try {
       if (devSignupOtp) {
-        devSupabaseAccessTokenRef.current = null;
+        signupAccessTokenRef.current = null;
         setEmail(parsed.data.email);
         setOtpCode('');
         setStep('otp');
         return;
       }
-      await requestSignupEmailOtp(parsed.data.email);
+      await api.post('/auth/admin/signup/request-email-otp', { email: parsed.data.email });
       setEmail(parsed.data.email);
       setOtpCode('');
       setStep('otp');
       setResendCooldown(RESEND_COOLDOWN_SEC);
     } catch (err) {
-      setError(err);
-      if (isSupabaseEmailRateLimit(err)) {
-        setResendCooldown(RATE_LIMIT_COOLDOWN_SEC);
-      }
+      setError(normalizeSignupEmailStepError(err));
     } finally {
       setLoading(false);
     }
@@ -187,22 +172,18 @@ export default function SignupPage() {
       setResendCooldown(RESEND_COOLDOWN_SEC);
       return;
     }
-    if (!supabaseReady) return;
     setError(null);
     setLoading(true);
     try {
-      await requestSignupEmailOtp(email.trim());
+      await api.post('/auth/admin/signup/request-email-otp', { email: email.trim() });
       setOtpCode('');
       setResendCooldown(RESEND_COOLDOWN_SEC);
     } catch (err) {
-      setError(err);
-      if (isSupabaseEmailRateLimit(err)) {
-        setResendCooldown(RATE_LIMIT_COOLDOWN_SEC);
-      }
+      setError(normalizeSignupEmailStepError(err));
     } finally {
       setLoading(false);
     }
-  }, [email, resendCooldown, supabaseReady]);
+  }, [email, resendCooldown]);
 
   async function verifyOtp(e: React.FormEvent) {
     e.preventDefault();
@@ -216,25 +197,23 @@ export default function SignupPage() {
     try {
       const dev = getDevSignupOtp();
       if (dev && parsed.data.code === dev) {
-        const { data } = await api.post<{ accessToken: string }>('/auth/admin/signup/dev-supabase-session', {
+        const { data } = await api.post<{ accessToken: string }>('/auth/admin/signup/verify-email-otp', {
           email: email.trim(),
+          otp: parsed.data.code,
         });
-        devSupabaseAccessTokenRef.current = data.accessToken;
+        signupAccessTokenRef.current = data.accessToken;
         setOtpCode('');
         setStep('account');
         return;
       }
-      const supabase = getSupabaseBrowserClient();
-      const { data, error: vErr } = await supabase.auth.verifyOtp({
+      const { data } = await api.post<{ accessToken: string }>('/auth/admin/signup/verify-email-otp', {
         email: email.trim(),
-        token: parsed.data.code,
-        type: 'email',
+        otp: parsed.data.code,
       });
-      if (vErr) throw vErr;
-      if (!data.session?.access_token) {
-        throw new Error('No session after verification');
+      if (!data.accessToken) {
+        throw new Error('No signup session after verification');
       }
-      devSupabaseAccessTokenRef.current = null;
+      signupAccessTokenRef.current = data.accessToken;
       setOtpCode('');
       setStep('account');
     } catch (err) {
@@ -267,13 +246,7 @@ export default function SignupPage() {
     }
     setLoading(true);
     try {
-      let accessToken = devSupabaseAccessTokenRef.current;
-      if (!accessToken) {
-        const supabase = getSupabaseBrowserClient();
-        const { data: sessionData, error: sErr } = await supabase.auth.getSession();
-        if (sErr) throw sErr;
-        accessToken = sessionData.session?.access_token ?? null;
-      }
+      const accessToken = signupAccessTokenRef.current;
       if (!accessToken) {
         throw new Error('Session expired. Go back and request a new code.');
       }
@@ -302,14 +275,7 @@ export default function SignupPage() {
         onboardingCompletedAt: string | null;
       }>('/auth/admin/signup/complete', form, { headers: { Authorization: `Bearer ${accessToken}` } });
 
-      devSupabaseAccessTokenRef.current = null;
-      if (isSupabaseConfigured()) {
-        try {
-          await getSupabaseBrowserClient().auth.signOut();
-        } catch {
-          /* ignore */
-        }
-      }
+      signupAccessTokenRef.current = null;
 
       setToken(data.token);
       setStoredUser({
@@ -372,10 +338,6 @@ export default function SignupPage() {
             </div>
           </div>
 
-          {!devSignupOtp && !supabaseReady ? (
-            <p className="text-sm text-destructive">Email sign-up is not available right now.</p>
-          ) : null}
-
           {step === 'email' ? (
             <form onSubmit={sendOtp} className="space-y-5">
               {error ? <ErrorDisplay error={error} /> : null}
@@ -396,7 +358,7 @@ export default function SignupPage() {
               <Button
                 type="submit"
                 className="h-11 w-full rounded-lg bg-slate-800 text-base font-medium text-white hover:bg-slate-900"
-                disabled={loading || (!devSignupOtp && !supabaseReady) || resendCooldown > 0}
+                disabled={loading || resendCooldown > 0}
               >
                 {loading
                   ? 'Sending code…'
