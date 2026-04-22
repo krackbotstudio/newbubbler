@@ -12,7 +12,7 @@ import { cn } from '@/lib/utils';
 import { getToken } from '@/lib/auth';
 import { useIssuedInvoiceShareActions } from '@/hooks/useIssuedInvoiceShareActions';
 import { AddItemsToInvoiceDialog } from './AddItemsToInvoiceDialog';
-import { PrintLineTagDialog, type PrintLineTagPayload } from './PrintLineTagDialog';
+import { PrintLineTagDialog, type PrintLineTagPayload, buildLineTagOrderLine } from './PrintLineTagDialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { CatalogItemIcon } from '@/components/catalog/CatalogItemIcon';
 import { Printer, Trash2 } from 'lucide-react';
@@ -29,6 +29,36 @@ export const SERVICE_TYPE_OPTIONS: { value: ServiceType; label: string }[] = [
   { value: 'ADD_ONS', label: 'Add on' },
   { value: 'HOME_LINEN', label: 'Home Linen' },
 ];
+
+/** Thermal tag line 2: pickup date as dd-mm-yy (2-digit year). */
+function formatPickupDateDdMmYy(isoLike: string | null | undefined): string {
+  const raw = isoLike?.trim().slice(0, 10) ?? '';
+  if (!raw) return '—';
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
+  if (match) {
+    const [, y, mo, d] = match;
+    return `${d}-${mo}-${y.slice(-2)}`;
+  }
+  const d = new Date(`${raw}T12:00:00`);
+  if (!Number.isNaN(d.getTime())) {
+    return `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getFullYear()).slice(-2)}`;
+  }
+  return '—';
+}
+
+function lineTagServiceLabel(
+  row: InvoiceLineRow,
+  useMatrix: boolean,
+  catalogMatrix: CatalogMatrixResponse | null | undefined
+): string {
+  if (useMatrix && catalogMatrix && row.catalogItemId) {
+    const svc = catalogMatrix.serviceCategories.find((s) => s.id === row.serviceCategoryId)?.label?.trim();
+    if (svc) return svc;
+    const seg = catalogMatrix.segmentCategories.find((s) => s.id === row.segmentCategoryId)?.label?.trim();
+    if (seg) return seg;
+  }
+  return '—';
+}
 
 export interface InvoiceLineRow {
   type: InvoiceItemType;
@@ -131,10 +161,12 @@ interface InvoiceBuilderProps {
   branchSecondaryColor?: string | null;
   /** When set (e.g. order UUID on order detail), each line shows “Print tag” for thermal labels. */
   tagPrintOrderLabel?: string | null;
-  /** Printed top line on line tags: branch “Short brand on item tag” (`itemTagBrandName`), then branch name, etc. (see order page). */
+  /** Brand prefix on line tags (`itemTagBrandName`, then branch name, etc.); shown with order number on the last text line. */
   tagBrandName?: string | null;
-  /** Customer name shown on line tags. */
-  tagCustomerName?: string | null;
+  /** Pickup date (ISO or yyyy-mm-dd) shown as dd-mm-yy on line 1 of tags. */
+  tagLabelPickupDate?: string | null;
+  /** Order suffix on tags: WI when walk-in, otherwise ON (online). */
+  tagLabelWalkIn?: boolean;
   /**
    * When issued + showPrintOnly + printAreaRef, use Ack-dialog-style print / download / WhatsApp
    * (clone print, html2pdf, JPEG + wa.me) instead of the legacy toolbar.
@@ -238,7 +270,8 @@ export function InvoiceBuilder({
   branchSecondaryColor = null,
   tagPrintOrderLabel = null,
   tagBrandName = null,
-  tagCustomerName = null,
+  tagLabelPickupDate = null,
+  tagLabelWalkIn = false,
   issuedShareAdvanced = null,
 }: InvoiceBuilderProps) {
   const showTaxAndDiscount = true;
@@ -326,28 +359,30 @@ export function InvoiceBuilder({
     if (tagDialogRowIndex == null || !tagPrintOrderLabel?.trim()) return null;
     const row = items[tagDialogRowIndex];
     if (!row) return null;
-    let segment = '—';
-    let service = '—';
-    if (useMatrix && catalogMatrix && row.catalogItemId && row.segmentCategoryId && row.serviceCategoryId) {
-      segment =
-        catalogMatrix.segmentCategories.find((s) => s.id === row.segmentCategoryId)?.label ??
-        row.segmentCategoryId;
-      service =
-        catalogMatrix.serviceCategories.find((s) => s.id === row.serviceCategoryId)?.label ??
-        row.serviceCategoryId;
-    }
     const defaultCopies = Math.ceil(Number(row.quantity) || 1);
-    const brand = tagBrandName?.trim() ?? '';
+    const brandPrefix = tagBrandName?.trim() || '—';
+    const tagDateDdMmYy = formatPickupDateDdMmYy(tagLabelPickupDate);
+    const orderNumberWithSuffix = buildLineTagOrderLine(tagPrintOrderLabel, tagLabelWalkIn);
+    const tagItemName = (row.name || '').trim() || '—';
+    const tagServiceLabel = lineTagServiceLabel(row, useMatrix, catalogMatrix);
     return {
-      brandName: brand,
-      customerName: (tagCustomerName ?? '—').trim() || '—',
-      orderNumber: tagPrintOrderLabel.trim(),
-      itemName: row.name ?? '—',
-      segment,
-      service,
+      tagDateDdMmYy,
+      tagItemName,
+      tagServiceLabel,
+      brandPrefix,
+      orderNumberWithSuffix,
       defaultCopies: Math.max(1, Math.min(999, defaultCopies)),
     };
-  }, [tagDialogRowIndex, items, tagPrintOrderLabel, tagBrandName, tagCustomerName, catalogMatrix, useMatrix]);
+  }, [
+    tagDialogRowIndex,
+    items,
+    tagPrintOrderLabel,
+    tagBrandName,
+    tagLabelPickupDate,
+    tagLabelWalkIn,
+    useMatrix,
+    catalogMatrix,
+  ]);
 
   useEffect(() => {
     if (tagDialogRowIndex != null && (tagDialogRowIndex < 0 || tagDialogRowIndex >= items.length)) {

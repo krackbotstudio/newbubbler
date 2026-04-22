@@ -1210,7 +1210,8 @@ export default function OrderDetailPage() {
               branding?.businessName?.trim() ||
               undefined
             }
-            tagCustomerName={customer.name ?? '—'}
+            tagLabelPickupDate={order.pickupDate}
+            tagLabelWalkIn={order.orderSource === 'WALK_IN'}
             pickupConfirmFlow
             onConfirmPickupClick={() => setAckPickupConfirmOpen(true)}
             pickupConfirmDisabled={ackItems.length === 0 || finalSubmitted}
@@ -1443,7 +1444,8 @@ export default function OrderDetailPage() {
               branding?.businessName?.trim() ||
               undefined
             }
-            tagCustomerName={customer.name ?? '—'}
+            tagLabelPickupDate={order.pickupDate}
+            tagLabelWalkIn={order.orderSource === 'WALK_IN'}
           />
           {(() => {
             const st = finalSubtotal(finalItems);

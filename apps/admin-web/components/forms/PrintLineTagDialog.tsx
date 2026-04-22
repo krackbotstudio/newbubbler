@@ -15,22 +15,48 @@ import { Input } from '@/components/ui/input';
 import { FormField } from '@/components/ui/form-field';
 
 /**
- * Thermal label: 36 mm × 30 mm page, 2 mm padding on all sides.
- * Text only — no QR.
+ * Thermal label: 38 mm × 20 mm page, 1.5 mm padding on all sides.
+ * Lines: branch-dd-mm-yy, sequence-WI|ON, spacer, item, service; copy count at bottom (current/total).
  */
-const LABEL_W_MM = 36;
-const LABEL_H_MM = 30;
-const LABEL_PADDING_MM = 2;
+const LABEL_W_MM = 38;
+const LABEL_H_MM = 20;
+const LABEL_PADDING_MM = 1.5;
 
 export interface PrintLineTagPayload {
-  /** Top line on the tag (branch “short brand” / item tag brand from branch details, or fallbacks from caller). */
-  brandName: string;
-  customerName: string;
-  orderNumber: string;
-  itemName: string;
-  segment: string;
-  service: string;
+  /** Pickup date as dd-mm-yy; shown on line 1 after branch as `BRANCH-dd-mm-yy`. */
+  tagDateDdMmYy: string;
+  /** Item name. */
+  tagItemName: string;
+  /** Service label (matrix service, else segment, else —). */
+  tagServiceLabel: string;
+  /** Branch short name / tag brand prefix (e.g. TKS). */
+  brandPrefix: string;
+  /** Line 2 only: sequence + WI/ON (e.g. 001-WI), bold. */
+  orderNumberWithSuffix: string;
   defaultCopies: number;
+}
+
+/**
+ * Line 3: only `NNN-WI` / `NNN-ON` — order ids often embed `-WI`/`-ON`; strip that
+ * and use {@link walkIn} so the suffix is never duplicated.
+ */
+export function buildLineTagOrderLine(orderId: string, walkIn: boolean): string {
+  const suffix = walkIn ? 'WI' : 'ON';
+  const id = orderId.trim();
+  if (!id) return `—-${suffix}`;
+  const withoutSource = id.replace(/-(WI|ON)$/i, '');
+  const tail = withoutSource.split('-').pop() ?? withoutSource;
+  if (/^\d+$/.test(tail)) {
+    return `${tail}-${suffix}`;
+  }
+  if (id.includes('-')) {
+    const parts = id.split('-');
+    const last = parts[parts.length - 1] ?? id;
+    if (/^\d+$/.test(last)) {
+      return `${last}-${suffix}`;
+    }
+  }
+  return `${id}-${suffix}`;
 }
 
 interface PrintLineTagDialogProps {
@@ -47,32 +73,35 @@ function escapeHtml(s: string): string {
     .replace(/"/g, '&quot;');
 }
 
-function buildPrintHtml(
-  tagTitle: string,
-  customerName: string,
-  orderNumber: string,
-  itemName: string,
-  service: string,
-  copies: number
-): string {
-  const title = (tagTitle || '—').trim() || '—';
-  const customer = (customerName || '—').trim();
-  const item = (itemName || '—').trim();
-  const svc = (service || '—').trim();
+/** Line 1: `BRANCH-dd-mm-yy` when branch is set; otherwise date only. */
+function buildTagBranchDateLine(brandRaw: string, dateRaw: string): string {
+  const date = (dateRaw || '').trim() || '—';
+  const brand = (brandRaw || '').trim();
+  if (!brand || brand === '—') return date;
+  return `${brand}-${date}`;
+}
+
+function buildPrintHtml(payload: PrintLineTagPayload, copies: number): string {
+  const d1 = ((payload.tagDateDdMmYy || '').trim() || '—').trim();
+  const item = ((payload.tagItemName || '').trim() || '—').trim();
+  const svc = ((payload.tagServiceLabel || '').trim() || '—').trim();
+  const brand = ((payload.brandPrefix || '').trim() || '—').trim();
+  const ord = ((payload.orderNumberWithSuffix || '').trim() || '—').trim();
+  const headLine = buildTagBranchDateLine(brand, d1);
 
   const pages = Array.from({ length: copies }, (_, copyIdx) => {
     const current = copyIdx + 1;
     return `
     <div class="label-page">
       <div class="label-inner">
-        <div class="tag-title">${escapeHtml(title)}</div>
-        <div class="tag-customer">${escapeHtml(customer)}</div>
-        <div class="tag-order">${escapeHtml(orderNumber.trim())}</div>
-        <div class="tag-details-stack">
-          <div class="tag-line">${escapeHtml(item)}</div>
-          <div class="tag-line">${escapeHtml(svc)}</div>
+        <div class="tag-block">
+          <div class="tag-line-head">${escapeHtml(headLine)}</div>
+          <div class="tag-seq-line">${escapeHtml(ord)}</div>
+          <div class="tag-spacer" aria-hidden="true"></div>
+          <div class="tag-item">${escapeHtml(item)}</div>
+          <div class="tag-service">${escapeHtml(svc)}</div>
         </div>
-        <div class="tag-qty">${current} / ${copies}</div>
+        <div class="tag-qty">${current}/${copies}</div>
       </div>
     </div>`;
   }).join('');
@@ -98,61 +127,76 @@ body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  justify-content: flex-start;
-  gap: 0.3mm;
-  border: 0.25mm solid #333;
-  padding: 0.55mm 0.8mm;
+  justify-content: space-between;
+  border: 0.2mm solid #222;
+  padding: 0.35mm 0.5mm;
 }
-.tag-title {
-  text-align: center;
-  font-size: 9.5pt;
-  font-weight: 800;
-  letter-spacing: 0.02em;
-  line-height: 1.02;
-  color: #000;
-}
-.tag-customer {
-  text-align: center;
-  font-size: 8.25pt;
-  font-weight: 800;
-  line-height: 1.02;
-  color: #000;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.tag-order {
-  font-size: 7.75pt;
-  font-weight: 700;
-  line-height: 1.02;
-  word-break: break-all;
-  text-align: center;
-  letter-spacing: -0.01em;
-}
-.tag-details-stack {
+.tag-block {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  align-items: stretch;
-  justify-content: center;
-  gap: 0.2mm;
+  align-items: center;
+  justify-content: flex-start;
+  padding-top: 0.1mm;
+  gap: 0.06mm;
   text-align: center;
+  overflow: hidden;
 }
-.tag-line {
-  font-size: 9pt;
+.tag-line-head {
+  font-size: 7.1pt;
   font-weight: 800;
-  line-height: 1.02;
-  word-break: break-word;
+  line-height: 1.08;
+  letter-spacing: 0.02em;
   color: #000;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tag-seq-line {
+  font-size: 7.2pt;
+  font-weight: 900;
+  line-height: 1.08;
+  color: #000;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.tag-spacer {
+  flex-shrink: 0;
+  width: 100%;
+  height: 0.28em;
+  font-size: 7.35pt;
+  line-height: 1;
+}
+.tag-item,
+.tag-service {
+  font-size: 7.45pt;
+  line-height: 1.14;
+  color: #111;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tag-item {
+  font-weight: 700;
+}
+.tag-service {
+  font-weight: 600;
 }
 .tag-qty {
-  margin-top: auto;
   flex-shrink: 0;
   text-align: center;
-  font-size: 7.75pt;
+  font-size: 6.35pt;
   font-weight: 700;
-  color: #222;
+  color: #333;
+  line-height: 1.08;
+  letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
 }
 </style></head><body>${pages}</body></html>`;
 }
@@ -216,15 +260,7 @@ export function PrintLineTagDialog({ open, onOpenChange, payload }: PrintLineTag
     const n = Math.max(1, Math.min(999, Number.isFinite(parsed) ? parsed : copies));
     setPrintLoading(true);
     try {
-      const tagTitle = (payload.brandName || '').trim() || '—';
-      const html = buildPrintHtml(
-        tagTitle,
-        payload.customerName,
-        payload.orderNumber,
-        payload.itemName,
-        payload.service,
-        n
-      );
+      const html = buildPrintHtml(payload, n);
       runPrintJob(html);
       onOpenChange(false);
     } catch (e) {
@@ -239,11 +275,12 @@ export function PrintLineTagDialog({ open, onOpenChange, payload }: PrintLineTag
     return null;
   }
 
-  const previewBrand = (payload.brandName || '').trim() || '—';
-  const previewCustomer = (payload.customerName || '—').trim();
-  const previewItem = (payload.itemName || '—').trim();
-  const previewService = (payload.service || '—').trim();
-
+  const previewDate = (payload.tagDateDdMmYy || '').trim() || '—';
+  const previewItem = (payload.tagItemName || '').trim() || '—';
+  const previewSvc = (payload.tagServiceLabel || '').trim() || '—';
+  const previewBrand = (payload.brandPrefix || '').trim() || '—';
+  const previewOrd = (payload.orderNumberWithSuffix || '').trim() || '—';
+  const previewHead = buildTagBranchDateLine(previewBrand, previewDate);
   const previewTotal = Math.max(1, parseInt(copiesDraft, 10) || copies || 1);
 
   return (
@@ -252,22 +289,29 @@ export function PrintLineTagDialog({ open, onOpenChange, payload }: PrintLineTag
         <DialogHeader>
           <DialogTitle>Print line tag</DialogTitle>
           <DialogDescription className="sr-only">
-            Preview matches the printed label. 36 by 30 millimetres with two millimetre margins.
+            Preview matches the printed label. 38 by 20 millimetres:             branch hyphen date, bold sequence with WI or ON, thin gap, item and service, copy count.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3 text-sm">
           <div className="mx-auto w-full max-w-[280px] rounded-md border bg-muted/30 p-3">
-            <div className="flex aspect-[36/30] max-h-[260px] w-full flex-col items-stretch justify-between gap-1 border border-border bg-background px-2 py-2.5 text-center leading-tight">
-              <p className="text-xs font-extrabold truncate">{previewBrand}</p>
-              <p className="text-[11px] font-extrabold truncate">{previewCustomer}</p>
-              <p className="font-mono text-[11px] font-bold break-all">{payload.orderNumber}</p>
-              <div className="flex min-h-0 flex-1 flex-col justify-center gap-1 py-0.5">
-                <p className="text-xs font-extrabold text-foreground">{previewItem}</p>
-                <p className="text-xs font-extrabold text-foreground">{previewService}</p>
+            <div
+              className="flex w-full max-h-[200px] flex-col items-stretch justify-between gap-0.5 border border-border bg-background px-1 py-0.5 text-center leading-tight"
+              style={{ aspectRatio: `${LABEL_W_MM} / ${LABEL_H_MM}` }}
+            >
+              <div className="flex min-h-0 flex-1 flex-col items-center justify-start gap-px overflow-hidden pt-0.5">
+                <p className="w-full max-w-full truncate text-[10px] font-extrabold leading-none">{previewHead}</p>
+                <p className="w-full max-w-full truncate font-mono text-[10px] font-extrabold leading-tight">
+                  {previewOrd}
+                </p>
+                <div className="h-[2px] w-full shrink-0" aria-hidden />
+                <p className="w-full max-w-full truncate text-[11px] font-bold leading-snug">{previewItem}</p>
+                <p className="w-full max-w-full truncate text-[11px] font-semibold leading-snug text-foreground/95">
+                  {previewSvc}
+                </p>
               </div>
-              <p className="text-[11px] font-bold text-muted-foreground">
-                1 / {previewTotal}
+              <p className="text-[9px] font-bold leading-none text-muted-foreground tabular-nums shrink-0">
+                1/{previewTotal}
               </p>
             </div>
           </div>
