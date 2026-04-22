@@ -74,6 +74,12 @@ WORKDIR /app/apps/api
 COPY apps/api/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
+# Copy migration resolution scripts
+COPY apps/api/scripts/resolve-migrations.sh /app/scripts/resolve-migrations.sh
+COPY apps/api/scripts/resolve-all-migrations.sh /app/scripts/resolve-all-migrations.sh
+RUN chmod +x /app/scripts/resolve-migrations.sh
+RUN chmod +x /app/scripts/resolve-all-migrations.sh
+
 EXPOSE 8080
 
 ENTRYPOINT ["/entrypoint.sh"]
