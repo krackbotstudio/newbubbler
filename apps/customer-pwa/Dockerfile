@@ -13,6 +13,7 @@ RUN apk add --no-cache python3 make g++
 COPY package.json package-lock.json ./
 COPY apps/customer-pwa/package.json ./apps/customer-pwa/
 COPY apps/customer-mobile/package.json ./apps/customer-mobile/
+COPY scripts ./scripts
 
 # Install all dependencies
 RUN npm ci --legacy-peer-deps
