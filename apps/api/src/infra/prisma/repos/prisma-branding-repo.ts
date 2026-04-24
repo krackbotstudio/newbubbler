@@ -100,30 +100,58 @@ export class PrismaBrandingRepo implements BrandingRepo {
   }
 
   async setLogoUrl(url: string | null): Promise<void> {
-    await this.prisma.brandingSettings.update({
+    await this.prisma.brandingSettings.upsert({
       where: { id: BRANDING_ID },
-      data: { logoUrl: url },
+      create: {
+        id: BRANDING_ID,
+        businessName: 'Business',
+        address: '',
+        phone: '',
+        logoUrl: url,
+      },
+      update: { logoUrl: url },
     });
   }
 
   async setUpiQrUrl(url: string | null): Promise<void> {
-    await this.prisma.brandingSettings.update({
+    await this.prisma.brandingSettings.upsert({
       where: { id: BRANDING_ID },
-      data: { upiQrUrl: url },
+      create: {
+        id: BRANDING_ID,
+        businessName: 'Business',
+        address: '',
+        phone: '',
+        upiQrUrl: url,
+      },
+      update: { upiQrUrl: url },
     });
   }
 
   async setWelcomeBackgroundUrl(url: string | null): Promise<void> {
-    await this.prisma.brandingSettings.update({
+    await this.prisma.brandingSettings.upsert({
       where: { id: BRANDING_ID },
-      data: { welcomeBackgroundUrl: url },
+      create: {
+        id: BRANDING_ID,
+        businessName: 'Business',
+        address: '',
+        phone: '',
+        welcomeBackgroundUrl: url,
+      },
+      update: { welcomeBackgroundUrl: url },
     });
   }
 
   async setAppIconUrl(url: string | null): Promise<void> {
-    await this.prisma.brandingSettings.update({
+    await this.prisma.brandingSettings.upsert({
       where: { id: BRANDING_ID },
-      data: { appIconUrl: url },
+      create: {
+        id: BRANDING_ID,
+        businessName: 'Business',
+        address: '',
+        phone: '',
+        appIconUrl: url,
+      },
+      update: { appIconUrl: url },
     });
   }
 }
