@@ -15,9 +15,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
 import { restrictBranchesForUser } from '@/lib/auth';
 import { getApiOrigin } from '@/lib/api';
-import { CUSTOMER_PWA_APP_URL } from '@/lib/customer-app-url';
-
-const USE_IN_ADMIN_CUSTOMER_FLOW = process.env.NEXT_PUBLIC_IN_ADMIN_CUSTOMER_FLOW !== 'false';
 
 function assetUrl(url?: string | null): string | null {
   if (!url) return null;
@@ -79,41 +76,6 @@ export default function CustomerPortalPage() {
       toast.error((e as Error)?.message ?? 'Failed to save portal');
     }
   }
-
-  const portalKey = useMemo(
-    () => toPortalKey(selectedBranch?.name || effectiveBrandName || effectiveSlug),
-    [selectedBranch?.name, effectiveBrandName, effectiveSlug],
-  );
-
-  const customerBrandingQuery = useMemo(() => {
-    const qp = new URLSearchParams();
-    if (selectedBranch?.primaryColor) qp.set('primaryColor', selectedBranch.primaryColor);
-    if (selectedBranch?.secondaryColor) qp.set('secondaryColor', selectedBranch.secondaryColor);
-    if (selectedBranch?.logoUrl) qp.set('logoUrl', selectedBranch.logoUrl);
-    if (selectedBranch?.name) qp.set('branchName', selectedBranch.name);
-    return qp;
-  }, [
-    selectedBranch?.primaryColor,
-    selectedBranch?.secondaryColor,
-    selectedBranch?.logoUrl,
-    selectedBranch?.name,
-  ]);
-
-  /** Standalone customer app / PWA (same shape as customer-mobile deep link). */
-  const customerPwaUrl = useMemo(() => {
-    if (!portalKey) return '';
-    const queryString = customerBrandingQuery.toString();
-    const base = CUSTOMER_PWA_APP_URL;
-    const sep = base.includes('?') ? '&' : '?';
-    return `${base}${sep}portalSlug=${encodeURIComponent(portalKey)}${queryString ? `&${queryString}` : ''}`;
-  }, [portalKey, customerBrandingQuery]);
-
-  /** Opens inside admin-web when enabled. */
-  const customerEmbeddedUrl = useMemo(() => {
-    if (!USE_IN_ADMIN_CUSTOMER_FLOW || !portalKey) return '';
-    const queryString = customerBrandingQuery.toString();
-    return `/customer/${encodeURIComponent(portalKey)}${queryString ? `?${queryString}` : ''}`;
-  }, [portalKey, customerBrandingQuery]);
 
   return (
     <div className="space-y-6">
@@ -251,52 +213,6 @@ export default function CustomerPortalPage() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Customer Flow</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {USE_IN_ADMIN_CUSTOMER_FLOW ? (
-            <div className="space-y-2">
-              <p className="text-xs text-muted-foreground">
-                Preview the portal in this admin site (uses your current session when already logged in as admin).
-              </p>
-              <label className="text-sm font-medium">Embedded link</label>
-              <Input value={customerEmbeddedUrl} readOnly placeholder="Select branch and set brand / slug" />
-              <Button
-                variant="outline"
-                onClick={() => {
-                  if (!customerEmbeddedUrl) return;
-                  window.open(customerEmbeddedUrl, '_blank', 'noopener,noreferrer');
-                }}
-                disabled={!customerEmbeddedUrl}
-              >
-                Open embedded customer flow
-              </Button>
-            </div>
-          ) : null}
-          <div className="space-y-2">
-            <p className="text-xs text-muted-foreground">
-              Customer PWA / standalone app ({CUSTOMER_PWA_APP_URL}). Set{' '}
-              <code className="rounded bg-muted px-1 py-0.5 text-[11px]">NEXT_PUBLIC_CUSTOMER_PWA_URL</code> if it
-              differs from <code className="rounded bg-muted px-1 py-0.5 text-[11px]">NEXT_PUBLIC_CUSTOMER_APP_URL</code>
-              .
-            </p>
-            <label className="text-sm font-medium">Customer PWA link</label>
-            <Input value={customerPwaUrl} readOnly placeholder="Select branch and set brand / slug" />
-            <Button
-              variant="outline"
-              onClick={() => {
-                if (!customerPwaUrl) return;
-                window.open(customerPwaUrl, '_blank', 'noopener,noreferrer');
-              }}
-              disabled={!customerPwaUrl}
-            >
-              Open customer PWA
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
 }

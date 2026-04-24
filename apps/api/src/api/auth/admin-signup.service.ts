@@ -339,9 +339,6 @@ export class AdminSignupService {
     if (!branch) {
       throw new BadRequestException('Branch not found');
     }
-    if (!branch.logoUrl?.trim()) {
-      throw new BadRequestException('Upload a branch logo in Branding before finishing onboarding');
-    }
 
     const pinCount = await prisma.serviceArea.count({ where: { branchId } });
     if (pinCount < 1) {
@@ -351,9 +348,6 @@ export class AdminSignupService {
     const phoneDigits = (branch.phone ?? '').replace(/\D/g, '');
     if (phoneDigits.length < 10 || phoneDigits.length > 15) {
       throw new BadRequestException('Add a valid branch mobile number (10–15 digits) before finishing onboarding');
-    }
-    if (!branch.termsAndConditions?.trim()) {
-      throw new BadRequestException('Add terms and conditions for your branch (shown on invoices) before finishing onboarding');
     }
 
     await prisma.user.update({

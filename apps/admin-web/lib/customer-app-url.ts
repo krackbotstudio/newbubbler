@@ -1,4 +1,4 @@
-const DEFAULT_CUSTOMER_APP_URL = 'https://bubbler-customer.vercel.app/';
+const DEFAULT_CUSTOMER_APP_URL = 'https://customerbubbler.krackbot.com/';
 
 function withTrailingSlash(url: string): string {
   const t = url.trim();

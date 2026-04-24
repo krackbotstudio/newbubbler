@@ -122,8 +122,8 @@ export const InvoicePrintView = forwardRef<HTMLDivElement, InvoicePrintViewProps
             </div>
           )
         ) : (
-          <div className="flex flex-nowrap gap-4 items-start justify-between">
-            <div className="min-w-0 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm flex-shrink">
+          <div className="flex w-full flex-wrap items-start justify-between gap-4">
+            <div className="min-w-[220px] flex-1 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm">
               <p className="font-medium mb-0.5">Invoice number</p>
               <p className="text-gray-600 text-xs">{invoice.code ?? '—'}</p>
               {invoice.issuedAt && (
@@ -135,9 +135,9 @@ export const InvoicePrintView = forwardRef<HTMLDivElement, InvoicePrintViewProps
               )}
             </div>
             {ackInvoice && (
-              <div className="text-right rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm shrink-0 min-w-0">
+              <div className="min-w-[220px] max-w-full flex-1 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-right text-sm">
                 <p className="font-medium mb-0.5">Ref Acknowledgement invoice</p>
-                <p className="text-gray-600 text-xs leading-tight">
+                <p className="break-words text-gray-600 text-xs leading-tight">
                   {ackInvoice.code && <span>Code: {ackInvoice.code}</span>}
                   {ackInvoice.subtotal != null && (
                     <span>{ackInvoice.code ? ' · ' : ''}Subtotal: {formatMoney(ackInvoice.subtotal)}</span>

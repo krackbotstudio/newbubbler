@@ -1,21 +1,24 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef, type CSSProperties } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, type CSSProperties } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { z } from 'zod';
 import { api, getApiError } from '@/lib/api';
 import { setToken, setStoredUser, type AuthUser } from '@/lib/auth';
-import { usePublicBranding } from '@/hooks/useBranding';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ErrorDisplay } from '@/components/shared/ErrorDisplay';
-import { getApiOrigin } from '@/lib/api';
+import { toast } from 'sonner';
 
 /** Brevo email OTP is 6 digits. */
 const EMAIL_OTP_MIN_LEN = 6;
 const EMAIL_OTP_MAX_LEN = 6;
+const EMAIL_OTP_LABEL =
+  EMAIL_OTP_MIN_LEN === EMAIL_OTP_MAX_LEN
+    ? `${EMAIL_OTP_MIN_LEN}`
+    : `${EMAIL_OTP_MIN_LEN}–${EMAIL_OTP_MAX_LEN}`;
 
 const emailSchema = z.object({
   email: z.string().email('Invalid email'),
@@ -26,14 +29,13 @@ const otpSchema = z.object({
     .string()
     .regex(
       new RegExp(`^\\d{${EMAIL_OTP_MIN_LEN},${EMAIL_OTP_MAX_LEN}}$`),
-      `Enter the code from your email (${EMAIL_OTP_MIN_LEN}–${EMAIL_OTP_MAX_LEN} digits, numbers only)`,
+      `Enter the code from your email (${EMAIL_OTP_LABEL} digits, numbers only)`,
     ),
 });
 
 const accountSchema = z
   .object({
     password: z.string().min(8, 'Password must be at least 8 characters'),
-    name: z.string().max(200).optional(),
     branchName: z.string().min(1, 'Branch name is required'),
     branchAddress: z.string().min(1, 'Branch address is required'),
     branchPhone: z
@@ -48,26 +50,10 @@ const accountSchema = z
         },
         'Enter a valid phone number (10–15 digits, spaces or + allowed)',
       ),
-    branchContactEmail: z.string().max(254).optional(),
-    gstNumber: z.string().max(32).optional(),
-    panNumber: z.string().max(20).optional(),
-    footerNote: z.string().max(500).optional(),
-    upiId: z.string().max(120).optional(),
-    upiPayeeName: z.string().max(120).optional(),
-    upiLink: z.string().max(500).optional(),
-  })
-  .superRefine((data, ctx) => {
-    const be = data.branchContactEmail?.trim();
-    if (be && !z.string().email().safeParse(be).success) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Invalid public branch email',
-        path: ['branchContactEmail'],
-      });
-    }
   });
 
 type Step = 'email' | 'otp' | 'account';
+type AccountSection = 'password' | 'branch';
 
 const RESEND_COOLDOWN_SEC = 60;
 
@@ -97,29 +83,34 @@ function normalizeSignupEmailStepError(err: unknown): Error {
   return new Error(apiErr.message || 'Could not send verification code. Try again.');
 }
 
+function isExistingAccountInfo(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const message = 'message' in error ? String((error as { message?: unknown }).message ?? '') : '';
+  return message.toLowerCase().includes('already has an account');
+}
+
 export default function SignupPage() {
   const router = useRouter();
-  const { data: publicBranding } = usePublicBranding();
   const [step, setStep] = useState<Step>('email');
+  const [accountSection, setAccountSection] = useState<AccountSection>('password');
   const [email, setEmail] = useState('');
   const [otpCode, setOtpCode] = useState('');
   const [password, setPassword] = useState('');
-  const [name, setName] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [branchName, setBranchName] = useState('');
   const [branchAddress, setBranchAddress] = useState('');
   const [branchPhone, setBranchPhone] = useState('');
-  const [branchContactEmail, setBranchContactEmail] = useState('');
-  const [gstNumber, setGstNumber] = useState('');
-  const [panNumber, setPanNumber] = useState('');
-  const [footerNote, setFooterNote] = useState('');
-  const [upiId, setUpiId] = useState('');
-  const [upiPayeeName, setUpiPayeeName] = useState('');
-  const [upiLink, setUpiLink] = useState('');
   const [branchLogoFile, setBranchLogoFile] = useState<File | null>(null);
   const [error, setError] = useState<unknown>(null);
+  const [otpErrorMessage, setOtpErrorMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
   const signupAccessTokenRef = useRef<string | null>(null);
+  const rightPanelRef = useRef<HTMLDivElement>(null);
+  const branchLogoPreviewUrl = useMemo(
+    () => (branchLogoFile ? URL.createObjectURL(branchLogoFile) : null),
+    [branchLogoFile],
+  );
 
   useEffect(() => {
     if (resendCooldown <= 0) return;
@@ -129,11 +120,15 @@ export default function SignupPage() {
     return () => window.clearInterval(t);
   }, [resendCooldown]);
 
-  const logoUrl = publicBranding?.logoUrl
-    ? publicBranding.logoUrl.startsWith('http')
-      ? publicBranding.logoUrl
-      : `${getApiOrigin()}${publicBranding.logoUrl}`
-    : null;
+  useEffect(() => {
+    rightPanelRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [step, accountSection]);
+
+  useEffect(() => {
+    return () => {
+      if (branchLogoPreviewUrl) URL.revokeObjectURL(branchLogoPreviewUrl);
+    };
+  }, [branchLogoPreviewUrl]);
 
   const devSignupOtp = getDevSignupOtp();
 
@@ -188,9 +183,10 @@ export default function SignupPage() {
   async function verifyOtp(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setOtpErrorMessage('');
     const parsed = otpSchema.safeParse({ code: otpCode.trim() });
     if (!parsed.success) {
-      setError(new Error(parsed.error.errors[0]?.message ?? 'Invalid code'));
+      setOtpErrorMessage(parsed.error.errors[0]?.message ?? 'Invalid code');
       return;
     }
     setLoading(true);
@@ -203,6 +199,7 @@ export default function SignupPage() {
         });
         signupAccessTokenRef.current = data.accessToken;
         setOtpCode('');
+        setAccountSection('password');
         setStep('account');
         return;
       }
@@ -215,9 +212,21 @@ export default function SignupPage() {
       }
       signupAccessTokenRef.current = data.accessToken;
       setOtpCode('');
+      setAccountSection('password');
       setStep('account');
     } catch (err) {
-      setError(err);
+      const apiErr = getApiError(err);
+      const msg = (apiErr.message || '').toLowerCase();
+      if (msg.includes('invalid verification code')) {
+        setOtpErrorMessage('Wrong verification code. Please check the code and try again.');
+      } else if (msg.includes('expired')) {
+        setOtpErrorMessage('Verification code expired. Please resend and try again.');
+      } else if (apiErr.status === 401) {
+        setOtpErrorMessage('Wrong verification code. Please check the code and try again.');
+      } else {
+        setError(err);
+      }
+      setStep('otp');
     } finally {
       setLoading(false);
     }
@@ -226,19 +235,21 @@ export default function SignupPage() {
   async function completeSignup(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    if (password.length < 8) {
+      setError(new Error('Password must be at least 8 characters.'));
+      setAccountSection('password');
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError(new Error('Passwords do not match.'));
+      setAccountSection('password');
+      return;
+    }
     const parsed = accountSchema.safeParse({
       password,
-      name: name.trim() || undefined,
       branchName: branchName.trim(),
       branchAddress: branchAddress.trim(),
       branchPhone: branchPhone.trim(),
-      branchContactEmail: branchContactEmail.trim() || undefined,
-      gstNumber: gstNumber.trim() || undefined,
-      panNumber: panNumber.trim() || undefined,
-      footerNote: footerNote.trim() || undefined,
-      upiId: upiId.trim() || undefined,
-      upiPayeeName: upiPayeeName.trim() || undefined,
-      upiLink: upiLink.trim() || undefined,
     });
     if (!parsed.success) {
       setError(new Error(parsed.error.errors[0]?.message ?? 'Check the form'));
@@ -254,19 +265,9 @@ export default function SignupPage() {
       const form = new FormData();
       form.append('email', email.trim());
       form.append('password', parsed.data.password);
-      if (parsed.data.name?.trim()) form.append('name', parsed.data.name.trim());
       form.append('branchName', parsed.data.branchName);
       form.append('branchAddress', parsed.data.branchAddress);
       form.append('branchPhone', parsed.data.branchPhone);
-      if (parsed.data.branchContactEmail?.trim()) {
-        form.append('branchContactEmail', parsed.data.branchContactEmail.trim());
-      }
-      if (parsed.data.gstNumber?.trim()) form.append('gstNumber', parsed.data.gstNumber.trim());
-      if (parsed.data.panNumber?.trim()) form.append('panNumber', parsed.data.panNumber.trim());
-      if (parsed.data.footerNote?.trim()) form.append('footerNote', parsed.data.footerNote.trim());
-      if (parsed.data.upiId?.trim()) form.append('upiId', parsed.data.upiId.trim());
-      if (parsed.data.upiPayeeName?.trim()) form.append('upiPayeeName', parsed.data.upiPayeeName.trim());
-      if (parsed.data.upiLink?.trim()) form.append('upiLink', parsed.data.upiLink.trim());
       if (branchLogoFile) form.append('branchLogo', branchLogoFile);
 
       const { data } = await api.post<{
@@ -285,10 +286,19 @@ export default function SignupPage() {
         branchId: data.user.branchId,
         onboardingCompletedAt: data.onboardingCompletedAt ?? null,
       });
-      router.replace('/onboarding');
-      router.refresh();
+      sessionStorage.setItem('onboarding_welcome', '1');
+      toast.success('Congrats! Branch and account created. Taking you to finish branch setup.');
+      // Full navigation avoids stale auth/layout state during first OPS signup.
+      window.location.assign('/onboarding');
     } catch (err) {
-      setError(err);
+      const apiErr = getApiError(err);
+      if (apiErr.status === 401 || apiErr.status === 403) {
+        setError(new Error('Signup session expired. Please verify your email again.'));
+      } else if (apiErr.status === 409) {
+        setError(new Error(apiErr.message || 'This email is already registered. Please sign in.'));
+      } else {
+        setError(err);
+      }
     } finally {
       setLoading(false);
     }
@@ -296,7 +306,7 @@ export default function SignupPage() {
 
   return (
     <div
-      className="flex min-h-screen flex-col bg-white lg:flex-row"
+      className="flex min-h-screen flex-col bg-white lg:h-screen lg:flex-row lg:overflow-hidden"
       style={
         {
           '--primary': '222 58% 39%',
@@ -304,43 +314,38 @@ export default function SignupPage() {
         } as CSSProperties
       }
     >
-      <div className="relative h-48 w-full shrink-0 overflow-hidden bg-slate-100 lg:h-auto lg:min-h-screen lg:w-1/2">
-        <Image
-          src="/images/login-hero.png"
-          alt="Laundry professional beside a washing machine"
-          fill
-          className="object-cover object-[center_20%] lg:object-[center_center]"
-          sizes="(max-width: 1024px) 100vw, 50vw"
-          priority
-        />
+      <div className="relative h-48 w-full shrink-0 overflow-hidden bg-gradient-to-br from-[#1D4ED8] via-[#1E40AF] to-[#172554] lg:sticky lg:top-0 lg:flex lg:h-screen lg:w-1/2 lg:items-center lg:justify-center">
+        <div className="flex h-full items-center justify-center px-6">
+          <Image
+            src="/images/login-logo-dark.png"
+            alt="Bubbler logo"
+            width={440}
+            height={160}
+            className="h-auto w-full max-w-[280px] object-contain lg:max-w-[430px]"
+            priority
+          />
+        </div>
       </div>
 
-      <div className="flex flex-1 flex-col justify-center px-6 py-10 sm:px-10 lg:w-1/2 lg:px-16 xl:px-24">
+      <div ref={rightPanelRef} className="flex flex-1 flex-col justify-center px-6 py-10 sm:px-10 lg:h-screen lg:w-1/2 lg:overflow-y-auto lg:px-16 xl:px-24">
         <div className="mx-auto w-full max-w-md rounded-2xl border border-slate-100 bg-white p-8 shadow-sm sm:p-10">
           <div className="mb-8 space-y-6">
-            {logoUrl ? (
-              <div className="flex justify-start">
-                <img
-                  src={logoUrl}
-                  alt={publicBranding?.businessName ?? 'Logo'}
-                  className="h-14 w-auto max-h-16 object-contain"
-                />
-              </div>
-            ) : (
-              <p className="text-2xl font-bold tracking-tight text-slate-900">Bubbler</p>
-            )}
             <div>
               <h1 className="text-xl font-semibold tracking-tight text-slate-900">Create branch account</h1>
-              <p className="mt-1.5 text-sm text-slate-500">
-                Verify your work email, then set your branch and password. You will be the branch head for this
-                branch and can add a logo and billing details now or on the next screen.
-              </p>
             </div>
           </div>
 
           {step === 'email' ? (
             <form onSubmit={sendOtp} className="space-y-5">
-              {error ? <ErrorDisplay error={error} /> : null}
+              {error ? (
+                isExistingAccountInfo(error) ? (
+                  <div className="rounded-md border border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50 px-3 py-2 text-sm text-amber-800">
+                    <p>{(error as { message?: string }).message ?? 'This email already has an account.'}</p>
+                  </div>
+                ) : (
+                  <ErrorDisplay error={error} />
+                )
+              ) : null}
               <div className="space-y-2">
                 <label htmlFor="email" className="text-sm font-medium text-slate-700">
                   Work email
@@ -372,10 +377,17 @@ export default function SignupPage() {
           {step === 'otp' ? (
             <form onSubmit={verifyOtp} className="space-y-5">
               {error ? <ErrorDisplay error={error} /> : null}
+              {otpErrorMessage ? (
+                <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                  {otpErrorMessage}
+                </div>
+              ) : null}
               <p className="text-sm text-slate-600">
-                Enter the <span className="font-medium">one-time code</span> from your email (
-                {`${EMAIL_OTP_MIN_LEN}–${EMAIL_OTP_MAX_LEN}`} digits) for{' '}
+                Enter the <span className="font-medium">one-time code</span> from your email ({EMAIL_OTP_LABEL} digits) for{' '}
                 <span className="font-medium text-slate-800">{email}</span>.
+              </p>
+              <p className="text-xs text-amber-700">
+                Did not receive the code? Please check your spam/junk folder.
               </p>
               <div className="space-y-2">
                 <label htmlFor="otp" className="text-sm font-medium text-slate-700">
@@ -397,7 +409,7 @@ export default function SignupPage() {
               </div>
               <div className="flex flex-col gap-2 sm:flex-row">
                 <Button type="button" variant="outline" className="flex-1" onClick={() => setStep('email')}>
-                  Back
+                  Change email ID
                 </Button>
                 <Button
                   type="submit"
@@ -427,199 +439,147 @@ export default function SignupPage() {
           {step === 'account' ? (
             <form onSubmit={completeSignup} className="space-y-5">
               {error ? <ErrorDisplay error={error} /> : null}
-              <div className="space-y-2">
-                <label htmlFor="password" className="text-sm font-medium text-slate-700">
-                  Admin password
-                </label>
-                <Input
-                  id="password"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  autoComplete="new-password"
-                  className="border-slate-200 bg-sky-50/60 font-normal text-slate-900 placeholder:text-slate-400 focus-visible:ring-slate-400 [&:not(:placeholder-shown)]:text-slate-800"
-                />
-              </div>
-              <div className="space-y-2">
-                <label htmlFor="name" className="text-sm font-medium text-slate-700">
-                  Your name <span className="font-normal text-slate-400">(optional)</span>
-                </label>
-                <Input
-                  id="name"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  autoComplete="name"
-                  className="border-slate-200 bg-sky-50/60 font-normal text-slate-900 placeholder:text-slate-400 focus-visible:ring-slate-400 [&:not(:placeholder-shown)]:text-slate-800"
-                />
-              </div>
-              <div className="space-y-2">
-                <label htmlFor="branchName" className="text-sm font-medium text-slate-700">
-                  Branch name
-                </label>
-                <Input
-                  id="branchName"
-                  value={branchName}
-                  onChange={(e) => setBranchName(e.target.value)}
-                  className="border-slate-200 bg-sky-50/60 font-normal text-slate-900 placeholder:text-slate-400 focus-visible:ring-slate-400 [&:not(:placeholder-shown)]:text-slate-800"
-                />
-              </div>
-              <div className="space-y-2">
-                <label htmlFor="branchAddress" className="text-sm font-medium text-slate-700">
-                  Branch address
-                </label>
-                <Input
-                  id="branchAddress"
-                  value={branchAddress}
-                  onChange={(e) => setBranchAddress(e.target.value)}
-                  className="border-slate-200 bg-sky-50/60 font-normal text-slate-900 placeholder:text-slate-400 focus-visible:ring-slate-400 [&:not(:placeholder-shown)]:text-slate-800"
-                />
-              </div>
-              <div className="space-y-2">
-                <label htmlFor="branchPhone" className="text-sm font-medium text-slate-700">
-                  Branch phone
-                </label>
-                <Input
-                  id="branchPhone"
-                  type="tel"
-                  inputMode="tel"
-                  autoComplete="tel"
-                  placeholder="+91 98765 43210 or 9876543210"
-                  value={branchPhone}
-                  onChange={(e) => setBranchPhone(e.target.value)}
-                  className="border-slate-200 bg-sky-50/60 font-normal text-slate-900 placeholder:text-slate-400 focus-visible:ring-slate-400 [&:not(:placeholder-shown)]:text-slate-800"
-                />
-              </div>
-
-              <div className="space-y-4 rounded-lg border border-slate-200 bg-slate-50/80 p-4">
-                <p className="text-sm font-medium text-slate-800">Branch branding (optional)</p>
-                <p className="text-xs text-slate-500">
-                  Logo and details are stored on your branch. You can change them later in Branding or onboarding.
-                </p>
-                <div className="space-y-2">
-                  <label htmlFor="branchLogo" className="text-sm font-medium text-slate-700">
-                    Branch logo
-                  </label>
-                  <Input
-                    id="branchLogo"
-                    type="file"
-                    accept="image/png,image/jpeg,image/webp"
-                    className="cursor-pointer border-slate-200 bg-white text-sm text-slate-800 [&:not(:placeholder-shown)]:text-slate-800 file:mr-3 file:rounded file:border-0 file:bg-sky-100 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-sky-900 hover:file:bg-sky-200"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (!f) {
-                        setBranchLogoFile(null);
-                        return;
-                      }
-                      if (!f.type.startsWith('image/')) {
-                        setError(new Error('Please choose a PNG, JPG, or WebP image.'));
-                        e.target.value = '';
-                        setBranchLogoFile(null);
-                        return;
-                      }
-                      if (f.size > 5 * 1024 * 1024) {
-                        setError(new Error('Logo must be 5 MB or smaller.'));
-                        e.target.value = '';
-                        setBranchLogoFile(null);
-                        return;
-                      }
+              {accountSection === 'password' ? (
+                <>
+                  <div className="space-y-2">
+                    <label htmlFor="password" className="text-sm font-medium text-slate-700">
+                      Admin password
+                    </label>
+                    <Input
+                      id="password"
+                      type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      autoComplete="new-password"
+                      className="border-slate-200 bg-sky-50/60 font-normal text-slate-900 placeholder:text-slate-400 focus-visible:ring-slate-400 [&:not(:placeholder-shown)]:text-slate-800"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label htmlFor="confirmPassword" className="text-sm font-medium text-slate-700">
+                      Confirm password
+                    </label>
+                    <Input
+                      id="confirmPassword"
+                      type="password"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      autoComplete="new-password"
+                      className="border-slate-200 bg-sky-50/60 font-normal text-slate-900 placeholder:text-slate-400 focus-visible:ring-slate-400 [&:not(:placeholder-shown)]:text-slate-800"
+                    />
+                  </div>
+                  <Button
+                    type="button"
+                    className="h-11 w-full rounded-lg bg-slate-800 text-base font-medium text-white hover:bg-slate-900"
+                    onClick={() => {
                       setError(null);
-                      setBranchLogoFile(f);
+                      if (password.length < 8) {
+                        setError(new Error('Password must be at least 8 characters.'));
+                        return;
+                      }
+                      if (password !== confirmPassword) {
+                        setError(new Error('Passwords do not match.'));
+                        return;
+                      }
+                      setAccountSection('branch');
                     }}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label htmlFor="branchContactEmail" className="text-sm font-medium text-slate-700">
-                    Public branch email <span className="font-normal text-slate-400">(optional)</span>
-                  </label>
-                  <Input
-                    id="branchContactEmail"
-                    type="email"
-                    placeholder="contact@mylaundry.com"
-                    value={branchContactEmail}
-                    onChange={(e) => setBranchContactEmail(e.target.value)}
-                    className="border-slate-200 bg-white font-normal text-slate-900 placeholder:text-slate-400 focus-visible:ring-slate-400 [&:not(:placeholder-shown)]:text-slate-800"
-                  />
-                </div>
-                <div className="grid gap-3 sm:grid-cols-2">
+                  >
+                    Next
+                  </Button>
+                </>
+              ) : (
+                <>
                   <div className="space-y-2">
-                    <label htmlFor="gstNumber" className="text-sm font-medium text-slate-700">
-                      GST number <span className="font-normal text-slate-400">(optional)</span>
+                    <label htmlFor="branchName" className="text-sm font-medium text-slate-700">
+                      Branch name
                     </label>
                     <Input
-                      id="gstNumber"
-                      value={gstNumber}
-                      onChange={(e) => setGstNumber(e.target.value)}
-                      className="border-slate-200 bg-white font-normal text-slate-900 focus-visible:ring-slate-400 [&:not(:placeholder-shown)]:text-slate-800"
+                      id="branchName"
+                      value={branchName}
+                      onChange={(e) => setBranchName(e.target.value)}
+                      className="border-slate-200 bg-sky-50/60 font-normal text-slate-900 placeholder:text-slate-400 focus-visible:ring-slate-400 [&:not(:placeholder-shown)]:text-slate-800"
                     />
                   </div>
                   <div className="space-y-2">
-                    <label htmlFor="panNumber" className="text-sm font-medium text-slate-700">
-                      PAN <span className="font-normal text-slate-400">(optional)</span>
+                    <label htmlFor="branchLogo" className="text-sm font-medium text-slate-700">
+                      Branch logo <span className="font-normal text-slate-400">(optional)</span>
                     </label>
                     <Input
-                      id="panNumber"
-                      value={panNumber}
-                      onChange={(e) => setPanNumber(e.target.value)}
-                      className="border-slate-200 bg-white font-normal text-slate-900 focus-visible:ring-slate-400 [&:not(:placeholder-shown)]:text-slate-800"
+                      id="branchLogo"
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      className="cursor-pointer border-slate-200 bg-white text-sm text-slate-800 [&:not(:placeholder-shown)]:text-slate-800 file:mr-3 file:rounded file:border-0 file:bg-sky-100 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-sky-900 hover:file:bg-sky-200"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (!f) {
+                          setBranchLogoFile(null);
+                          return;
+                        }
+                        if (!f.type.startsWith('image/')) {
+                          setError(new Error('Please choose a PNG, JPG, or WebP image.'));
+                          e.target.value = '';
+                          setBranchLogoFile(null);
+                          return;
+                        }
+                        if (f.size > 5 * 1024 * 1024) {
+                          setError(new Error('Logo must be 5 MB or smaller.'));
+                          e.target.value = '';
+                          setBranchLogoFile(null);
+                          return;
+                        }
+                        setError(null);
+                        setBranchLogoFile(f);
+                      }}
+                    />
+                  {branchLogoPreviewUrl ? (
+                    <div className="rounded-md border border-slate-200 bg-white p-2">
+                      <img
+                        src={branchLogoPreviewUrl}
+                        alt="Branch logo preview"
+                        className="h-20 w-auto max-w-full rounded object-contain"
+                      />
+                    </div>
+                  ) : null}
+                  </div>
+                  <div className="space-y-2">
+                    <label htmlFor="branchAddress" className="text-sm font-medium text-slate-700">
+                      Branch address
+                    </label>
+                    <Input
+                      id="branchAddress"
+                      value={branchAddress}
+                      onChange={(e) => setBranchAddress(e.target.value)}
+                      className="border-slate-200 bg-sky-50/60 font-normal text-slate-900 placeholder:text-slate-400 focus-visible:ring-slate-400 [&:not(:placeholder-shown)]:text-slate-800"
                     />
                   </div>
-                </div>
-                <div className="space-y-2">
-                  <label htmlFor="upiId" className="text-sm font-medium text-slate-700">
-                    UPI ID <span className="font-normal text-slate-400">(optional)</span>
-                  </label>
-                  <Input
-                    id="upiId"
-                    placeholder="name@bank"
-                    value={upiId}
-                    onChange={(e) => setUpiId(e.target.value)}
-                    className="border-slate-200 bg-white font-normal text-slate-900 focus-visible:ring-slate-400 [&:not(:placeholder-shown)]:text-slate-800"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label htmlFor="upiPayeeName" className="text-sm font-medium text-slate-700">
-                    UPI payee name <span className="font-normal text-slate-400">(optional)</span>
-                  </label>
-                  <Input
-                    id="upiPayeeName"
-                    value={upiPayeeName}
-                    onChange={(e) => setUpiPayeeName(e.target.value)}
-                    className="border-slate-200 bg-white font-normal text-slate-900 focus-visible:ring-slate-400 [&:not(:placeholder-shown)]:text-slate-800"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label htmlFor="upiLink" className="text-sm font-medium text-slate-700">
-                    UPI payment link <span className="font-normal text-slate-400">(optional)</span>
-                  </label>
-                  <Input
-                    id="upiLink"
-                    type="url"
-                    placeholder="https://…"
-                    value={upiLink}
-                    onChange={(e) => setUpiLink(e.target.value)}
-                    className="border-slate-200 bg-white font-normal text-slate-900 focus-visible:ring-slate-400 [&:not(:placeholder-shown)]:text-slate-800"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label htmlFor="footerNote" className="text-sm font-medium text-slate-700">
-                    Footer note on invoices <span className="font-normal text-slate-400">(optional)</span>
-                  </label>
-                  <Input
-                    id="footerNote"
-                    value={footerNote}
-                    onChange={(e) => setFooterNote(e.target.value)}
-                    className="border-slate-200 bg-white font-normal text-slate-900 focus-visible:ring-slate-400 [&:not(:placeholder-shown)]:text-slate-800"
-                  />
-                </div>
-              </div>
-
-              <Button
-                type="submit"
-                className="h-11 w-full rounded-lg bg-slate-800 text-base font-medium text-white hover:bg-slate-900"
-                disabled={loading}
-              >
-                {loading ? 'Creating…' : 'Create account'}
-              </Button>
+                  <div className="space-y-2">
+                    <label htmlFor="branchPhone" className="text-sm font-medium text-slate-700">
+                      Branch mobile number
+                    </label>
+                    <Input
+                      id="branchPhone"
+                      type="tel"
+                      inputMode="tel"
+                      autoComplete="tel"
+                      placeholder="+91 98765 43210 or 9876543210"
+                      value={branchPhone}
+                      onChange={(e) => setBranchPhone(e.target.value)}
+                      className="border-slate-200 bg-sky-50/60 font-normal text-slate-900 placeholder:text-slate-400 focus-visible:ring-slate-400 [&:not(:placeholder-shown)]:text-slate-800"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <Button type="button" variant="outline" className="flex-1" onClick={() => setAccountSection('password')}>
+                      Back
+                    </Button>
+                    <Button
+                      type="submit"
+                      className="h-11 flex-1 rounded-lg bg-slate-800 text-base font-medium text-white hover:bg-slate-900"
+                      disabled={loading}
+                    >
+                      {loading ? 'Creating…' : 'Continue to onboarding'}
+                    </Button>
+                  </div>
+                </>
+              )}
             </form>
           ) : null}
 
@@ -630,9 +590,26 @@ export default function SignupPage() {
             </Link>
           </p>
 
-          <p className="mt-6 text-center text-xs text-slate-400">
-            Designed and developed by <span className="font-medium text-slate-500">Krackbot Studio</span>
-          </p>
+          <div className="mt-10 border-t border-slate-100 pt-4 text-center text-sm text-slate-400">
+            <div className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap leading-none">
+              <span className="leading-none">Designed and developed by</span>
+              <a
+                href="https://www.krackbot.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 whitespace-nowrap font-semibold leading-none text-slate-500 transition-colors hover:text-slate-700"
+              >
+                <Image
+                  src="/images/krackbot-mark.png"
+                  alt="Krackbot logo"
+                  width={20}
+                  height={20}
+                  className="h-[20px] w-[20px] object-contain"
+                />
+                <span className="leading-none">Krackbot Studio</span>
+              </a>
+            </div>
+          </div>
         </div>
       </div>
     </div>

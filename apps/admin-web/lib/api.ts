@@ -43,7 +43,9 @@ export const api = axios.create({
 api.interceptors.request.use((config) => {
   config.baseURL = getBaseURL();
   const token = getToken();
-  if (token) {
+  const hasExplicitAuthHeader =
+    Boolean(config.headers?.Authorization) || Boolean((config.headers as Record<string, unknown> | undefined)?.authorization);
+  if (token && !hasExplicitAuthHeader) {
     config.headers.Authorization = `Bearer ${token}`;
   }
   if (config.data instanceof FormData) {
@@ -58,7 +60,12 @@ api.interceptors.response.use(
     if (error.response?.status === 401) {
       if (typeof window !== 'undefined') {
         const isCustomerFlow = window.location.pathname.startsWith('/customer/');
-        if (!isCustomerFlow) {
+        const reqUrl = String(error.config?.url ?? '');
+        const isAdminSignupEndpoint =
+          reqUrl.includes('/auth/admin/signup/request-email-otp') ||
+          reqUrl.includes('/auth/admin/signup/verify-email-otp') ||
+          reqUrl.includes('/auth/admin/signup/complete');
+        if (!isCustomerFlow && !isAdminSignupEndpoint) {
           window.location.href = '/login';
         }
       }
@@ -172,6 +179,12 @@ export function getFriendlyErrorMessage(error: unknown): string {
     return 'This account is disabled. Contact an administrator.';
   }
   const msgLower = (api.message || '').toLowerCase();
+  if (
+    msgLower.includes('unique constraint failed') &&
+    (msgLower.includes('`name`') || msgLower.includes('(name)') || msgLower.includes('fields: (`name`)'))
+  ) {
+    return 'Item name already exists. Please enter a unique name.';
+  }
   if (
     api.code === 'over_email_send_rate_limit' ||
     msgLower.includes('rate limit') ||

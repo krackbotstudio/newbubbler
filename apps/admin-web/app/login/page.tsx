@@ -4,9 +4,8 @@ import { useState, type CSSProperties } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { api, getApiError, getApiOrigin, getBaseURL } from '@/lib/api';
+import { api, getApiError, getBaseURL } from '@/lib/api';
 import { setToken, setStoredUser, type AuthUser } from '@/lib/auth';
-import { usePublicBranding } from '@/hooks/useBranding';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ErrorDisplay } from '@/components/shared/ErrorDisplay';
@@ -17,21 +16,12 @@ const loginSchema = z.object({
   password: z.string().min(1, 'Password required'),
 });
 
-type LoginForm = z.infer<typeof loginSchema>;
-
 export default function LoginPage() {
   const router = useRouter();
-  const { data: publicBranding } = usePublicBranding();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(false);
-
-  const logoUrl = publicBranding?.logoUrl
-    ? publicBranding.logoUrl.startsWith('http')
-      ? publicBranding.logoUrl
-      : `${getApiOrigin()}${publicBranding.logoUrl}`
-    : null;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -58,7 +48,12 @@ export default function LoginPage() {
       router.replace(needOnboarding ? '/onboarding' : '/dashboard');
       router.refresh();
     } catch (err) {
-      setError(err);
+      const apiErr = getApiError(err);
+      if (apiErr.status === 401) {
+        setError(new Error('Wrong email or password.'));
+      } else {
+        setError(err);
+      }
     } finally {
       setLoading(false);
     }
@@ -66,7 +61,7 @@ export default function LoginPage() {
 
   return (
     <div
-      className="flex min-h-screen flex-col bg-white lg:flex-row"
+      className="flex min-h-screen flex-col bg-white lg:h-screen lg:flex-row lg:overflow-hidden"
       style={
         {
           '--primary': '222 58% 39%',
@@ -74,31 +69,22 @@ export default function LoginPage() {
         } as CSSProperties
       }
     >
-      <div className="relative h-48 w-full shrink-0 overflow-hidden bg-slate-100 lg:h-auto lg:min-h-screen lg:w-1/2">
-        <Image
-          src="/images/login-hero.png"
-          alt="Laundry professional beside a washing machine, welcoming you to sign in"
-          fill
-          className="object-cover object-[center_20%] lg:object-[center_center]"
-          sizes="(max-width: 1024px) 100vw, 50vw"
-          priority
-        />
+      <div className="relative h-48 w-full shrink-0 overflow-hidden bg-gradient-to-br from-[#1D4ED8] via-[#1E40AF] to-[#172554] lg:sticky lg:top-0 lg:flex lg:h-screen lg:w-1/2 lg:items-center lg:justify-center">
+        <div className="flex h-full items-center justify-center px-6">
+          <Image
+            src="/images/login-logo-dark.png"
+            alt="Bubbler logo"
+            width={440}
+            height={160}
+            className="h-auto w-full max-w-[280px] object-contain lg:max-w-[430px]"
+            priority
+          />
+        </div>
       </div>
 
-      <div className="flex flex-1 flex-col justify-center px-6 py-10 sm:px-10 lg:w-1/2 lg:px-16 xl:px-24">
+      <div className="flex flex-1 flex-col justify-center px-6 py-10 sm:px-10 lg:h-screen lg:w-1/2 lg:overflow-y-auto lg:px-16 xl:px-24">
         <div className="mx-auto w-full max-w-md rounded-2xl border border-slate-100 bg-white p-8 shadow-sm sm:p-10">
           <div className="mb-8 space-y-6">
-            {logoUrl ? (
-              <div className="flex justify-start">
-                <img
-                  src={logoUrl}
-                  alt={publicBranding?.businessName ?? 'Logo'}
-                  className="h-14 w-auto max-h-16 object-contain"
-                />
-              </div>
-            ) : (
-              <p className="text-2xl font-bold tracking-tight text-slate-900">Bubbler</p>
-            )}
             <div>
               <h1 className="text-xl font-semibold tracking-tight text-slate-900">Admin login</h1>
               <p className="mt-1.5 text-sm text-slate-500">Sign in with your admin or billing account.</p>
@@ -152,15 +138,31 @@ export default function LoginPage() {
 
           <p className="mt-8 text-center text-sm text-slate-600">
             New branch?{' '}
-            <Link href="/signup" className="font-medium text-slate-900 underline-offset-4 hover:underline">
+            <Link href="/signup" className="font-semibold text-blue-700 underline-offset-4 hover:text-blue-800 hover:underline">
               Create account
             </Link>
           </p>
 
-          <p className="mt-10 text-center text-xs text-slate-400">
-            Designed and developed by{' '}
-            <span className="font-medium text-slate-500">Krackbot Studio</span>
-          </p>
+          <div className="mt-10 border-t border-slate-100 pt-4 text-center text-sm text-slate-400">
+            <div className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap leading-none">
+              <span className="leading-none">Designed and developed by</span>
+            <a
+              href="https://www.krackbot.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 whitespace-nowrap font-semibold leading-none text-slate-500 transition-colors hover:text-slate-700"
+            >
+              <Image
+                src="/images/krackbot-mark.png"
+                alt="Krackbot logo"
+                width={22}
+                height={22}
+                className="h-[20px] w-[20px] object-contain"
+              />
+              <span className="leading-none">Krackbot Studio</span>
+            </a>
+            </div>
+          </div>
         </div>
       </div>
     </div>

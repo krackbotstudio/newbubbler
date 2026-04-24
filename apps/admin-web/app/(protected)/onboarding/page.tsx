@@ -4,14 +4,14 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { z } from 'zod';
 import { getStoredUser, setStoredUser, type AuthUser } from '@/lib/auth';
-import { api, getApiError, getApiOrigin } from '@/lib/api';
+import { api, getApiError } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { FormField } from '@/components/ui/form-field';
 import { ErrorDisplay } from '@/components/shared/ErrorDisplay';
-import { useBranch, useUpdateBranch, useUploadBranchLogo, useBranchFieldUniquenessQuery } from '@/hooks/useBranches';
+import { useBranch, useUpdateBranch, useBranchFieldUniquenessQuery } from '@/hooks/useBranches';
 import { BranchUniquenessUnderField } from '@/components/branding/BranchFieldUniquenessHints';
 import { useServiceAreas, useCreateServiceArea, useDeleteServiceArea } from '@/hooks/useServiceAreas';
 import { toast } from 'sonner';
@@ -21,57 +21,43 @@ function phoneDigitsLen(s: string): number {
   return s.replace(/\D/g, '').length;
 }
 
-const branchSchema = z
-  .object({
-    name: z.string().min(1, 'Branch name is required'),
-    address: z.string().min(1, 'Address is required'),
-    mobile: z
-      .string()
-      .trim()
-      .min(1, 'Mobile number is required')
-      .max(50)
-      .refine(
-        (s) => {
-          const d = s.replace(/\D/g, '');
-          return d.length >= 10 && d.length <= 15;
-        },
-        'Enter a valid mobile number (10–15 digits, spaces or + allowed)',
-      ),
-    email: z.string().max(254).optional(),
-    gstNumber: z.string().max(32).optional(),
-    panNumber: z.string().max(20).optional(),
-    invoicePrefix: z.string().max(24).optional(),
-    itemTagBrandName: z.string().max(40).optional(),
-    footerNote: z.string().max(500).optional(),
-    upiId: z.string().max(120).optional(),
-    upiPayeeName: z.string().max(120).optional(),
-    upiLink: z.string().max(500).optional(),
-    primaryColor: z.string().trim().regex(/^#[0-9A-Fa-f]{6}$/, 'Primary color must be a 6-digit hex like #0f3d91'),
-    secondaryColor: z.string().trim().regex(/^#[0-9A-Fa-f]{6}$/, 'Secondary color must be a 6-digit hex like #e8f0ff'),
-    termsAndConditions: z
-      .string()
-      .trim()
-      .min(1, 'Terms and conditions are required (they appear on your branch invoices)'),
-  })
-  .superRefine((data, ctx) => {
-    const em = data.email?.trim();
-    if (em && !z.string().email().safeParse(em).success) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Invalid public branch email',
-        path: ['email'],
-      });
-    }
-  });
+const branchSchema = z.object({
+  name: z.string().min(1, 'Branch name is required'),
+  address: z.string().min(1, 'Address is required'),
+  mobile: z
+    .string()
+    .trim()
+    .min(1, 'Mobile number is required')
+    .max(50)
+    .refine(
+      (s) => {
+        const d = s.replace(/\D/g, '');
+        return d.length >= 10 && d.length <= 15;
+      },
+      'Enter a valid mobile number (10–15 digits, spaces or + allowed)',
+    ),
+  gstNumber: z.string().max(32).optional(),
+  panNumber: z.string().max(20).optional(),
+  invoicePrefix: z.string().max(24).optional(),
+  primaryColor: z.string().trim().regex(/^#[0-9A-Fa-f]{6}$/, 'Primary color must be a 6-digit hex like #0f3d91'),
+  secondaryColor: z.string().trim().regex(/^#[0-9A-Fa-f]{6}$/, 'Secondary color must be a 6-digit hex like #e8f0ff'),
+});
 
-const textareaClass = cn(
-  'flex min-h-[140px] w-full rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900 ring-offset-background placeholder:font-normal placeholder:text-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-sky-950/30 dark:border-sky-800 dark:text-sky-200 dark:placeholder:text-gray-400',
-);
+type OnboardingStep = 'colors' | 'details' | 'pincodes' | 'finish';
 
-function branchLogoUrl(logoUrl: string | null, updatedAt: string): string | null {
-  if (!logoUrl) return null;
-  const full = logoUrl.startsWith('http') ? logoUrl : `${getApiOrigin()}${logoUrl.startsWith('/') ? '' : '/'}${logoUrl}`;
-  return `${full}${full.includes('?') ? '&' : '?'}v=${encodeURIComponent(updatedAt)}`;
+function onboardingStepMeta(step: OnboardingStep): { index: number; percent: number } {
+  switch (step) {
+    case 'colors':
+      return { index: 1, percent: 25 };
+    case 'details':
+      return { index: 2, percent: 50 };
+    case 'pincodes':
+      return { index: 3, percent: 75 };
+    case 'finish':
+      return { index: 4, percent: 100 };
+    default:
+      return { index: 1, percent: 25 };
+  }
 }
 
 export default function OnboardingPage() {
@@ -80,7 +66,6 @@ export default function OnboardingPage() {
   const branchId = user?.branchId ?? null;
   const { data: branch, isLoading: branchLoading, error: branchError } = useBranch(branchId);
   const updateBranch = useUpdateBranch(branchId ?? '');
-  const uploadLogo = useUploadBranchLogo(branchId ?? '');
   const { data: areas = [], isLoading: areasLoading } = useServiceAreas(branchId ?? undefined);
   const createArea = useCreateServiceArea();
   const deleteArea = useDeleteServiceArea();
@@ -88,27 +73,21 @@ export default function OnboardingPage() {
   const [name, setName] = useState('');
   const [address, setAddress] = useState('');
   const [phone, setPhone] = useState('');
-  const [email, setEmail] = useState('');
   const [gstNumber, setGstNumber] = useState('');
   const [panNumber, setPanNumber] = useState('');
   const [invoicePrefix, setInvoicePrefix] = useState('');
-  const [itemTagBrandName, setItemTagBrandName] = useState('');
-  const [footerNote, setFooterNote] = useState('');
-  const [upiId, setUpiId] = useState('');
-  const [upiPayeeName, setUpiPayeeName] = useState('');
-  const [upiLink, setUpiLink] = useState('');
   const [primaryColor, setPrimaryColor] = useState('#0f3d91');
   const [secondaryColor, setSecondaryColor] = useState('#e8f0ff');
-  const [termsAndConditions, setTermsAndConditions] = useState('');
   const [pinInput, setPinInput] = useState('');
   const [finishError, setFinishError] = useState<unknown>(null);
   const [finishing, setFinishing] = useState(false);
+  const [step, setStep] = useState<OnboardingStep>('colors');
 
   const uniqueness = useBranchFieldUniquenessQuery({
     excludeBranchId: branchId ?? undefined,
     name,
     invoicePrefix,
-    itemTagBrandName,
+    itemTagBrandName: '',
     enabled: !!branchId,
   });
 
@@ -117,18 +96,11 @@ export default function OnboardingPage() {
       setName(branch.name);
       setAddress(branch.address);
       setPhone(branch.phone ?? '');
-      setEmail(branch.email ?? '');
       setGstNumber(branch.gstNumber ?? '');
       setPanNumber(branch.panNumber ?? '');
       setInvoicePrefix(branch.invoicePrefix ?? '');
-      setItemTagBrandName(branch.itemTagBrandName ?? '');
-      setFooterNote(branch.footerNote ?? '');
-      setUpiId(branch.upiId ?? '');
-      setUpiPayeeName(branch.upiPayeeName ?? '');
-      setUpiLink(branch.upiLink ?? '');
       setPrimaryColor(branch.primaryColor ?? '#0f3d91');
       setSecondaryColor(branch.secondaryColor ?? '#e8f0ff');
-      setTermsAndConditions(branch.termsAndConditions ?? '');
     }
   }, [branch]);
 
@@ -139,6 +111,15 @@ export default function OnboardingPage() {
     }
   }, [router]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const flag = sessionStorage.getItem('onboarding_welcome');
+    if (flag === '1') {
+      sessionStorage.removeItem('onboarding_welcome');
+      toast.success('Congrats! Your branch and account are created. Finish setup to go live.');
+    }
+  }, []);
+
   const handleSaveBranch = (e: React.FormEvent) => {
     e.preventDefault();
     if (!branchId) return;
@@ -146,18 +127,11 @@ export default function OnboardingPage() {
       name: name.trim(),
       address: address.trim(),
       mobile: phone.trim(),
-      email: email.trim() || undefined,
       gstNumber: gstNumber.trim() || undefined,
       panNumber: panNumber.trim() || undefined,
       invoicePrefix: invoicePrefix.trim() || undefined,
-      itemTagBrandName: itemTagBrandName.trim() || undefined,
-      footerNote: footerNote.trim() || undefined,
-      upiId: upiId.trim() || undefined,
-      upiPayeeName: upiPayeeName.trim() || undefined,
-      upiLink: upiLink.trim() || undefined,
       primaryColor: primaryColor.trim(),
       secondaryColor: secondaryColor.trim(),
-      termsAndConditions: termsAndConditions.trim(),
     });
     if (!parsed.success) {
       toast.error(parsed.error.errors[0]?.message ?? 'Invalid');
@@ -173,46 +147,26 @@ export default function OnboardingPage() {
         toast.error('Choose a unique invoice prefix not used by another branch.');
         return;
       }
-      if (parsed.data.itemTagBrandName?.trim() && !u.itemTagBrandName.available) {
-        toast.error('Choose a unique short brand on item tag not used by another branch.');
-        return;
-      }
     }
     updateBranch.mutate(
       {
         name: parsed.data.name,
         address: parsed.data.address,
         phone: parsed.data.mobile,
-        email: parsed.data.email?.trim() || null,
         gstNumber: parsed.data.gstNumber?.trim() || null,
         panNumber: parsed.data.panNumber?.trim() || null,
         invoicePrefix: parsed.data.invoicePrefix?.trim() || null,
-        itemTagBrandName: parsed.data.itemTagBrandName?.trim() || null,
-        footerNote: parsed.data.footerNote?.trim() || null,
-        upiId: parsed.data.upiId?.trim() || null,
-        upiPayeeName: parsed.data.upiPayeeName?.trim() || null,
-        upiLink: parsed.data.upiLink?.trim() || null,
         primaryColor: parsed.data.primaryColor.trim(),
         secondaryColor: parsed.data.secondaryColor.trim(),
-        termsAndConditions: parsed.data.termsAndConditions.trim(),
       },
       {
-        onSuccess: () => toast.success('Branch details saved'),
+        onSuccess: () => {
+          toast.success('Branch details saved');
+          setStep('pincodes');
+        },
         onError: (err) => toast.error(getApiError(err).message),
       },
     );
-  };
-
-  const handleLogo = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    uploadLogo.mutate(file, {
-      onSuccess: () => {
-        toast.success('Logo uploaded');
-        e.target.value = '';
-      },
-      onError: (err) => toast.error(getApiError(err).message),
-    });
   };
 
   const parsePincodes = (input: string) => {
@@ -293,21 +247,21 @@ export default function OnboardingPage() {
     );
   }
 
-  const hasLogo = !!branch?.logoUrl?.trim();
   const pinCount = areas.filter((a) => a.active).length;
   const effectiveMobile = phone.trim() || branch?.phone?.trim() || '';
   const mobileOk = phoneDigitsLen(effectiveMobile) >= 10 && phoneDigitsLen(effectiveMobile) <= 15;
-  const effectiveTerms = (termsAndConditions.trim() || branch?.termsAndConditions?.trim() || '').length >= 1;
   const hasUniquenessConflict =
     !!uniqueness.data &&
     ((Boolean(name.trim()) && !uniqueness.data.name.available) ||
-      (Boolean(invoicePrefix.trim()) && !uniqueness.data.invoicePrefix.available) ||
-      (Boolean(itemTagBrandName.trim()) && !uniqueness.data.itemTagBrandName.available));
-  const canFinish = hasLogo && pinCount >= 1 && mobileOk && effectiveTerms && !hasUniquenessConflict;
-  const preview = branch ? branchLogoUrl(branch.logoUrl, branch.updatedAt) : null;
-
+      (Boolean(invoicePrefix.trim()) && !uniqueness.data.invoicePrefix.available));
+  const hasUnsavedColorChanges =
+    !!branch &&
+    (primaryColor.trim().toLowerCase() !== (branch.primaryColor ?? '').trim().toLowerCase() ||
+      secondaryColor.trim().toLowerCase() !== (branch.secondaryColor ?? '').trim().toLowerCase());
+  const canFinish = pinCount >= 1 && mobileOk && !hasUniquenessConflict;
+  const stepMeta = onboardingStepMeta(step);
   return (
-    <div className="mx-auto max-w-2xl space-y-8">
+    <div className="mx-auto max-w-6xl space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Finish branch setup</h1>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -316,157 +270,65 @@ export default function OnboardingPage() {
         </p>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Branch details</CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Values from signup are shown here; update anything before saving. Mobile number and terms are required to
-            finish onboarding.
-          </p>
-        </CardHeader>
-        <CardContent>
-          {branchLoading ? (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+      <div className={cn('grid items-start gap-6', step === 'colors' ? 'lg:grid-cols-[380px_minmax(0,1fr)]' : 'lg:grid-cols-1')}>
+        {step === 'colors' ? (
+        <Card className="lg:sticky lg:top-6">
+          <CardHeader>
+            <CardTitle className="text-lg">Customer app colors</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Finalise your brand colors here. This preview stays visible while you complete onboarding.
+            </p>
+            {hasUnsavedColorChanges ? (
+              <p className="text-xs text-amber-700">Unsaved color changes. Click "Save details" on the right.</p>
+            ) : (
+              <p className="text-xs text-emerald-700">Colors are saved.</p>
+            )}
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-4">
+              <FormField label="Primary color (required)">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="color"
+                    value={/^#[0-9A-Fa-f]{6}$/.test(primaryColor) ? primaryColor : '#0f3d91'}
+                    onChange={(e) => setPrimaryColor(e.target.value)}
+                    className="h-10 w-12 cursor-pointer rounded-md border border-slate-300 bg-white p-1"
+                    aria-label="Pick primary color"
+                  />
+                  <Input
+                    type="text"
+                    placeholder="#0f3d91"
+                    value={primaryColor}
+                    onChange={(e) => setPrimaryColor(e.target.value)}
+                  />
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Main accent for customer app (buttons, active order cards, highlights).
+                </p>
+              </FormField>
+              <FormField label="Secondary color (required)">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="color"
+                    value={/^#[0-9A-Fa-f]{6}$/.test(secondaryColor) ? secondaryColor : '#e8f0ff'}
+                    onChange={(e) => setSecondaryColor(e.target.value)}
+                    className="h-10 w-12 cursor-pointer rounded-md border border-slate-300 bg-white p-1"
+                    aria-label="Pick secondary color"
+                  />
+                  <Input
+                    type="text"
+                    placeholder="#e8f0ff"
+                    value={secondaryColor}
+                    onChange={(e) => setSecondaryColor(e.target.value)}
+                  />
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Surface/tile background for customer app cards.
+                </p>
+              </FormField>
             </div>
-          ) : (
-            <form onSubmit={handleSaveBranch} className="space-y-4">
-              <FormField label="Branch name">
-                <Input value={name} onChange={(e) => setName(e.target.value)} />
-                <BranchUniquenessUnderField
-                  slot={uniqueness.data?.name}
-                  isEmpty={!name.trim()}
-                  availableLabel="Available — no other branch uses this name (case-insensitive)."
-                  takenTemplate={(other) =>
-                    `This name matches "${other}". Each branch must have a distinct name (case-insensitive).`
-                  }
-                />
-              </FormField>
-              <FormField label="Address">
-                <Input value={address} onChange={(e) => setAddress(e.target.value)} />
-              </FormField>
-              <FormField label="Mobile number">
-                <Input
-                  type="tel"
-                  inputMode="tel"
-                  autoComplete="tel"
-                  placeholder="+91 98765 43210 or 9876543210"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                />
-              </FormField>
-              <FormField label="Public branch email (optional)">
-                <Input
-                  type="email"
-                  placeholder="contact@mylaundry.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                />
-              </FormField>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <FormField label="GST number (optional)">
-                  <Input value={gstNumber} onChange={(e) => setGstNumber(e.target.value)} />
-                </FormField>
-                <FormField label="PAN (optional)">
-                  <Input value={panNumber} onChange={(e) => setPanNumber(e.target.value)} />
-                </FormField>
-              </div>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <FormField label="Invoice prefix (optional)">
-                  <Input
-                    value={invoicePrefix}
-                    onChange={(e) => setInvoicePrefix(e.target.value)}
-                    placeholder="e.g. TKS"
-                    maxLength={24}
-                  />
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    When set, ACK and Final invoice codes include this segment (letters, numbers, hyphen, underscore).
-                  </p>
-                  <BranchUniquenessUnderField
-                    slot={uniqueness.data?.invoicePrefix}
-                    isEmpty={!invoicePrefix.trim()}
-                    optionalEmptyHelp="Optional. If set, it must be unique across all branches (case-insensitive) so invoice codes do not clash."
-                    availableLabel="Available — this prefix is not used by another branch (case-insensitive)."
-                    takenTemplate={(other) =>
-                      `This prefix is already used by "${other}". Use a different prefix for each branch.`
-                    }
-                  />
-                </FormField>
-                <FormField label="Short brand name on item tag (optional)">
-                  <Input
-                    value={itemTagBrandName}
-                    onChange={(e) => setItemTagBrandName(e.target.value)}
-                    placeholder="e.g. TKS"
-                    maxLength={40}
-                  />
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Printed on garment tags for this branch; falls back to branch name or company name if empty.
-                  </p>
-                  <BranchUniquenessUnderField
-                    slot={uniqueness.data?.itemTagBrandName}
-                    isEmpty={!itemTagBrandName.trim()}
-                    optionalEmptyHelp="Optional. If set, it must be unique across branches (case-insensitive) so printed tags stay distinct."
-                    availableLabel="Available — this tag line is not used by another branch (case-insensitive)."
-                    takenTemplate={(other) =>
-                      `This tag line is already used by "${other}". Use a different short brand for each branch.`
-                    }
-                  />
-                </FormField>
-              </div>
-              <FormField label="Footer note on invoices (optional)">
-                <Input value={footerNote} onChange={(e) => setFooterNote(e.target.value)} />
-              </FormField>
-              <FormField label="UPI ID (optional)">
-                <Input placeholder="name@bank" value={upiId} onChange={(e) => setUpiId(e.target.value)} />
-              </FormField>
-              <FormField label="UPI payee name (optional)">
-                <Input value={upiPayeeName} onChange={(e) => setUpiPayeeName(e.target.value)} />
-              </FormField>
-              <FormField label="UPI payment link (optional)">
-                <Input type="url" placeholder="https://…" value={upiLink} onChange={(e) => setUpiLink(e.target.value)} />
-              </FormField>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <FormField label="Primary color (required)">
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="color"
-                      value={/^#[0-9A-Fa-f]{6}$/.test(primaryColor) ? primaryColor : '#0f3d91'}
-                      onChange={(e) => setPrimaryColor(e.target.value)}
-                      className="h-10 w-12 cursor-pointer rounded-md border border-slate-300 bg-white p-1"
-                      aria-label="Pick primary color"
-                    />
-                    <Input
-                      type="text"
-                      placeholder="#0f3d91"
-                      value={primaryColor}
-                      onChange={(e) => setPrimaryColor(e.target.value)}
-                    />
-                  </div>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Main accent for customer app (buttons, active order cards, highlights).
-                  </p>
-                </FormField>
-                <FormField label="Secondary color (required)">
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="color"
-                      value={/^#[0-9A-Fa-f]{6}$/.test(secondaryColor) ? secondaryColor : '#e8f0ff'}
-                      onChange={(e) => setSecondaryColor(e.target.value)}
-                      className="h-10 w-12 cursor-pointer rounded-md border border-slate-300 bg-white p-1"
-                      aria-label="Pick secondary color"
-                    />
-                    <Input
-                      type="text"
-                      placeholder="#e8f0ff"
-                      value={secondaryColor}
-                      onChange={(e) => setSecondaryColor(e.target.value)}
-                    />
-                  </div>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Surface/tile background for customer app cards.
-                  </p>
-                </FormField>
-              </div>
+
+            {step === 'colors' ? (
               <div className="rounded-lg border p-4" style={{ borderColor: '#dbeafe', backgroundColor: '#f8fbff' }}>
                 <p className="text-sm font-semibold" style={{ color: '#1e3a8a' }}>Customer Orders preview</p>
                 <p className="mt-1 text-xs text-muted-foreground">
@@ -592,140 +454,256 @@ export default function OnboardingPage() {
                   </div>
                 </div>
               </div>
-              <FormField label="Terms and conditions (shown on this branch’s invoices)">
-                <textarea
-                  className={textareaClass}
-                  rows={8}
-                  value={termsAndConditions}
-                  onChange={(e) => setTermsAndConditions(e.target.value)}
-                  placeholder="Enter the legal / commercial terms that should print on PDF invoices for this branch."
-                />
-              </FormField>
-              <Button type="submit" disabled={updateBranch.isPending || hasUniquenessConflict}>
-                {updateBranch.isPending ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving…
-                  </>
-                ) : (
-                  'Save details'
-                )}
-              </Button>
-            </form>
-          )}
-        </CardContent>
-      </Card>
+            ) : (
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                Mockup preview is shown in Step 1 (Select colors). Selected colors are still applied.
+              </div>
+            )}
+          </CardContent>
+        </Card>
+        ) : null}
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Branch logo</CardTitle>
-          <p className="text-sm text-muted-foreground">Required before you can go live.</p>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {preview ? (
-            <img src={preview} alt="Branch logo" className="h-20 w-auto max-w-full object-contain object-left" />
-          ) : (
-            <p className="text-sm text-muted-foreground">No logo uploaded yet.</p>
-          )}
-          <div>
-            <Input type="file" accept="image/*" onChange={handleLogo} disabled={uploadLogo.isPending} />
-            {uploadLogo.isPending ? (
-              <p className="mt-2 text-xs text-muted-foreground">Uploading…</p>
-            ) : null}
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Serviceable pincodes</CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Add at least one active 6-digit pincode. Separate multiple with commas.
-          </p>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {areasLoading ? (
-            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-          ) : areas.length === 0 ? (
-            <p className="text-sm text-muted-foreground">None yet. Add pincodes below.</p>
-          ) : (
-            <div className="flex flex-wrap gap-2">
-              {areas.map((a) => (
-                <span
-                  key={a.id}
-                  className={cn(
-                    'inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-sm font-medium shadow-sm',
-                    a.active
-                      ? 'border-sky-300 bg-sky-100 text-sky-900 dark:border-sky-700 dark:bg-sky-950/60 dark:text-sky-100'
-                      : 'border-muted-foreground/25 bg-muted/60 text-muted-foreground',
-                  )}
-                >
-                  <span>{a.pincode}</span>
-                  {!a.active ? <span className="text-xs font-normal opacity-80">inactive</span> : null}
-                  <button
-                    type="button"
-                    className={cn(
-                      'ml-0.5 inline-flex rounded-full p-0.5 transition-colors',
-                      a.active
-                        ? 'text-sky-800 hover:bg-sky-200/90 dark:text-sky-200 dark:hover:bg-sky-800/80'
-                        : 'hover:bg-muted',
-                    )}
-                    aria-label={`Remove pincode ${a.pincode}`}
-                    disabled={deleteArea.isPending}
-                    onClick={() => {
-                      deleteArea.mutate(a.id, {
-                        onSuccess: () => toast.success(`Removed ${a.pincode}`),
-                        onError: (err) => toast.error(getApiError(err).message),
-                      });
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <div className="mb-1 space-y-1.5">
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>Progress</span>
+                  <span>{stepMeta.percent}%</span>
+                </div>
+                <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200">
+                  <div
+                    className="h-full rounded-full transition-all duration-300"
+                    style={{
+                      width: `${stepMeta.percent}%`,
+                      backgroundColor: /^#[0-9A-Fa-f]{6}$/.test(primaryColor) ? primaryColor : '#2563eb',
                     }}
-                  >
-                    <X className="h-3.5 w-3.5" aria-hidden />
-                  </button>
-                </span>
-              ))}
-            </div>
-          )}
-          <form onSubmit={handleAddPincodes} className="flex flex-col gap-2 sm:flex-row sm:items-end">
-            <FormField label="Pincodes" className="flex-1">
-              <Input
-                value={pinInput}
-                onChange={(e) => setPinInput(e.target.value)}
-                placeholder="560001 or 560001, 560002"
-              />
-            </FormField>
-            <Button type="submit" variant="secondary" disabled={createArea.isPending}>
-              {createArea.isPending ? 'Adding…' : 'Add'}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
+                  />
+                </div>
+              </div>
+              <CardTitle className="text-lg">
+                {step === 'colors' && 'Step 1 of 4: Select colors'}
+                {step === 'details' && 'Step 2 of 4: Branch details'}
+                {step === 'pincodes' && 'Step 3 of 4: Add pincodes'}
+                {step === 'finish' && 'Step 4 of 4: Finish setup'}
+              </CardTitle>
+            </CardHeader>
+          </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Complete</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {finishError ? <ErrorDisplay error={finishError} /> : null}
-          {!canFinish ? (
-            <p className="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-md px-3 py-2">
-              {!hasLogo ? 'Upload a branch logo. ' : null}
-              {pinCount < 1 ? 'Add at least one pincode. ' : null}
-              {!mobileOk ? 'Enter a valid branch mobile number (10–15 digits) and save branch details. ' : null}
-              {!effectiveTerms ? 'Add terms and conditions for this branch and save. ' : null}
-            </p>
+          {step === 'colors' ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Confirm colors</CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Pick your primary and secondary colors from the left panel, then continue.
+                </p>
+              </CardHeader>
+              <CardContent>
+                <Button type="button" onClick={() => setStep('details')}>
+                  Next
+                </Button>
+              </CardContent>
+            </Card>
           ) : null}
-          <form onSubmit={handleFinish}>
-            <Button type="submit" disabled={!canFinish || finishing} className="w-full sm:w-auto">
-              {finishing ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Finishing…
-                </>
-              ) : (
-                'Finish and go to dashboard'
-              )}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
+
+          {step === 'details' ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Branch details</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {branchLoading ? (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+                  </div>
+                ) : (
+                  <form onSubmit={handleSaveBranch} className="space-y-4">
+                    <FormField label="Branch name *">
+                      <Input value={name} onChange={(e) => setName(e.target.value)} />
+                      <BranchUniquenessUnderField
+                        slot={uniqueness.data?.name}
+                        isEmpty={!name.trim()}
+                        availableLabel="Available — no other branch uses this name (case-insensitive)."
+                        takenTemplate={(other) =>
+                          `This name matches "${other}". Each branch must have a distinct name (case-insensitive).`
+                        }
+                      />
+                    </FormField>
+                    <FormField label="Address *">
+                      <Input value={address} onChange={(e) => setAddress(e.target.value)} />
+                    </FormField>
+                    <FormField label="Mobile number *">
+                      <Input
+                        type="tel"
+                        inputMode="tel"
+                        autoComplete="tel"
+                        placeholder="+91 98765 43210 or 9876543210"
+                        value={phone}
+                        onChange={(e) => setPhone(e.target.value)}
+                      />
+                    </FormField>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <FormField label="GST number (optional)">
+                        <Input value={gstNumber} onChange={(e) => setGstNumber(e.target.value)} />
+                      </FormField>
+                      <FormField label="PAN (optional)">
+                        <Input value={panNumber} onChange={(e) => setPanNumber(e.target.value)} />
+                      </FormField>
+                    </div>
+                    <FormField label="Invoice prefix (optional)">
+                      <Input
+                        value={invoicePrefix}
+                        onChange={(e) => setInvoicePrefix(e.target.value)}
+                        placeholder="e.g. TKS"
+                        maxLength={24}
+                      />
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Used in invoice numbers. Keep this unique per branch.
+                      </p>
+                      <BranchUniquenessUnderField
+                        slot={uniqueness.data?.invoicePrefix}
+                        isEmpty={!invoicePrefix.trim()}
+                        optionalEmptyHelp="Optional. If set, it must be unique across branches."
+                        availableLabel="Available — this prefix is not used by another branch."
+                        takenTemplate={(other) =>
+                          `This prefix is already used by "${other}". Use a different prefix for each branch.`
+                        }
+                      />
+                    </FormField>
+                    <div className="flex gap-2">
+                      <Button type="button" variant="outline" onClick={() => setStep('colors')}>
+                        Back
+                      </Button>
+                      <Button type="submit" disabled={updateBranch.isPending || hasUniquenessConflict}>
+                        {updateBranch.isPending ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Saving…
+                          </>
+                        ) : (
+                          'Save and next'
+                        )}
+                      </Button>
+                    </div>
+                  </form>
+                )}
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {step === 'pincodes' ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Serviceable pincodes</CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Add at least one active 6-digit pincode. Separate multiple with commas.
+                </p>
+                <p className="text-xs text-blue-700">
+                  You can add more pincodes later from the Service Areas page.
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {areasLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                ) : areas.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">None yet. Add pincodes below.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {areas.map((a) => (
+                      <span
+                        key={a.id}
+                        className={cn(
+                          'inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-sm font-medium shadow-sm',
+                          a.active
+                            ? 'border-sky-300 bg-sky-100 text-sky-900 dark:border-sky-700 dark:bg-sky-950/60 dark:text-sky-100'
+                            : 'border-muted-foreground/25 bg-muted/60 text-muted-foreground',
+                        )}
+                      >
+                        <span>{a.pincode}</span>
+                        {!a.active ? <span className="text-xs font-normal opacity-80">inactive</span> : null}
+                        <button
+                          type="button"
+                          className={cn(
+                            'ml-0.5 inline-flex rounded-full p-0.5 transition-colors',
+                            a.active
+                              ? 'text-sky-800 hover:bg-sky-200/90 dark:text-sky-200 dark:hover:bg-sky-800/80'
+                              : 'hover:bg-muted',
+                          )}
+                          aria-label={`Remove pincode ${a.pincode}`}
+                          disabled={deleteArea.isPending}
+                          onClick={() => {
+                            deleteArea.mutate(a.id, {
+                              onSuccess: () => toast.success(`Removed ${a.pincode}`),
+                              onError: (err) => toast.error(getApiError(err).message),
+                            });
+                          }}
+                        >
+                          <X className="h-3.5 w-3.5" aria-hidden />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <form onSubmit={handleAddPincodes} className="flex flex-col gap-2 sm:flex-row sm:items-end">
+                  <FormField label="Pincodes *" className="flex-1">
+                    <Input
+                      value={pinInput}
+                      onChange={(e) => setPinInput(e.target.value)}
+                      placeholder="560001 or 560001, 560002"
+                    />
+                  </FormField>
+                  <Button type="submit" variant="secondary" disabled={createArea.isPending}>
+                    {createArea.isPending ? 'Adding…' : 'Add'}
+                  </Button>
+                </form>
+                <div className="flex gap-2">
+                  <Button type="button" variant="outline" onClick={() => setStep('details')}>
+                    Back
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={() => setStep('finish')}
+                    disabled={pinCount < 1}
+                    title={pinCount < 1 ? 'Add at least one pincode to continue' : undefined}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {step === 'finish' ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Complete</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {finishError ? <ErrorDisplay error={finishError} /> : null}
+                {!canFinish ? (
+                  <p className="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-md px-3 py-2">
+                    {pinCount < 1 ? 'Add at least one pincode. ' : null}
+                    {!mobileOk ? 'Enter a valid branch mobile number (10–15 digits) and save branch details. ' : null}
+                  </p>
+                ) : null}
+                <form onSubmit={handleFinish} className="flex gap-2">
+                  <Button type="button" variant="outline" onClick={() => setStep('pincodes')}>
+                    Back
+                  </Button>
+                  <Button type="submit" disabled={!canFinish || finishing} className="w-full sm:w-auto">
+                    {finishing ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Finishing…
+                      </>
+                    ) : (
+                      'Finish and go to dashboard'
+                    )}
+                  </Button>
+                </form>
+              </CardContent>
+            </Card>
+          ) : null}
+        </div>
+      </div>
     </div>
   );
 }

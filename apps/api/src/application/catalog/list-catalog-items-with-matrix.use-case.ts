@@ -84,6 +84,42 @@ export async function listCatalogItemsWithMatrix(
   const segmentPricesByItem = await Promise.all(
     items.map((item) => deps.itemSegmentServicePriceRepo.listByItemId(item.id)),
   );
+  const referencedServiceCategoryIds = new Set<string>();
+  const referencedSegmentCategoryIds = new Set<string>();
+  for (const segmentPrices of segmentPricesByItem) {
+    for (const price of segmentPrices) {
+      referencedServiceCategoryIds.add(price.serviceCategoryId);
+      referencedSegmentCategoryIds.add(price.segmentCategoryId);
+    }
+  }
+
+  // If any matrix rows reference taxonomy outside the current branch scope,
+  // keep those categories in the payload so UI never falls back to raw UUIDs.
+  const missingServiceIds = Array.from(referencedServiceCategoryIds).filter(
+    (id) => !serviceCategories.some((row) => row.id === id),
+  );
+  const missingSegmentIds = Array.from(referencedSegmentCategoryIds).filter(
+    (id) => !segmentCategories.some((row) => row.id === id),
+  );
+  if (missingServiceIds.length > 0 || missingSegmentIds.length > 0) {
+    const [allServices, allSegments] = await Promise.all([
+      missingServiceIds.length > 0 ? deps.serviceCategoryRepo.listAll() : Promise.resolve([]),
+      missingSegmentIds.length > 0 ? deps.segmentCategoryRepo.listAll() : Promise.resolve([]),
+    ]);
+    if (missingServiceIds.length > 0) {
+      serviceCategories = mergeCategoryRowsById(
+        serviceCategories,
+        allServices.filter((row) => missingServiceIds.includes(row.id)),
+      );
+    }
+    if (missingSegmentIds.length > 0) {
+      segmentCategories = mergeCategoryRowsById(
+        segmentCategories,
+        allSegments.filter((row) => missingSegmentIds.includes(row.id)),
+      );
+    }
+  }
+
   const itemsWithMatrix: CatalogItemWithMatrix[] = items.map((item, i) => ({
     ...item,
     segmentPrices: segmentPricesByItem[i] ?? [],
