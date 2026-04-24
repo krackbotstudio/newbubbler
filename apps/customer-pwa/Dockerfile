@@ -16,7 +16,7 @@ COPY apps/customer-mobile/package.json ./apps/customer-mobile/
 COPY scripts ./scripts
 
 # Install all dependencies
-RUN npm ci --legacy-peer-deps
+RUN npm ci --legacy-peer-deps --ignore-scripts
 
 # Copy source code (customer-pwa needs customer-mobile for shared App)
 COPY apps/customer-pwa ./apps/customer-pwa
