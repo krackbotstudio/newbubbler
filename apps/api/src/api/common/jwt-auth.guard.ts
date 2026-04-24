@@ -30,16 +30,18 @@ export class JwtAuthGuard implements CanActivate {
     try {
       const payload = jwt.verify(token, secret) as JwtPayload;
       let branchId = payload.branchId ?? null;
+      let role = payload.role;
 
-      // Keep branch scope in sync even if JWT was minted before assignment changes.
+      // Keep role and branch scope in sync even if JWT was minted before assignment changes.
       if (payload.role !== Role.CUSTOMER) {
         try {
           const dbUser = await prisma.user.findUnique({
             where: { id: payload.sub },
-            select: { branchId: true },
+            select: { branchId: true, role: true },
           });
           if (dbUser) {
             branchId = dbUser.branchId ?? null;
+            role = (dbUser.role as Role) ?? payload.role;
           }
         } catch {
           // Best-effort sync; fallback to JWT payload values on DB read failures.
@@ -48,7 +50,7 @@ export class JwtAuthGuard implements CanActivate {
 
       const user: AuthUser = {
         id: payload.sub,
-        role: payload.role,
+        role,
         phone: payload.phone,
         email: payload.email,
         branchId,
