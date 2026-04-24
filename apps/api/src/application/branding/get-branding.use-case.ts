@@ -1,4 +1,3 @@
-import { AppError } from '../errors';
 import type { BrandingRepo, BrandingSettingsRecord } from '../ports';
 
 export interface GetBrandingDeps {
