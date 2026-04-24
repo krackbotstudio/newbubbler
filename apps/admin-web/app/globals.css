@@ -57,7 +57,7 @@
   }
   /* Native select: white fill to avoid text overlap, right padding for chevron (min 8px from edge) */
   select {
-    @apply rounded-md border border-primary/30 bg-secondary/35 pl-3 pr-8 py-2 text-sm font-semibold text-primary min-h-[2.5rem];
+    @apply rounded-md border border-primary/30 bg-background pl-3 pr-8 py-2 text-sm font-semibold text-primary min-h-[2.5rem];
   }
   select option:first-of-type,
   select option[value=""] {

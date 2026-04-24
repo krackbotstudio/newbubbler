@@ -28,7 +28,7 @@ function normalizeHexColor(value: string | null | undefined): string | null {
 }
 
 const textareaClass = cn(
-  'flex min-h-[120px] w-full rounded-md border border-primary/30 bg-secondary/35 px-3 py-2 text-sm text-primary ring-offset-background placeholder:font-normal placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
+  'flex min-h-[120px] w-full rounded-md border border-primary/30 bg-background px-3 py-2 text-sm text-primary ring-offset-background placeholder:font-normal placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
 );
 
 const branchSchema = z
@@ -238,10 +238,11 @@ export function OpsBranchBrandingView({ branchId }: { branchId: string }) {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-2xl font-semibold">Branch branding</h1>
+        <h1 className="text-2xl font-semibold">
+          {branch?.name ? `${branch.name} Branding` : 'Branch branding'}
+        </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Logo, contact, GST/PAN, UPI, and invoice terms for your branch only. Global brand settings are managed by
-          head office.
+          Logo, contact, GST/PAN, UPI, and invoice terms for this branch only.
         </p>
       </div>
 

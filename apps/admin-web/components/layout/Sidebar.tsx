@@ -195,7 +195,7 @@ export function Sidebar({ user, collapsed = false, onToggleCollapse, mobileOpen 
       )}
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 top-0 z-50 flex h-dvh flex-col border-r bg-secondary/35 transition-[width,transform] duration-200 ease-in-out',
+          'fixed inset-y-0 left-0 top-0 z-50 flex h-dvh flex-col border-r bg-background transition-[width,transform] duration-200 ease-in-out',
           'w-64',
           mobileOpen ? 'translate-x-0' : '-translate-x-full',
           'md:translate-x-0',

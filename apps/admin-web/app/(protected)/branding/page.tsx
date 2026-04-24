@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { z } from 'zod';
 import { getStoredUser } from '@/lib/auth';
 import { RoleGate } from '@/components/shared/RoleGate';
@@ -288,6 +289,24 @@ export default function BrandingPage() {
                     onChange={(e) => setBusinessName(e.target.value)}
                     disabled={!canEdit}
                     placeholder="Business name"
+                  />
+                </FormField>
+                <FormField label="Address (Head Office)" htmlFor="address">
+                  <Input
+                    id="address"
+                    value={address}
+                    onChange={(e) => setAddress(e.target.value)}
+                    disabled={!canEdit}
+                    placeholder="Main office address"
+                  />
+                </FormField>
+                <FormField label="Phone (Brand Contact)" htmlFor="phone">
+                  <Input
+                    id="phone"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    disabled={!canEdit}
+                    placeholder="Brand contact number"
                   />
                 </FormField>
                 <FormField label="PAN number (optional)" htmlFor="panNumber">
@@ -631,9 +650,10 @@ export default function BrandingPage() {
               {branches.map((b) => (
                 <li
                   key={b.id}
-                  className="flex flex-wrap items-center gap-4 rounded-lg border p-3"
+                  className="group relative flex flex-wrap items-center gap-4 rounded-lg border p-3 hover:bg-accent/50 transition-colors"
                 >
-                  <div className="min-w-0 flex-1">
+                  <Link href={`/branding/${b.id}`} className="absolute inset-0 z-0" />
+                  <div className="min-w-0 flex-1 z-10 pointer-events-none">
                     <p className="font-medium flex items-center gap-2">
                       {b.name}
                       {b.isDefault && (
@@ -643,31 +663,36 @@ export default function BrandingPage() {
                       )}
                     </p>
                     <p className="text-muted-foreground text-sm">{b.address}</p>
-                    {b.phone && (
-                      <p className="text-muted-foreground text-sm">Phone: {b.phone}</p>
-                    )}
-                    {b.email && (
-                      <p className="text-muted-foreground text-sm">Email: {b.email}</p>
-                    )}
-                    {b.footerNote && (
-                      <p className="text-muted-foreground text-xs">{b.footerNote}</p>
-                    )}
+                    <div className="flex flex-wrap gap-x-4 gap-y-0.5 mt-1">
+                      {b.phone && (
+                        <p className="text-muted-foreground text-xs font-mono">Phone: {b.phone}</p>
+                      )}
+                      {b.email && (
+                        <p className="text-muted-foreground text-xs">Email: {b.email}</p>
+                      )}
+                    </div>
                   </div>
                   {role === 'ADMIN' ? (
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 z-10">
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => handleEditBranch(b)}
-                        title="Edit branch"
+                        asChild
+                        title="Edit full branch branding"
                       >
-                        <Pencil className="h-4 w-4" />
+                        <Link href={`/branding/${b.id}`}>
+                          <Pencil className="h-4 w-4" />
+                        </Link>
                       </Button>
                       <Button
                         variant="outline"
                         size="sm"
                         className="text-destructive hover:text-destructive"
-                        onClick={() => handleDeleteBranch(b)}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleDeleteBranch(b);
+                        }}
                         disabled={deleteBranch.isPending}
                         title="Delete branch"
                       >
