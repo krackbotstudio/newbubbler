@@ -35,7 +35,7 @@ FROM node:20-alpine AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
-ENV PORT=8080
+ENV PORT=3002
 
 # Copy root package files for production install
 COPY package.json package-lock.json ./
@@ -80,7 +80,7 @@ COPY apps/api/scripts/resolve-all-migrations.sh /app/scripts/resolve-all-migrati
 RUN chmod +x /app/scripts/resolve-migrations.sh
 RUN chmod +x /app/scripts/resolve-all-migrations.sh
 
-EXPOSE 8080
+EXPOSE 3002
 
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["node", "-r", "tsconfig-paths/register", "dist/apps/api/src/bootstrap/main.js"]
