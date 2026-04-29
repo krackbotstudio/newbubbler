@@ -84,6 +84,18 @@ export function useDeleteBranch() {
   });
 }
 
+export function useSetBranchActive() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) =>
+      api.patch<Branch>(`/admin/branches/${id}`, { isActive }).then((r) => r.data),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: BRANCHES_KEY });
+      qc.invalidateQueries({ queryKey: [...BRANCHES_KEY, vars.id] });
+    },
+  });
+}
+
 export function useUploadBranchLogo(branchId: string) {
   const qc = useQueryClient();
   return useMutation({

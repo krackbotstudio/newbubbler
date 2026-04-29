@@ -18,6 +18,7 @@ import { toast } from 'sonner';
 import { getFriendlyErrorMessage } from '@/lib/api';
 import type { Branch } from '@/types';
 import { Loader2 } from 'lucide-react';
+import { getStoredUser } from '@/lib/auth';
 
 const schema = z.object({
   name: z.string().min(1, 'Branch name is required'),
@@ -60,8 +61,12 @@ export function BranchFormModal({ branch, open, onOpenChange, mode }: BranchForm
   const [upiPayeeName, setUpiPayeeName] = useState('');
   const [upiLink, setUpiLink] = useState('');
   const [footerNote, setFooterNote] = useState('');
+  const [isActive, setIsActive] = useState(true);
   const [isMainBranch, setIsMainBranch] = useState(false);
   const [qrFile, setQrFile] = useState<File | null>(null);
+
+  const user = getStoredUser();
+  const canManageBranchActive = user?.role === 'ADMIN';
 
   const createBranch = useCreateBranch();
   const updateBranch = useUpdateBranch(branch?.id ?? '');
@@ -95,6 +100,7 @@ export function BranchFormModal({ branch, open, onOpenChange, mode }: BranchForm
       setUpiPayeeName(branch.upiPayeeName ?? '');
       setUpiLink(branch.upiLink ?? '');
       setFooterNote(branch.footerNote ?? '');
+      setIsActive(branch.isActive ?? true);
       setIsMainBranch(branch.isDefault ?? false);
     } else if (mode === 'add') {
       setName('');
@@ -111,6 +117,7 @@ export function BranchFormModal({ branch, open, onOpenChange, mode }: BranchForm
       setUpiPayeeName('');
       setUpiLink('');
       setFooterNote('');
+      setIsActive(true);
       setIsMainBranch(false);
     }
     setQrFile(null);
@@ -171,6 +178,7 @@ export function BranchFormModal({ branch, open, onOpenChange, mode }: BranchForm
       upiPayeeName: result.data.upiPayeeName,
       upiLink: result.data.upiLink,
       footerNote: result.data.footerNote,
+      isActive,
       isDefault: isMainBranch,
     };
     if (mode === 'add') {
@@ -394,6 +402,22 @@ export function BranchFormModal({ branch, open, onOpenChange, mode }: BranchForm
                 placeholder="Footer note"
               />
             </FormField>
+            <div className="flex items-center gap-2">
+              {canManageBranchActive ? (
+                <>
+                  <input
+                    id="branch-active"
+                    type="checkbox"
+                    checked={isActive}
+                    onChange={(e) => setIsActive(e.target.checked)}
+                    className="h-4 w-4 rounded border-input"
+                  />
+                  <label htmlFor="branch-active" className="text-sm font-medium cursor-pointer">
+                    Branch is active
+                  </label>
+                </>
+              ) : null}
+            </div>
             <div className="flex items-center gap-2">
               <input
                 id="branch-main"

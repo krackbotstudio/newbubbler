@@ -9,10 +9,11 @@ import { ErrorDisplay } from '@/components/shared/ErrorDisplay';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
 import { Skeleton } from '@/components/ui/skeleton';
 import { FormField } from '@/components/ui/form-field';
 import { useBranding, useUpdateBranding, useUploadLogo, useUploadUpiQr, useUploadWelcomeBackground, useUploadAppIcon } from '@/hooks/useBranding';
-import { useBranches, useDeleteBranch } from '@/hooks/useBranches';
+import { useBranches, useDeleteBranch, useSetBranchActive } from '@/hooks/useBranches';
 import { useCarousel, useUploadCarouselImage, useRemoveCarouselImage } from '@/hooks/useCarousel';
 import { getApiOrigin } from '@/lib/api';
 import { toast } from 'sonner';
@@ -76,6 +77,7 @@ export default function BrandingPage() {
 
   const { data: branches = [], isLoading: branchesLoading } = useBranches();
   const deleteBranch = useDeleteBranch();
+  const setBranchActive = useSetBranchActive();
 
   const { data: carouselData, isLoading: carouselLoading } = useCarousel();
   const uploadCarousel = useUploadCarouselImage();
@@ -218,6 +220,18 @@ export default function BrandingPage() {
       onSuccess: () => toast.success('Branch deleted'),
       onError: (err) => toast.error(getFriendlyErrorMessage(err)),
     });
+  };
+  const handleToggleBranchActive = (b: Branch, nextActive: boolean) => {
+    setBranchActive.mutate(
+      { id: b.id, isActive: nextActive },
+      {
+        onSuccess: () => {
+          const label = b.name?.trim() || 'Branch';
+          toast.success(nextActive ? `${label} activated` : `${label} deactivated`);
+        },
+        onError: () => toast.error('Could not update branch status'),
+      },
+    );
   };
 
   const handleCarouselUpload = (position: number) => (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -661,6 +675,15 @@ export default function BrandingPage() {
                           Main
                         </span>
                       )}
+                      <span
+                        className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ${
+                          b.isActive
+                            ? 'bg-emerald-100 text-emerald-700'
+                            : 'bg-rose-100 text-rose-700'
+                        }`}
+                      >
+                        {b.isActive ? 'Active' : 'Inactive'}
+                      </span>
                     </p>
                     <p className="text-muted-foreground text-sm">{b.address}</p>
                     <div className="flex flex-wrap gap-x-4 gap-y-0.5 mt-1">
@@ -670,10 +693,30 @@ export default function BrandingPage() {
                       {b.email && (
                         <p className="text-muted-foreground text-xs">Email: {b.email}</p>
                       )}
+                      {role === 'ADMIN' ? (
+                        <p className="text-muted-foreground text-xs">
+                          Registered on: {new Date(b.createdAt).toLocaleDateString()}
+                        </p>
+                      ) : null}
                     </div>
                   </div>
                   {role === 'ADMIN' ? (
                     <div className="flex gap-2 z-10">
+                      <div
+                        className="mr-1 flex items-center gap-2 rounded-md border px-2 py-1"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }}
+                      >
+                        <span className="text-xs text-muted-foreground">Active</span>
+                        <Switch
+                          checked={b.isActive}
+                          disabled={setBranchActive.isPending}
+                          onCheckedChange={(next) => handleToggleBranchActive(b, next)}
+                          aria-label={`Set ${b.name} as ${b.isActive ? 'inactive' : 'active'}`}
+                        />
+                      </div>
                       <Button
                         variant="outline"
                         size="sm"

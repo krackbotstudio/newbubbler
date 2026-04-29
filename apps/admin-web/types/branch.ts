@@ -17,6 +17,7 @@ export interface Branch {
   upiPayeeName: string | null;
   upiLink: string | null;
   upiQrUrl: string | null;
+  isActive: boolean;
   isDefault: boolean;
   createdAt: string;
   updatedAt: string;
@@ -38,6 +39,7 @@ export interface CreateBranchBody {
   upiId?: string | null;
   upiPayeeName?: string | null;
   upiLink?: string | null;
+  isActive?: boolean;
   isDefault?: boolean;
 }
 
@@ -57,6 +59,7 @@ export interface UpdateBranchBody {
   upiId?: string | null;
   upiPayeeName?: string | null;
   upiLink?: string | null;
+  isActive?: boolean;
   isDefault?: boolean;
 }
 

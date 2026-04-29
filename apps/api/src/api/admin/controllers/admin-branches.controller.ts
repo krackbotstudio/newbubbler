@@ -90,6 +90,7 @@ export class AdminBranchesController {
       upiId: dto.upiId ?? null,
       upiPayeeName: dto.upiPayeeName ?? null,
       upiLink: dto.upiLink ?? null,
+      isActive: dto.isActive ?? true,
       isDefault: dto.isDefault,
     });
   }
@@ -119,6 +120,7 @@ export class AdminBranchesController {
         upiId: dto.upiId,
         upiPayeeName: dto.upiPayeeName,
         upiLink: dto.upiLink,
+        isActive: dto.isActive,
         isDefault: dto.isDefault,
       },
       req.user,

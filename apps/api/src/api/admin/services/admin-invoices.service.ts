@@ -23,6 +23,25 @@ export class AdminInvoicesService {
     @Inject(PAYMENTS_REPO) private readonly paymentsRepo: PaymentsRepo,
   ) {}
 
+  private async assertOrderBranchActive(orderId: string): Promise<void> {
+    const order = await this.ordersRepo.getById(orderId);
+    if (!order) throw new AppError('ORDER_NOT_FOUND', 'Order not found', { orderId });
+    let branchId = order.branchId ?? null;
+    if (!branchId && order.pincode) {
+      const sa = await this.serviceAreaRepo.getByPincode(order.pincode);
+      branchId = sa?.branchId ?? null;
+    }
+    if (!branchId) return;
+    const branch = await this.branchRepo.getById(branchId);
+    if (!branch || !branch.isActive) {
+      throw new AppError(
+        'BRANCH_INACTIVE',
+        'Branch is inactive. Reactivate the branch to create or issue invoices.',
+        { branchId },
+      );
+    }
+  }
+
   async createAckDraft(
     orderId: string,
     dto: {
@@ -44,6 +63,7 @@ export class AdminInvoicesService {
       comments?: string | null;
     },
   ) {
+    await this.assertOrderBranchActive(orderId);
     const items = dto.items.map((i) => ({
       type: i.type,
       name: i.name,
@@ -95,6 +115,7 @@ export class AdminInvoicesService {
       comments?: string | null;
     },
   ) {
+    await this.assertOrderBranchActive(orderId);
     const items = dto.items.map((i) => ({
       type: i.type,
       name: i.name,
@@ -129,6 +150,7 @@ export class AdminInvoicesService {
     orderId: string,
     options?: { applySubscription?: boolean; weightKg?: number; itemsCount?: number },
   ) {
+    await this.assertOrderBranchActive(orderId);
     const result = await issueAckInvoice(
       orderId,
       {
@@ -146,6 +168,7 @@ export class AdminInvoicesService {
   }
 
   async issueFinal(orderId: string) {
+    await this.assertOrderBranchActive(orderId);
     const result = await issueFinalInvoice(orderId, {
       ordersRepo: this.ordersRepo,
       invoicesRepo: this.invoicesRepo,

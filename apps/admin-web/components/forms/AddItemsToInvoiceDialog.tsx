@@ -134,6 +134,19 @@ function qtyToDraftString(q: number): string {
   return String(rounded);
 }
 
+function parseRupeesDraftToPaise(draft: string): number | null {
+  const t = draft.trim().replace(',', '.');
+  if (t === '' || t === '.') return null;
+  const n = Number(t);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return Math.round(n * 100);
+}
+
+function paiseToRupeesDraft(paise: number): string {
+  if (!Number.isFinite(paise) || paise < 0) return '0';
+  return String(Math.round(paise) / 100);
+}
+
 const REMARKS_MAX = 500;
 
 export function AddItemsToInvoiceDialog({
@@ -177,6 +190,7 @@ export function AddItemsToInvoiceDialog({
   const [itemSearch, setItemSearch] = useState('');
   const [configQtyDraft, setConfigQtyDraft] = useState('1');
   const [configRemarksDraft, setConfigRemarksDraft] = useState('');
+  const [configUnitPriceDraft, setConfigUnitPriceDraft] = useState('');
 
   useEffect(() => {
     if (!open) setItemSearch('');
@@ -227,21 +241,26 @@ export function AddItemsToInvoiceDialog({
   const configPricePaise = configItemId && configSegmentId && configServiceId
     ? getPricePaise(catalogMatrix, configItemId, configSegmentId, configServiceId)
     : null;
+  useEffect(() => {
+    setConfigUnitPriceDraft(configPricePaise != null ? paiseToRupeesDraft(configPricePaise) : '');
+  }, [configPricePaise]);
   const parsedConfigQty = useMemo(() => parseValidInvoiceQty(configQtyDraft), [configQtyDraft]);
+  const parsedConfigUnitPaise = useMemo(
+    () => parseRupeesDraftToPaise(configUnitPriceDraft),
+    [configUnitPriceDraft],
+  );
   const configTotalPaise =
-    configPricePaise != null && parsedConfigQty != null
-      ? Math.round(configPricePaise * parsedConfigQty)
+    parsedConfigUnitPaise != null && parsedConfigQty != null
+      ? Math.round(parsedConfigUnitPaise * parsedConfigQty)
       : null;
 
   const handleAdd = useCallback(
-    (itemId: string, qty: number, remarks?: string) => {
+    (itemId: string, qty: number, unitPaise: number, remarks?: string) => {
       const item = catalogMatrix.items.find((i) => i.id === itemId);
       if (!item) return;
       const segmentId = segmentByItem[itemId];
       const serviceId = serviceByItem[itemId];
       if (!segmentId || !serviceId) return;
-      const unitPaise = getPricePaise(catalogMatrix, itemId, segmentId, serviceId);
-      if (unitPaise == null) return;
       const amount = Math.round(qty * unitPaise);
       setQtyByItem((prev) => ({ ...prev, [itemId]: qty }));
       const r = remarks?.trim().slice(0, REMARKS_MAX) ?? '';
@@ -407,6 +426,43 @@ export function AddItemsToInvoiceDialog({
                 </div>
                 <div>
                   <label className="text-xs font-medium text-muted-foreground block mb-1.5">
+                    Service cost (₹)
+                  </label>
+                  <div
+                    className="rounded-md border-2"
+                    style={{
+                      borderColor: qtyWrapBorder,
+                      backgroundColor: qtyWrapBg,
+                    }}
+                  >
+                    <Input
+                      type="text"
+                      inputMode="decimal"
+                      autoComplete="off"
+                      value={configUnitPriceDraft}
+                      onChange={(e) => {
+                        const v = e.target.value.replace(',', '.');
+                        if (v === '' || /^\d*\.?\d*$/.test(v)) {
+                          setConfigUnitPriceDraft(v);
+                        }
+                      }}
+                      onBlur={() => {
+                        setConfigUnitPriceDraft((prev) => {
+                          const parsed = parseRupeesDraftToPaise(prev);
+                          if (parsed == null) return prev;
+                          return paiseToRupeesDraft(parsed);
+                        });
+                      }}
+                      placeholder="0"
+                      className="h-10 border-0 bg-transparent shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 rounded-none px-3"
+                      style={{ color: qtyInputColor }}
+                      aria-label="Service cost in rupees"
+                    />
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">This override applies to this invoice line only.</p>
+                </div>
+                <div className="col-span-2">
+                  <label className="text-xs font-medium text-muted-foreground block mb-1.5">
                     Remarks
                   </label>
                   <div
@@ -448,11 +504,12 @@ export function AddItemsToInvoiceDialog({
                 }}
                 onClick={() => {
                   const q = parseValidInvoiceQty(configQtyDraft);
-                  if (q == null || !configItemId) return;
+                  const unitPaise = parseRupeesDraftToPaise(configUnitPriceDraft);
+                  if (q == null || unitPaise == null || !configItemId) return;
                   const remarks = configRemarksDraft.trim().slice(0, REMARKS_MAX);
-                  handleAdd(configItemId, q, remarks || undefined);
+                  handleAdd(configItemId, q, unitPaise, remarks || undefined);
                 }}
-                disabled={!configSegmentId || !configServiceId || parsedConfigQty == null}
+                disabled={!configSegmentId || !configServiceId || parsedConfigQty == null || parsedConfigUnitPaise == null}
               >
                 Add to invoice
               </Button>

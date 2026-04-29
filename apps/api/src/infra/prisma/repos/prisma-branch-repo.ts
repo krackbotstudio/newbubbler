@@ -22,6 +22,7 @@ function toRecord(row: {
   upiPayeeName: string | null;
   upiLink: string | null;
   upiQrUrl: string | null;
+  isActive: boolean;
   isDefault: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -45,6 +46,7 @@ function toRecord(row: {
     upiPayeeName: row.upiPayeeName,
     upiLink: row.upiLink,
     upiQrUrl: row.upiQrUrl,
+    isActive: row.isActive,
     isDefault: row.isDefault,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -74,6 +76,7 @@ export class PrismaBranchRepo implements BranchRepo {
         upiPayeeName: data.upiPayeeName ?? undefined,
         upiLink: data.upiLink ?? undefined,
         upiQrUrl: data.upiQrUrl ?? undefined,
+        isActive: data.isActive ?? true,
         isDefault: data.isDefault ?? false,
       },
     });
@@ -118,6 +121,7 @@ export class PrismaBranchRepo implements BranchRepo {
         ...(data.upiPayeeName !== undefined && { upiPayeeName: data.upiPayeeName }),
         ...(data.upiLink !== undefined && { upiLink: data.upiLink }),
         ...(data.upiQrUrl !== undefined && { upiQrUrl: data.upiQrUrl }),
+        ...(data.isActive !== undefined && { isActive: data.isActive }),
         ...(data.isDefault !== undefined && { isDefault: data.isDefault }),
       },
     });

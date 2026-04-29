@@ -20,6 +20,8 @@ export class PortalPublicService {
     if (!slug) throw new AppError('NOT_FOUND', 'Portal host not found');
     const portal = await this.portalsRepo.getByAccessKey(slug);
     if (!portal || !portal.isActive) throw new AppError('NOT_FOUND', 'Portal not found');
+    const branch = await this.branchRepo.getById(portal.branchId);
+    if (!branch || !branch.isActive) throw new AppError('NOT_FOUND', 'Portal not found');
     return portal;
   }
 

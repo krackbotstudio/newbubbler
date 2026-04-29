@@ -49,13 +49,14 @@ export class ServiceabilityService {
       if (seen.has(a.branchId)) continue;
       seen.add(a.branchId);
       const b = await this.branchRepo.getById(a.branchId);
+      if (!b?.isActive) continue;
       branches.push({
         id: a.branchId,
-        name: (b?.name ?? '').trim() || a.branchId,
-        logoUrl: b?.logoUrl?.trim() ? b.logoUrl.trim() : null,
-        updatedAt: b?.updatedAt ? b.updatedAt.toISOString() : null,
-        primaryColor: b?.primaryColor?.trim() ? b.primaryColor.trim() : null,
-        secondaryColor: b?.secondaryColor?.trim() ? b.secondaryColor.trim() : null,
+        name: (b.name ?? '').trim() || a.branchId,
+        logoUrl: b.logoUrl?.trim() ? b.logoUrl.trim() : null,
+        updatedAt: b.updatedAt ? b.updatedAt.toISOString() : null,
+        primaryColor: b.primaryColor?.trim() ? b.primaryColor.trim() : null,
+        secondaryColor: b.secondaryColor?.trim() ? b.secondaryColor.trim() : null,
       });
     }
     return { branches };

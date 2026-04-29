@@ -3887,8 +3887,24 @@ export default function App() {
                       style={styles.notificationRow}
                       onPress={async () => {
                         try {
+                          const currentBranchId = (customerContextBranch?.id ?? '').trim();
+                          const nextBranchId = (b.id ?? '').trim();
+                          if (currentBranchId && currentBranchId === nextBranchId) {
+                            setError(null);
+                            setBranchMenuVisible(false);
+                            return;
+                          }
                           await setStoredBranchId(b.id);
+                          setError(null);
                           setCustomerContextBranch(b);
+                          // Branch switch should always land on that branch's home context.
+                          setHomeScreen('home');
+                          setSelectedOrderId(null);
+                          setOrderDetail(null);
+                          setOrderDetailLoading(false);
+                          setOrderInvoices([]);
+                          setInvoiceError(null);
+                          setFeedbackModalVisible(false);
                           setBranchMenuVisible(false);
                           if (token) void fetchOrders();
                         } catch (e) {

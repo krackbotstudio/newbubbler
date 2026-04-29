@@ -288,6 +288,7 @@ export function InvoiceBuilder({
   const [addItemsDialogOpen, setAddItemsDialogOpen] = useState(false);
   /** While editing line qty, hold raw string so decimals like "2." work; commit on blur. */
   const [qtyDraftByRowIndex, setQtyDraftByRowIndex] = useState<Record<number, string>>({});
+  const [unitPriceDraftByRowIndex, setUnitPriceDraftByRowIndex] = useState<Record<number, string>>({});
   const REMARKS_MAX = 500;
   const [remarksDraftByRowIndex, setRemarksDraftByRowIndex] = useState<Record<number, string>>({});
   const [tagDialogRowIndex, setTagDialogRowIndex] = useState<number | null>(null);
@@ -477,7 +478,7 @@ export function InvoiceBuilder({
     return pr ? Math.round(pr.priceRupees * 100) : null;
   }
 
-  function updateLine(index: number, patch: Partial<InvoiceLineRow>) {
+  function updateLine(index: number, patch: Partial<InvoiceLineRow>, options?: { syncMatrixPrice?: boolean }) {
     const row = items[index];
     if (!row) return;
     const { remarks: patchRemarks, ...patchRest } = patch;
@@ -492,7 +493,7 @@ export function InvoiceBuilder({
       if (t) (updated as { remarks?: string }).remarks = t;
       else delete (updated as { remarks?: string }).remarks;
     }
-    if (useMatrix && updated.catalogItemId && updated.segmentCategoryId && updated.serviceCategoryId) {
+    if (options?.syncMatrixPrice && useMatrix && updated.catalogItemId && updated.segmentCategoryId && updated.serviceCategoryId) {
       const unit = getMatrixPriceForRow(updated);
       if (unit != null) {
         updated.unitPricePaise = unit;
@@ -697,7 +698,7 @@ export function InvoiceBuilder({
                                   name: it?.name ?? row.name,
                                   segmentCategoryId: segmentId,
                                   serviceCategoryId: serviceId,
-                                });
+                                }, { syncMatrixPrice: true });
                               }}
                             >
                               <SelectTrigger className="h-8 w-full min-w-0 [&>span]:!flex [&>span]:!flex-row [&>span]:!items-center">
@@ -765,7 +766,7 @@ export function InvoiceBuilder({
                                   updateLine(i, {
                                     segmentCategoryId: newSegId,
                                     serviceCategoryId: firstSvcId,
-                                  });
+                                  }, { syncMatrixPrice: true });
                                 }}
                               >
                                 <SelectTrigger className="h-8 w-full min-w-[7.5rem]">
@@ -791,7 +792,7 @@ export function InvoiceBuilder({
                             ) : (
                               <Select
                                 value={row.serviceCategoryId ?? ''}
-                                onValueChange={(id) => updateLine(i, { serviceCategoryId: id })}
+                                onValueChange={(id) => updateLine(i, { serviceCategoryId: id }, { syncMatrixPrice: true })}
                               >
                                 <SelectTrigger className="h-8 w-full min-w-[8rem]">
                                   <SelectValue placeholder="Service" />
@@ -933,7 +934,46 @@ export function InvoiceBuilder({
                     )}
                   </td>
                   <td className="align-middle py-2 text-right">
-                    {formatMoney(row.unitPricePaise)}
+                    {allowMutation ? (
+                      <Input
+                        type="text"
+                        inputMode="decimal"
+                        autoComplete="off"
+                        className="ml-auto h-9 w-[6.5rem] text-right text-sm font-medium tabular-nums text-foreground [&:not(:placeholder-shown)]:font-medium [&:not(:placeholder-shown)]:text-foreground"
+                        value={
+                          unitPriceDraftByRowIndex[i] !== undefined
+                            ? unitPriceDraftByRowIndex[i]
+                            : String(Math.round(row.unitPricePaise) / 100)
+                        }
+                        onFocus={() => {
+                          setUnitPriceDraftByRowIndex((p) => ({
+                            ...p,
+                            [i]: p[i] ?? String(Math.round(row.unitPricePaise) / 100),
+                          }));
+                        }}
+                        onChange={(e) => {
+                          const v = e.target.value.replace(',', '.');
+                          if (v === '' || /^\d*\.?\d*$/.test(v)) {
+                            setUnitPriceDraftByRowIndex((p) => ({ ...p, [i]: v }));
+                          }
+                        }}
+                        onBlur={(e) => {
+                          const rawDraft = e.target.value.replace(',', '.').trim();
+                          setUnitPriceDraftByRowIndex((p) => {
+                            const next = { ...p };
+                            delete next[i];
+                            return next;
+                          });
+                          if (rawDraft === '' || rawDraft === '.') return;
+                          const n = Number(rawDraft);
+                          if (!Number.isFinite(n)) return;
+                          updateLine(i, { unitPricePaise: Math.max(0, Math.round(n * 100)) });
+                        }}
+                        aria-label="Service cost in rupees"
+                      />
+                    ) : (
+                      formatMoney(row.unitPricePaise)
+                    )}
                   </td>
                   <td className="align-middle py-2 text-right">
                     {formatMoney(row.amountPaise ?? row.quantity * row.unitPricePaise)}

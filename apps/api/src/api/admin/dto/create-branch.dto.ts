@@ -68,5 +68,9 @@ export class CreateBranchDto {
 
   @IsOptional()
   @IsBoolean()
+  isActive?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
   isDefault?: boolean;
 }

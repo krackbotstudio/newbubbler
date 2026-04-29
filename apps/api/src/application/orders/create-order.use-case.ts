@@ -8,6 +8,7 @@ import type {
   HolidaysRepo,
   OperatingHoursRepo,
   AddressesRepo,
+  BranchRepo,
 } from '../ports';
 import { indiaDayRange, toIndiaDateKey } from '../time/india-date';
 import { isTimeWindowWithin } from '../time/time-window';
@@ -39,6 +40,7 @@ export interface CreateOrderDeps {
   holidaysRepo: HolidaysRepo;
   operatingHoursRepo: OperatingHoursRepo;
   addressesRepo: AddressesRepo;
+  branchRepo: BranchRepo;
 }
 
 export async function createOrder(
@@ -52,6 +54,7 @@ export async function createOrder(
     holidaysRepo,
     operatingHoursRepo,
     addressesRepo,
+    branchRepo,
   } = deps;
 
   const orderType = OrderType.INDIVIDUAL;
@@ -122,6 +125,17 @@ export async function createOrder(
     } else {
       const area = await serviceAreaRepo.getByPincode(effectivePincode);
       branchId = area?.branchId ?? null;
+    }
+  }
+
+  if (branchId) {
+    const branch = await branchRepo.getById(branchId);
+    if (!branch || !branch.isActive) {
+      throw new AppError(
+        'BRANCH_INACTIVE',
+        'Selected branch is currently inactive and cannot accept bookings.',
+        { branchId },
+      );
     }
   }
 

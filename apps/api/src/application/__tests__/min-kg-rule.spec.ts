@@ -7,21 +7,17 @@ import { createOrder } from '../orders/create-order.use-case';
 import {
   createFakeAddressesRepo,
   createFakeOrdersRepo,
-  createFakeSubscriptionsRepo,
-  createFakeSubscriptionUsageRepo,
   createFakeServiceAreaRepo,
   createFakeSlotConfigRepo,
   createFakeHolidaysRepo,
   createFakeOperatingHoursRepo,
+  createFakeBranchRepo,
 } from './fakes/in-memory-repos';
 
 const futureDate = new Date(Date.now() + 86400000 * 2);
 
 const baseDeps = {
   ordersRepo: createFakeOrdersRepo(),
-  subscriptionsRepo: createFakeSubscriptionsRepo(),
-  subscriptionUsageRepo: createFakeSubscriptionUsageRepo(),
-  unitOfWork: undefined,
   serviceAreaRepo: createFakeServiceAreaRepo(new Set(['500081'])),
   slotConfigRepo: createFakeSlotConfigRepo({
     slot: {
@@ -36,6 +32,7 @@ const baseDeps = {
   holidaysRepo: createFakeHolidaysRepo(),
   operatingHoursRepo: createFakeOperatingHoursRepo(),
   addressesRepo: createFakeAddressesRepo(),
+  branchRepo: createFakeBranchRepo(),
 };
 
 const baseParams = {
