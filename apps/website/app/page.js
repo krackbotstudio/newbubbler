@@ -181,9 +181,6 @@ export default function WebsitePage() {
             >
               Login
             </a>
-            <a className="btn btn-demo" href="#demo">
-              Book a Demo
-            </a>
           </div>
         </header>
       </div>
