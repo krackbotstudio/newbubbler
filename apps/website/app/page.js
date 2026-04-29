@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Image from 'next/image';
 
 /** Production admin app (Vercel). */
-const ADMIN_WEB_LOGIN_URL = 'https://bubbler-admin-web.vercel.app/login';
+const ADMIN_WEB_LOGIN_URL = 'https://adminbubbler.krackbot.com/signup';
 
 const featureCards = [
   {
