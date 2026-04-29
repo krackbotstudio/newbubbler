@@ -179,7 +179,7 @@ export default function WebsitePage() {
               target="_blank"
               rel="noopener noreferrer"
             >
-              Login
+              Create account
             </a>
           </div>
         </header>
