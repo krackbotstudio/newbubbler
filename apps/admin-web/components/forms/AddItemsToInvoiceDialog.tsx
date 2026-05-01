@@ -13,7 +13,8 @@ import { CatalogItemIcon } from '@/components/catalog/CatalogItemIcon';
 import type { CatalogMatrixResponse } from '@/types/catalog';
 import type { InvoiceLineRow } from './InvoiceBuilder';
 import { formatMoney } from '@/lib/format';
-import { Search } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { Pencil, RotateCcw, Search } from 'lucide-react';
 
 function getSegmentsForItem(catalogMatrix: CatalogMatrixResponse, itemId: string): { id: string; label: string }[] {
   const item = catalogMatrix.items.find((i) => i.id === itemId);
@@ -191,6 +192,7 @@ export function AddItemsToInvoiceDialog({
   const [configQtyDraft, setConfigQtyDraft] = useState('1');
   const [configRemarksDraft, setConfigRemarksDraft] = useState('');
   const [configUnitPriceDraft, setConfigUnitPriceDraft] = useState('');
+  const [isServiceCostEditable, setIsServiceCostEditable] = useState(false);
 
   useEffect(() => {
     if (!open) setItemSearch('');
@@ -243,6 +245,7 @@ export function AddItemsToInvoiceDialog({
     : null;
   useEffect(() => {
     setConfigUnitPriceDraft(configPricePaise != null ? paiseToRupeesDraft(configPricePaise) : '');
+    setIsServiceCostEditable(false);
   }, [configPricePaise]);
   const parsedConfigQty = useMemo(() => parseValidInvoiceQty(configQtyDraft), [configQtyDraft]);
   const parsedConfigUnitPaise = useMemo(
@@ -363,6 +366,7 @@ export function AddItemsToInvoiceDialog({
                     const v = e.target.value;
                     setSegmentByItem((prev) => ({ ...prev, [configItemId!]: v }));
                     setServiceByItem((prev) => ({ ...prev, [configItemId!]: '' }));
+                    setIsServiceCostEditable(false);
                   }}
                 >
                   <option value="">Select segment</option>
@@ -377,7 +381,10 @@ export function AddItemsToInvoiceDialog({
                   className="h-10 w-full rounded-md border pl-3 pr-8 py-2 text-sm appearance-none bg-no-repeat dark:bg-background"
                   style={selectStyle}
                   value={configServiceId}
-                  onChange={(e) => setServiceByItem((prev) => ({ ...prev, [configItemId!]: e.target.value }))}
+                  onChange={(e) => {
+                    setServiceByItem((prev) => ({ ...prev, [configItemId!]: e.target.value }));
+                    setIsServiceCostEditable(false);
+                  }}
                   disabled={!configSegmentId}
                 >
                   <option value="">Select service</option>
@@ -429,17 +436,25 @@ export function AddItemsToInvoiceDialog({
                     Service cost (₹)
                   </label>
                   <div
-                    className="rounded-md border-2"
+                    className="relative rounded-md border-2"
                     style={{
-                      borderColor: qtyWrapBorder,
-                      backgroundColor: qtyWrapBg,
+                      borderColor: !isServiceCostEditable
+                        ? 'rgb(209, 213, 219)'
+                        : qtyWrapBorder,
+                      backgroundColor: !isServiceCostEditable
+                        ? 'rgb(243, 244, 246)'
+                        : qtyWrapBg,
                     }}
                   >
                     <Input
                       type="text"
-                      inputMode="decimal"
+                      inputMode={isServiceCostEditable ? 'decimal' : undefined}
                       autoComplete="off"
                       value={configUnitPriceDraft}
+                      readOnly={!isServiceCostEditable}
+                      onFocus={(e) => {
+                        if (!isServiceCostEditable) e.target.blur();
+                      }}
                       onChange={(e) => {
                         const v = e.target.value.replace(',', '.');
                         if (v === '' || /^\d*\.?\d*$/.test(v)) {
@@ -454,12 +469,56 @@ export function AddItemsToInvoiceDialog({
                         });
                       }}
                       placeholder="0"
-                      className="h-10 border-0 bg-transparent shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 rounded-none px-3"
-                      style={{ color: qtyInputColor }}
+                      className={cn(
+                        'h-10 border-0 bg-transparent shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 rounded-none px-3 pr-10',
+                        !isServiceCostEditable && 'cursor-default select-none',
+                      )}
+                      style={{
+                        color: !isServiceCostEditable
+                          ? 'rgb(107, 114, 128)'
+                          : qtyInputColor,
+                      }}
                       aria-label="Service cost in rupees"
                     />
+                    <button
+                      type="button"
+                      className="absolute inset-y-0 right-0 inline-flex w-9 items-center justify-center transition-colors hover:opacity-80"
+                      style={{
+                        color: primary,
+                      }}
+                      aria-label={
+                        isServiceCostEditable
+                          ? 'Reset service cost to catalog price'
+                          : 'Edit service cost'
+                      }
+                      title={
+                        isServiceCostEditable
+                          ? 'Reset to catalog price'
+                          : 'Edit service cost'
+                      }
+                      onClick={() => {
+                        if (isServiceCostEditable) {
+                          if (configPricePaise != null) {
+                            setConfigUnitPriceDraft(paiseToRupeesDraft(configPricePaise));
+                          }
+                          setIsServiceCostEditable(false);
+                        } else {
+                          setIsServiceCostEditable(true);
+                        }
+                      }}
+                    >
+                      {isServiceCostEditable ? (
+                        <RotateCcw className="h-4 w-4" aria-hidden />
+                      ) : (
+                        <Pencil className="h-4 w-4" aria-hidden />
+                      )}
+                    </button>
                   </div>
-                  <p className="mt-1 text-xs text-muted-foreground">This override applies to this invoice line only.</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {isServiceCostEditable
+                      ? 'Tap reset to restore the catalog price for this segment and service.'
+                      : 'Tap the pencil to override. Override applies to this invoice line only.'}
+                  </p>
                 </div>
                 <div className="col-span-2">
                   <label className="text-xs font-medium text-muted-foreground block mb-1.5">

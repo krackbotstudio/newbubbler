@@ -63,7 +63,9 @@ export function AcknowledgementInvoiceDialog({
         address: merged.address,
         phone: merged.phone,
         email: merged.email,
-        panNumber: merged.panNumber,
+        panNumber: summary.branch
+          ? (summary.branch.panNumber?.trim() || null)
+          : (branding?.panNumber?.trim() || null),
         gstNumber: merged.gstNumber,
         termsAndConditions: merged.termsAndConditions,
       }

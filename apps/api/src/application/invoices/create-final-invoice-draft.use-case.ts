@@ -12,16 +12,24 @@ export function normalizeBranchInvoicePrefixSegment(raw: string | null | undefin
   return t || null;
 }
 
+function orderIdAlreadyHasPrefix(orderId: string, prefix: string): boolean {
+  const id = orderId.trim().toUpperCase();
+  const p = prefix.trim().toUpperCase();
+  return id.startsWith(`${p}-`);
+}
+
 /** ACK invoice code; optional branch segment when `invoicePrefix` is set on the branch. */
 export function formatAckInvoiceCode(orderId: string, branchInvoicePrefix: string | null | undefined): string {
   const p = normalizeBranchInvoicePrefixSegment(branchInvoicePrefix);
-  return p ? `ACK-${p}-${orderId}` : `ACK - ${orderId}`;
+  if (!p) return `ACK-${orderId}`;
+  return orderIdAlreadyHasPrefix(orderId, p) ? `ACK-${orderId}` : `ACK-${p}-${orderId}`;
 }
 
 /** Final invoice code; optional branch segment when `invoicePrefix` is set on the branch. */
 export function formatFinalInvoiceCode(orderId: string, branchInvoicePrefix: string | null | undefined): string {
   const p = normalizeBranchInvoicePrefixSegment(branchInvoicePrefix);
-  return p ? `IN-${p}-${orderId}` : `IN${orderId}`;
+  if (!p) return `IN-${orderId}`;
+  return orderIdAlreadyHasPrefix(orderId, p) ? `IN-${orderId}` : `IN-${p}-${orderId}`;
 }
 
 /** Raw `invoicePrefix` from the branch that owns this order (by branchId or service-area pincode). */

@@ -14,6 +14,7 @@ import {
 import { FormField } from '@/components/ui/form-field';
 import { useCreateBranch, useUpdateBranch, useUploadBranchUpiQr, useBranchFieldUniquenessQuery } from '@/hooks/useBranches';
 import { BranchUniquenessUnderField } from '@/components/branding/BranchFieldUniquenessHints';
+import { HexColorPickField } from '@/components/branding/HexColorPickField';
 import { toast } from 'sonner';
 import { getFriendlyErrorMessage } from '@/lib/api';
 import type { Branch } from '@/types';
@@ -321,35 +322,39 @@ export function BranchFormModal({ branch, open, onOpenChange, mode }: BranchForm
             <div className="grid gap-4 sm:grid-cols-2">
               <FormField label="Primary color (hex)" htmlFor="branch-primary-color">
                 <div className="flex items-center gap-2">
-                  <Input
-                    id="branch-primary-color"
-                    type="color"
+                  <HexColorPickField
                     value={primaryColor}
-                    onChange={(e) => setPrimaryColor(e.target.value)}
-                    className="h-10 w-16 p-1"
+                    onChange={setPrimaryColor}
+                    fallbackHex="#1e40af"
+                    ariaLabel="Pick primary colour"
+                    presetVariant="primary"
                   />
                   <Input
+                    id="branch-primary-color"
                     value={primaryColor}
                     onChange={(e) => setPrimaryColor(e.target.value)}
                     placeholder="#1e40af"
                     maxLength={7}
+                    className="min-w-0 flex-1 font-mono text-sm"
                   />
                 </div>
               </FormField>
               <FormField label="Secondary color (hex)" htmlFor="branch-secondary-color">
                 <div className="flex items-center gap-2">
-                  <Input
-                    id="branch-secondary-color"
-                    type="color"
+                  <HexColorPickField
                     value={secondaryColor}
-                    onChange={(e) => setSecondaryColor(e.target.value)}
-                    className="h-10 w-16 p-1"
+                    onChange={setSecondaryColor}
+                    fallbackHex="#dbeafe"
+                    ariaLabel="Pick secondary colour"
+                    presetVariant="secondary"
                   />
                   <Input
+                    id="branch-secondary-color"
                     value={secondaryColor}
                     onChange={(e) => setSecondaryColor(e.target.value)}
                     placeholder="#dbeafe"
                     maxLength={7}
+                    className="min-w-0 flex-1 font-mono text-sm"
                   />
                 </div>
               </FormField>
