@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { FormField } from '@/components/ui/form-field';
 import { useBranch, useUpdateBranch, useUploadBranchLogo, useUploadBranchUpiQr, useBranchFieldUniquenessQuery } from '@/hooks/useBranches';
 import { BranchUniquenessUnderField } from '@/components/branding/BranchFieldUniquenessHints';
+import { HexColorPickField } from '@/components/branding/HexColorPickField';
 import { getApiOrigin, getApiError } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -321,34 +322,38 @@ export function OpsBranchBrandingView({ branchId }: { branchId: string }) {
             <div className="grid gap-4 sm:grid-cols-2">
               <FormField label="Primary color (hex)">
                 <div className="flex items-center gap-2">
-                  <Input
-                    type="color"
-                    value={normalizeHexColor(primaryColor) ?? '#1e40af'}
-                    onChange={(e) => setPrimaryColor(e.target.value)}
-                    className="h-10 w-16 p-1"
+                  <HexColorPickField
+                    value={primaryColor}
+                    onChange={setPrimaryColor}
+                    fallbackHex="#1e40af"
+                    ariaLabel="Pick primary colour"
+                    presetVariant="primary"
                   />
                   <Input
                     value={primaryColor}
                     onChange={(e) => setPrimaryColor(e.target.value)}
                     placeholder="#1e40af"
                     maxLength={7}
+                    className="min-w-0 flex-1 font-mono text-sm"
                   />
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">Used for selected nav and primary actions.</p>
               </FormField>
               <FormField label="Secondary color (hex)">
                 <div className="flex items-center gap-2">
-                  <Input
-                    type="color"
-                    value={normalizeHexColor(secondaryColor) ?? '#dbeafe'}
-                    onChange={(e) => setSecondaryColor(e.target.value)}
-                    className="h-10 w-16 p-1"
+                  <HexColorPickField
+                    value={secondaryColor}
+                    onChange={setSecondaryColor}
+                    fallbackHex="#dbeafe"
+                    ariaLabel="Pick secondary colour"
+                    presetVariant="secondary"
                   />
                   <Input
                     value={secondaryColor}
                     onChange={(e) => setSecondaryColor(e.target.value)}
                     placeholder="#dbeafe"
                     maxLength={7}
+                    className="min-w-0 flex-1 font-mono text-sm"
                   />
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">Light tint for branch surfaces (e.g. sidebar wash).</p>

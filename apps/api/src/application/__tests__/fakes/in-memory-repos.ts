@@ -35,6 +35,8 @@ import type {
   AdminFeedbackResult,
   AdminFeedbackRatingStatsFilters,
   AdminFeedbackRatingStatsResult,
+  BranchRepo,
+  BranchRecord,
 } from '../../ports';
 import { FeedbackStatus } from '@shared/enums';
 
@@ -437,6 +439,103 @@ export function createFakeSubscriptionUsageRepo(
 }
 
 const DEFAULT_FAKE_BRANCH_ID = 'branch-1';
+
+export function createFakeBranchRepo(
+  initial?: Partial<BranchRecord>[],
+): BranchRepo & { records: BranchRecord[] } {
+  const now = new Date();
+  const records: BranchRecord[] = (initial && initial.length
+    ? initial
+    : [{ id: DEFAULT_FAKE_BRANCH_ID, name: 'Test Branch' }]).map((b, idx) => ({
+    id: b.id ?? `branch-${idx + 1}`,
+    name: b.name ?? `Branch ${idx + 1}`,
+    address: b.address ?? 'Address',
+    phone: b.phone ?? null,
+    email: b.email ?? null,
+    gstNumber: b.gstNumber ?? null,
+    panNumber: b.panNumber ?? null,
+    footerNote: b.footerNote ?? null,
+    invoicePrefix: b.invoicePrefix ?? null,
+    itemTagBrandName: b.itemTagBrandName ?? null,
+    termsAndConditions: b.termsAndConditions ?? null,
+    primaryColor: b.primaryColor ?? null,
+    secondaryColor: b.secondaryColor ?? null,
+    logoUrl: b.logoUrl ?? null,
+    upiId: b.upiId ?? null,
+    upiPayeeName: b.upiPayeeName ?? null,
+    upiLink: b.upiLink ?? null,
+    upiQrUrl: b.upiQrUrl ?? null,
+    isActive: b.isActive ?? true,
+    isDefault: b.isDefault ?? false,
+    createdAt: b.createdAt ?? now,
+    updatedAt: b.updatedAt ?? now,
+  }));
+
+  return {
+    records,
+    async create(data) {
+      const rec: BranchRecord = {
+        id: uuid(),
+        name: data.name,
+        address: data.address,
+        phone: data.phone ?? null,
+        email: data.email ?? null,
+        gstNumber: data.gstNumber ?? null,
+        panNumber: data.panNumber ?? null,
+        footerNote: data.footerNote ?? null,
+        invoicePrefix: data.invoicePrefix ?? null,
+        itemTagBrandName: data.itemTagBrandName ?? null,
+        termsAndConditions: data.termsAndConditions ?? null,
+        primaryColor: data.primaryColor ?? null,
+        secondaryColor: data.secondaryColor ?? null,
+        logoUrl: data.logoUrl ?? null,
+        upiId: data.upiId ?? null,
+        upiPayeeName: data.upiPayeeName ?? null,
+        upiLink: data.upiLink ?? null,
+        upiQrUrl: data.upiQrUrl ?? null,
+        isActive: data.isActive ?? true,
+        isDefault: data.isDefault ?? false,
+        createdAt: now,
+        updatedAt: now,
+      };
+      records.push(rec);
+      return rec;
+    },
+    async getById(id) {
+      return records.find((r) => r.id === id) ?? null;
+    },
+    async listAll() {
+      return [...records];
+    },
+    async update(id, data) {
+      const i = records.findIndex((r) => r.id === id);
+      if (i < 0) throw new Error('Branch not found');
+      records[i] = { ...records[i], ...data, updatedAt: new Date() };
+      return records[i];
+    },
+    async clearOtherDefaults(exceptBranchId) {
+      for (const rec of records) {
+        if (rec.id !== exceptBranchId) rec.isDefault = false;
+      }
+    },
+    async setLogoUrl(id, url) {
+      const rec = records.find((r) => r.id === id);
+      if (!rec) throw new Error('Branch not found');
+      rec.logoUrl = url;
+      rec.updatedAt = new Date();
+    },
+    async setUpiQrUrl(id, url) {
+      const rec = records.find((r) => r.id === id);
+      if (!rec) throw new Error('Branch not found');
+      rec.upiQrUrl = url;
+      rec.updatedAt = new Date();
+    },
+    async delete(id) {
+      const i = records.findIndex((r) => r.id === id);
+      if (i >= 0) records.splice(i, 1);
+    },
+  };
+}
 
 export function createFakeServiceAreaRepo(
   serviceablePincodes: Set<string> = new Set(),

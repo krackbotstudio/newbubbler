@@ -13,7 +13,8 @@ import { CatalogItemIcon } from '@/components/catalog/CatalogItemIcon';
 import type { CatalogMatrixResponse } from '@/types/catalog';
 import type { InvoiceLineRow } from './InvoiceBuilder';
 import { formatMoney } from '@/lib/format';
-import { Search } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { Pencil, RotateCcw, Search } from 'lucide-react';
 
 function getSegmentsForItem(catalogMatrix: CatalogMatrixResponse, itemId: string): { id: string; label: string }[] {
   const item = catalogMatrix.items.find((i) => i.id === itemId);
@@ -134,6 +135,19 @@ function qtyToDraftString(q: number): string {
   return String(rounded);
 }
 
+function parseRupeesDraftToPaise(draft: string): number | null {
+  const t = draft.trim().replace(',', '.');
+  if (t === '' || t === '.') return null;
+  const n = Number(t);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return Math.round(n * 100);
+}
+
+function paiseToRupeesDraft(paise: number): string {
+  if (!Number.isFinite(paise) || paise < 0) return '0';
+  return String(Math.round(paise) / 100);
+}
+
 const REMARKS_MAX = 500;
 
 export function AddItemsToInvoiceDialog({
@@ -177,6 +191,8 @@ export function AddItemsToInvoiceDialog({
   const [itemSearch, setItemSearch] = useState('');
   const [configQtyDraft, setConfigQtyDraft] = useState('1');
   const [configRemarksDraft, setConfigRemarksDraft] = useState('');
+  const [configUnitPriceDraft, setConfigUnitPriceDraft] = useState('');
+  const [isServiceCostEditable, setIsServiceCostEditable] = useState(false);
 
   useEffect(() => {
     if (!open) setItemSearch('');
@@ -227,21 +243,27 @@ export function AddItemsToInvoiceDialog({
   const configPricePaise = configItemId && configSegmentId && configServiceId
     ? getPricePaise(catalogMatrix, configItemId, configSegmentId, configServiceId)
     : null;
+  useEffect(() => {
+    setConfigUnitPriceDraft(configPricePaise != null ? paiseToRupeesDraft(configPricePaise) : '');
+    setIsServiceCostEditable(false);
+  }, [configPricePaise]);
   const parsedConfigQty = useMemo(() => parseValidInvoiceQty(configQtyDraft), [configQtyDraft]);
+  const parsedConfigUnitPaise = useMemo(
+    () => parseRupeesDraftToPaise(configUnitPriceDraft),
+    [configUnitPriceDraft],
+  );
   const configTotalPaise =
-    configPricePaise != null && parsedConfigQty != null
-      ? Math.round(configPricePaise * parsedConfigQty)
+    parsedConfigUnitPaise != null && parsedConfigQty != null
+      ? Math.round(parsedConfigUnitPaise * parsedConfigQty)
       : null;
 
   const handleAdd = useCallback(
-    (itemId: string, qty: number, remarks?: string) => {
+    (itemId: string, qty: number, unitPaise: number, remarks?: string) => {
       const item = catalogMatrix.items.find((i) => i.id === itemId);
       if (!item) return;
       const segmentId = segmentByItem[itemId];
       const serviceId = serviceByItem[itemId];
       if (!segmentId || !serviceId) return;
-      const unitPaise = getPricePaise(catalogMatrix, itemId, segmentId, serviceId);
-      if (unitPaise == null) return;
       const amount = Math.round(qty * unitPaise);
       setQtyByItem((prev) => ({ ...prev, [itemId]: qty }));
       const r = remarks?.trim().slice(0, REMARKS_MAX) ?? '';
@@ -344,6 +366,7 @@ export function AddItemsToInvoiceDialog({
                     const v = e.target.value;
                     setSegmentByItem((prev) => ({ ...prev, [configItemId!]: v }));
                     setServiceByItem((prev) => ({ ...prev, [configItemId!]: '' }));
+                    setIsServiceCostEditable(false);
                   }}
                 >
                   <option value="">Select segment</option>
@@ -358,7 +381,10 @@ export function AddItemsToInvoiceDialog({
                   className="h-10 w-full rounded-md border pl-3 pr-8 py-2 text-sm appearance-none bg-no-repeat dark:bg-background"
                   style={selectStyle}
                   value={configServiceId}
-                  onChange={(e) => setServiceByItem((prev) => ({ ...prev, [configItemId!]: e.target.value }))}
+                  onChange={(e) => {
+                    setServiceByItem((prev) => ({ ...prev, [configItemId!]: e.target.value }));
+                    setIsServiceCostEditable(false);
+                  }}
                   disabled={!configSegmentId}
                 >
                   <option value="">Select service</option>
@@ -407,6 +433,95 @@ export function AddItemsToInvoiceDialog({
                 </div>
                 <div>
                   <label className="text-xs font-medium text-muted-foreground block mb-1.5">
+                    Service cost (₹)
+                  </label>
+                  <div
+                    className="relative rounded-md border-2"
+                    style={{
+                      borderColor: !isServiceCostEditable
+                        ? 'rgb(209, 213, 219)'
+                        : qtyWrapBorder,
+                      backgroundColor: !isServiceCostEditable
+                        ? 'rgb(243, 244, 246)'
+                        : qtyWrapBg,
+                    }}
+                  >
+                    <Input
+                      type="text"
+                      inputMode={isServiceCostEditable ? 'decimal' : undefined}
+                      autoComplete="off"
+                      value={configUnitPriceDraft}
+                      readOnly={!isServiceCostEditable}
+                      onFocus={(e) => {
+                        if (!isServiceCostEditable) e.target.blur();
+                      }}
+                      onChange={(e) => {
+                        const v = e.target.value.replace(',', '.');
+                        if (v === '' || /^\d*\.?\d*$/.test(v)) {
+                          setConfigUnitPriceDraft(v);
+                        }
+                      }}
+                      onBlur={() => {
+                        setConfigUnitPriceDraft((prev) => {
+                          const parsed = parseRupeesDraftToPaise(prev);
+                          if (parsed == null) return prev;
+                          return paiseToRupeesDraft(parsed);
+                        });
+                      }}
+                      placeholder="0"
+                      className={cn(
+                        'h-10 border-0 bg-transparent shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 rounded-none px-3 pr-10',
+                        !isServiceCostEditable && 'cursor-default select-none',
+                      )}
+                      style={{
+                        color: !isServiceCostEditable
+                          ? 'rgb(107, 114, 128)'
+                          : qtyInputColor,
+                      }}
+                      aria-label="Service cost in rupees"
+                    />
+                    <button
+                      type="button"
+                      className="absolute inset-y-0 right-0 inline-flex w-9 items-center justify-center transition-colors hover:opacity-80"
+                      style={{
+                        color: primary,
+                      }}
+                      aria-label={
+                        isServiceCostEditable
+                          ? 'Reset service cost to catalog price'
+                          : 'Edit service cost'
+                      }
+                      title={
+                        isServiceCostEditable
+                          ? 'Reset to catalog price'
+                          : 'Edit service cost'
+                      }
+                      onClick={() => {
+                        if (isServiceCostEditable) {
+                          if (configPricePaise != null) {
+                            setConfigUnitPriceDraft(paiseToRupeesDraft(configPricePaise));
+                          }
+                          setIsServiceCostEditable(false);
+                        } else {
+                          setIsServiceCostEditable(true);
+                        }
+                      }}
+                    >
+                      {isServiceCostEditable ? (
+                        <RotateCcw className="h-4 w-4" aria-hidden />
+                      ) : (
+                        <Pencil className="h-4 w-4" aria-hidden />
+                      )}
+                    </button>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {isServiceCostEditable
+                      ? 'Tap reset to restore the catalog price for this segment and service.'
+                      : 'Tap the pencil to override. Override applies to this invoice line only.'}
+                  </p>
+                </div>
+                <div className="col-span-2">
+                  <label className="text-xs font-medium text-muted-foreground block mb-1.5">
                     Remarks
                   </label>
                   <div
@@ -448,11 +563,12 @@ export function AddItemsToInvoiceDialog({
                 }}
                 onClick={() => {
                   const q = parseValidInvoiceQty(configQtyDraft);
-                  if (q == null || !configItemId) return;
+                  const unitPaise = parseRupeesDraftToPaise(configUnitPriceDraft);
+                  if (q == null || unitPaise == null || !configItemId) return;
                   const remarks = configRemarksDraft.trim().slice(0, REMARKS_MAX);
-                  handleAdd(configItemId, q, remarks || undefined);
+                  handleAdd(configItemId, q, unitPaise, remarks || undefined);
                 }}
-                disabled={!configSegmentId || !configServiceId || parsedConfigQty == null}
+                disabled={!configSegmentId || !configServiceId || parsedConfigQty == null || parsedConfigUnitPaise == null}
               >
                 Add to invoice
               </Button>

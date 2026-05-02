@@ -25,6 +25,12 @@ export async function checkServiceability(
   let serviceable: boolean;
   if (scopedBranchId) {
     serviceable = await deps.serviceAreaRepo.isPincodeActiveForBranch(pincode, scopedBranchId);
+    if (serviceable && deps.branchRepo) {
+      const scoped = await deps.branchRepo.getById(scopedBranchId);
+      if (!scoped?.isActive) {
+        serviceable = false;
+      }
+    }
   } else {
     serviceable = await deps.serviceAreaRepo.isServiceable(pincode);
   }
@@ -41,14 +47,18 @@ export async function checkServiceability(
   if (serviceable && deps.branchRepo) {
     if (scopedBranchId) {
       const branch = await deps.branchRepo.getById(scopedBranchId);
-      result.branchId = branch?.id ?? scopedBranchId;
-      result.branchName = branch?.name ?? null;
+      if (branch?.isActive) {
+        result.branchId = branch.id;
+        result.branchName = branch.name;
+      }
     } else {
       const area = await deps.serviceAreaRepo.getByPincode(pincode);
       if (area?.branchId) {
         const branch = await deps.branchRepo.getById(area.branchId);
-        result.branchId = branch?.id ?? area.branchId;
-        result.branchName = branch?.name ?? null;
+        if (branch?.isActive) {
+          result.branchId = branch.id;
+          result.branchName = branch.name;
+        }
       }
     }
   }

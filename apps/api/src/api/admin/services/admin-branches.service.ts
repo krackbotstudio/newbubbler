@@ -188,6 +188,9 @@ export class AdminBranchesService {
     if (actor?.role === Role.OPS && normalized.isDefault === true) {
       throw new ForbiddenException('Branch heads cannot change the default branch flag');
     }
+    if (normalized.isActive !== undefined && actor?.role !== Role.ADMIN) {
+      throw new ForbiddenException('Only admin can change branch active status');
+    }
     if (normalized.isDefault === true) {
       await this.branchRepo.clearOtherDefaults(id);
     }

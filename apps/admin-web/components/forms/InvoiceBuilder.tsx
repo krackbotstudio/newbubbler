@@ -15,7 +15,7 @@ import { AddItemsToInvoiceDialog } from './AddItemsToInvoiceDialog';
 import { PrintLineTagDialog, type PrintLineTagPayload, buildLineTagOrderLine } from './PrintLineTagDialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { CatalogItemIcon } from '@/components/catalog/CatalogItemIcon';
-import { Printer, Trash2 } from 'lucide-react';
+import { Pencil, Printer, RotateCcw, Trash2 } from 'lucide-react';
 
 const ITEM_TYPES: InvoiceItemType[] = ['SERVICE', 'FEE', 'ADDON', 'DRYCLEAN_ITEM', 'DISCOUNT'];
 
@@ -288,6 +288,8 @@ export function InvoiceBuilder({
   const [addItemsDialogOpen, setAddItemsDialogOpen] = useState(false);
   /** While editing line qty, hold raw string so decimals like "2." work; commit on blur. */
   const [qtyDraftByRowIndex, setQtyDraftByRowIndex] = useState<Record<number, string>>({});
+  const [unitPriceDraftByRowIndex, setUnitPriceDraftByRowIndex] = useState<Record<number, string>>({});
+  const [unitPriceEditableByRowIndex, setUnitPriceEditableByRowIndex] = useState<Record<number, boolean>>({});
   const REMARKS_MAX = 500;
   const [remarksDraftByRowIndex, setRemarksDraftByRowIndex] = useState<Record<number, string>>({});
   const [tagDialogRowIndex, setTagDialogRowIndex] = useState<number | null>(null);
@@ -298,6 +300,10 @@ export function InvoiceBuilder({
   useEffect(() => {
     setDiscountValueDraft(null);
   }, [discountType]);
+
+  useEffect(() => {
+    setUnitPriceEditableByRowIndex({});
+  }, [items.length]);
 
   const catalogItemsForService =
     catalog?.filter(
@@ -477,7 +483,7 @@ export function InvoiceBuilder({
     return pr ? Math.round(pr.priceRupees * 100) : null;
   }
 
-  function updateLine(index: number, patch: Partial<InvoiceLineRow>) {
+  function updateLine(index: number, patch: Partial<InvoiceLineRow>, options?: { syncMatrixPrice?: boolean }) {
     const row = items[index];
     if (!row) return;
     const { remarks: patchRemarks, ...patchRest } = patch;
@@ -492,7 +498,7 @@ export function InvoiceBuilder({
       if (t) (updated as { remarks?: string }).remarks = t;
       else delete (updated as { remarks?: string }).remarks;
     }
-    if (useMatrix && updated.catalogItemId && updated.segmentCategoryId && updated.serviceCategoryId) {
+    if (options?.syncMatrixPrice && useMatrix && updated.catalogItemId && updated.segmentCategoryId && updated.serviceCategoryId) {
       const unit = getMatrixPriceForRow(updated);
       if (unit != null) {
         updated.unitPricePaise = unit;
@@ -697,6 +703,12 @@ export function InvoiceBuilder({
                                   name: it?.name ?? row.name,
                                   segmentCategoryId: segmentId,
                                   serviceCategoryId: serviceId,
+                                }, { syncMatrixPrice: true });
+                                setUnitPriceEditableByRowIndex((p) => ({ ...p, [i]: false }));
+                                setUnitPriceDraftByRowIndex((p) => {
+                                  const next = { ...p };
+                                  delete next[i];
+                                  return next;
                                 });
                               }}
                             >
@@ -765,6 +777,12 @@ export function InvoiceBuilder({
                                   updateLine(i, {
                                     segmentCategoryId: newSegId,
                                     serviceCategoryId: firstSvcId,
+                                  }, { syncMatrixPrice: true });
+                                  setUnitPriceEditableByRowIndex((p) => ({ ...p, [i]: false }));
+                                  setUnitPriceDraftByRowIndex((p) => {
+                                    const next = { ...p };
+                                    delete next[i];
+                                    return next;
                                   });
                                 }}
                               >
@@ -791,7 +809,15 @@ export function InvoiceBuilder({
                             ) : (
                               <Select
                                 value={row.serviceCategoryId ?? ''}
-                                onValueChange={(id) => updateLine(i, { serviceCategoryId: id })}
+                                onValueChange={(id) => {
+                                  updateLine(i, { serviceCategoryId: id }, { syncMatrixPrice: true });
+                                  setUnitPriceEditableByRowIndex((p) => ({ ...p, [i]: false }));
+                                  setUnitPriceDraftByRowIndex((p) => {
+                                    const next = { ...p };
+                                    delete next[i];
+                                    return next;
+                                  });
+                                }}
                               >
                                 <SelectTrigger className="h-8 w-full min-w-[8rem]">
                                   <SelectValue placeholder="Service" />
@@ -933,7 +959,83 @@ export function InvoiceBuilder({
                     )}
                   </td>
                   <td className="align-middle py-2 text-right">
-                    {formatMoney(row.unitPricePaise)}
+                    {allowMutation ? (
+                      <div className="ml-auto flex w-[8.25rem] items-center justify-end gap-1.5">
+                        <Input
+                          type="text"
+                          inputMode={unitPriceEditableByRowIndex[i] ? 'decimal' : undefined}
+                          autoComplete="off"
+                          readOnly={!unitPriceEditableByRowIndex[i]}
+                          className={cn(
+                            'h-9 w-[6.5rem] text-right text-sm font-medium tabular-nums [&:not(:placeholder-shown)]:font-medium [&:not(:placeholder-shown)]:text-foreground',
+                            !unitPriceEditableByRowIndex[i] && 'cursor-default select-none bg-muted/40 text-muted-foreground',
+                          )}
+                          value={
+                            unitPriceDraftByRowIndex[i] !== undefined
+                              ? unitPriceDraftByRowIndex[i]
+                              : String(Math.round(row.unitPricePaise) / 100)
+                          }
+                          onFocus={(e) => {
+                            if (!unitPriceEditableByRowIndex[i]) {
+                              e.target.blur();
+                              return;
+                            }
+                            setUnitPriceDraftByRowIndex((p) => ({
+                              ...p,
+                              [i]: p[i] ?? String(Math.round(row.unitPricePaise) / 100),
+                            }));
+                          }}
+                          onChange={(e) => {
+                            const v = e.target.value.replace(',', '.');
+                            if (v === '' || /^\d*\.?\d*$/.test(v)) {
+                              setUnitPriceDraftByRowIndex((p) => ({ ...p, [i]: v }));
+                            }
+                          }}
+                          onBlur={(e) => {
+                            const rawDraft = e.target.value.replace(',', '.').trim();
+                            setUnitPriceDraftByRowIndex((p) => {
+                              const next = { ...p };
+                              delete next[i];
+                              return next;
+                            });
+                            if (rawDraft === '' || rawDraft === '.') return;
+                            const n = Number(rawDraft);
+                            if (!Number.isFinite(n)) return;
+                            updateLine(i, { unitPricePaise: Math.max(0, Math.round(n * 100)) });
+                          }}
+                          aria-label="Service cost in rupees"
+                        />
+                        <button
+                          type="button"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-md transition-opacity hover:opacity-80"
+                          style={{ color: branchPrimaryColor ?? '#1e3a8a' }}
+                          aria-label={unitPriceEditableByRowIndex[i] ? 'Reset to catalog price' : 'Edit service cost'}
+                          title={unitPriceEditableByRowIndex[i] ? 'Reset to catalog price' : 'Edit service cost'}
+                          onClick={() => {
+                            if (unitPriceEditableByRowIndex[i]) {
+                              const original = getMatrixPriceForRow(row) ?? row.unitPricePaise;
+                              updateLine(i, { unitPricePaise: original });
+                              setUnitPriceEditableByRowIndex((p) => ({ ...p, [i]: false }));
+                              setUnitPriceDraftByRowIndex((p) => {
+                                const next = { ...p };
+                                delete next[i];
+                                return next;
+                              });
+                              return;
+                            }
+                            setUnitPriceEditableByRowIndex((p) => ({ ...p, [i]: true }));
+                          }}
+                        >
+                          {unitPriceEditableByRowIndex[i] ? (
+                            <RotateCcw className="h-4 w-4" aria-hidden />
+                          ) : (
+                            <Pencil className="h-4 w-4" aria-hidden />
+                          )}
+                        </button>
+                      </div>
+                    ) : (
+                      formatMoney(row.unitPricePaise)
+                    )}
                   </td>
                   <td className="align-middle py-2 text-right">
                     {formatMoney(row.amountPaise ?? row.quantity * row.unitPricePaise)}

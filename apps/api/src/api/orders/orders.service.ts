@@ -21,6 +21,7 @@ import type {
   ServiceCategoryRepo,
   CustomersRepo,
   CustomerPortalsRepo,
+  BranchRepo,
 } from '../../application/ports';
 import {
   ORDERS_REPO,
@@ -36,6 +37,7 @@ import {
   SERVICE_CATEGORY_REPO,
   CUSTOMERS_REPO,
   CUSTOMER_PORTALS_REPO,
+  BRANCH_REPO,
 } from '../../infra/infra.module';
 import type { AuthUser } from '../common/roles.guard';
 import { AppError } from '../../application/errors';
@@ -56,6 +58,7 @@ export class OrdersService {
     @Inject(SERVICE_CATEGORY_REPO) private readonly serviceCategoryRepo: ServiceCategoryRepo,
     @Inject(CUSTOMERS_REPO) private readonly customersRepo: CustomersRepo,
     @Inject(CUSTOMER_PORTALS_REPO) private readonly customerPortalsRepo: CustomerPortalsRepo,
+    @Inject(BRANCH_REPO) private readonly branchRepo: BranchRepo,
   ) {}
 
   private async resolvePortalScopeForCustomer(
@@ -74,6 +77,10 @@ export class OrdersService {
     if (!slug) return null;
     const portal = await this.customerPortalsRepo.getByAccessKey(slug);
     if (!portal || !portal.isActive) {
+      throw new AppError('NOT_FOUND', 'Portal not found');
+    }
+    const branch = await this.branchRepo.getById(portal.branchId);
+    if (!branch || !branch.isActive) {
       throw new AppError('NOT_FOUND', 'Portal not found');
     }
     const isMember = await this.customerPortalsRepo.isMember(portal.id, userId);
@@ -153,6 +160,7 @@ export class OrdersService {
         holidaysRepo: this.holidaysRepo,
         operatingHoursRepo: this.operatingHoursRepo,
         addressesRepo: this.addressesRepo,
+        branchRepo: this.branchRepo,
       },
     );
     sendExpoPush(this.customersRepo, user.id, {

@@ -14,10 +14,12 @@ import {
 import { FormField } from '@/components/ui/form-field';
 import { useCreateBranch, useUpdateBranch, useUploadBranchUpiQr, useBranchFieldUniquenessQuery } from '@/hooks/useBranches';
 import { BranchUniquenessUnderField } from '@/components/branding/BranchFieldUniquenessHints';
+import { HexColorPickField } from '@/components/branding/HexColorPickField';
 import { toast } from 'sonner';
 import { getFriendlyErrorMessage } from '@/lib/api';
 import type { Branch } from '@/types';
 import { Loader2 } from 'lucide-react';
+import { getStoredUser } from '@/lib/auth';
 
 const schema = z.object({
   name: z.string().min(1, 'Branch name is required'),
@@ -60,8 +62,12 @@ export function BranchFormModal({ branch, open, onOpenChange, mode }: BranchForm
   const [upiPayeeName, setUpiPayeeName] = useState('');
   const [upiLink, setUpiLink] = useState('');
   const [footerNote, setFooterNote] = useState('');
+  const [isActive, setIsActive] = useState(true);
   const [isMainBranch, setIsMainBranch] = useState(false);
   const [qrFile, setQrFile] = useState<File | null>(null);
+
+  const user = getStoredUser();
+  const canManageBranchActive = user?.role === 'ADMIN';
 
   const createBranch = useCreateBranch();
   const updateBranch = useUpdateBranch(branch?.id ?? '');
@@ -95,6 +101,7 @@ export function BranchFormModal({ branch, open, onOpenChange, mode }: BranchForm
       setUpiPayeeName(branch.upiPayeeName ?? '');
       setUpiLink(branch.upiLink ?? '');
       setFooterNote(branch.footerNote ?? '');
+      setIsActive(branch.isActive ?? true);
       setIsMainBranch(branch.isDefault ?? false);
     } else if (mode === 'add') {
       setName('');
@@ -111,6 +118,7 @@ export function BranchFormModal({ branch, open, onOpenChange, mode }: BranchForm
       setUpiPayeeName('');
       setUpiLink('');
       setFooterNote('');
+      setIsActive(true);
       setIsMainBranch(false);
     }
     setQrFile(null);
@@ -171,6 +179,7 @@ export function BranchFormModal({ branch, open, onOpenChange, mode }: BranchForm
       upiPayeeName: result.data.upiPayeeName,
       upiLink: result.data.upiLink,
       footerNote: result.data.footerNote,
+      isActive,
       isDefault: isMainBranch,
     };
     if (mode === 'add') {
@@ -313,35 +322,39 @@ export function BranchFormModal({ branch, open, onOpenChange, mode }: BranchForm
             <div className="grid gap-4 sm:grid-cols-2">
               <FormField label="Primary color (hex)" htmlFor="branch-primary-color">
                 <div className="flex items-center gap-2">
-                  <Input
-                    id="branch-primary-color"
-                    type="color"
+                  <HexColorPickField
                     value={primaryColor}
-                    onChange={(e) => setPrimaryColor(e.target.value)}
-                    className="h-10 w-16 p-1"
+                    onChange={setPrimaryColor}
+                    fallbackHex="#1e40af"
+                    ariaLabel="Pick primary colour"
+                    presetVariant="primary"
                   />
                   <Input
+                    id="branch-primary-color"
                     value={primaryColor}
                     onChange={(e) => setPrimaryColor(e.target.value)}
                     placeholder="#1e40af"
                     maxLength={7}
+                    className="min-w-0 flex-1 font-mono text-sm"
                   />
                 </div>
               </FormField>
               <FormField label="Secondary color (hex)" htmlFor="branch-secondary-color">
                 <div className="flex items-center gap-2">
-                  <Input
-                    id="branch-secondary-color"
-                    type="color"
+                  <HexColorPickField
                     value={secondaryColor}
-                    onChange={(e) => setSecondaryColor(e.target.value)}
-                    className="h-10 w-16 p-1"
+                    onChange={setSecondaryColor}
+                    fallbackHex="#dbeafe"
+                    ariaLabel="Pick secondary colour"
+                    presetVariant="secondary"
                   />
                   <Input
+                    id="branch-secondary-color"
                     value={secondaryColor}
                     onChange={(e) => setSecondaryColor(e.target.value)}
                     placeholder="#dbeafe"
                     maxLength={7}
+                    className="min-w-0 flex-1 font-mono text-sm"
                   />
                 </div>
               </FormField>
@@ -394,6 +407,22 @@ export function BranchFormModal({ branch, open, onOpenChange, mode }: BranchForm
                 placeholder="Footer note"
               />
             </FormField>
+            <div className="flex items-center gap-2">
+              {canManageBranchActive ? (
+                <>
+                  <input
+                    id="branch-active"
+                    type="checkbox"
+                    checked={isActive}
+                    onChange={(e) => setIsActive(e.target.checked)}
+                    className="h-4 w-4 rounded border-input"
+                  />
+                  <label htmlFor="branch-active" className="text-sm font-medium cursor-pointer">
+                    Branch is active
+                  </label>
+                </>
+              ) : null}
+            </div>
             <div className="flex items-center gap-2">
               <input
                 id="branch-main"

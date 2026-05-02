@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Image from 'next/image';
 
 /** Production admin app (Vercel). */
-const ADMIN_WEB_LOGIN_URL = 'https://bubbler-admin-web.vercel.app/login';
+const ADMIN_WEB_LOGIN_URL = 'https://adminbubbler.krackbot.com/signup';
 
 const featureCards = [
   {
@@ -179,10 +179,7 @@ export default function WebsitePage() {
               target="_blank"
               rel="noopener noreferrer"
             >
-              Login
-            </a>
-            <a className="btn btn-demo" href="#demo">
-              Book a Demo
+              Create account
             </a>
           </div>
         </header>

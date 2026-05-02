@@ -44,6 +44,7 @@ export const InvoicePrintView = forwardRef<HTMLDivElement, InvoicePrintViewProps
     ref
   ) {
     const { order, customer, address, branch } = summary;
+    const panDisplay = branch ? (branch.panNumber?.trim() || '') : (branding?.panNumber?.trim() || '');
     const items = invoice.items ?? [];
     const useMatrix = Boolean(catalogMatrix?.items?.length);
     const discPaise = invoice.discountPaise ?? 0;
@@ -178,7 +179,7 @@ export const InvoicePrintView = forwardRef<HTMLDivElement, InvoicePrintViewProps
             {branding?.businessName?.trim() ? (
               <p className="font-bold text-gray-900 mb-1">{branding.businessName.trim()}</p>
             ) : null}
-            {branding?.panNumber && <p>PAN: {branding.panNumber}</p>}
+            {panDisplay ? <p>PAN: {panDisplay}</p> : null}
             {branding?.gstNumber && <p>GST: {branding.gstNumber}</p>}
             {branch && (
               <>

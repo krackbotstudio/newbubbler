@@ -17,6 +17,7 @@ export interface BranchRecord {
   upiPayeeName: string | null;
   upiLink: string | null;
   upiQrUrl: string | null;
+  isActive: boolean;
   isDefault: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -41,6 +42,7 @@ export interface BranchRepo {
     upiPayeeName?: string | null;
     upiLink?: string | null;
     upiQrUrl?: string | null;
+    isActive?: boolean;
     isDefault?: boolean;
   }): Promise<BranchRecord>;
   getById(id: string): Promise<BranchRecord | null>;

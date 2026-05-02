@@ -13,6 +13,7 @@ import { FormField } from '@/components/ui/form-field';
 import { ErrorDisplay } from '@/components/shared/ErrorDisplay';
 import { useBranch, useUpdateBranch, useBranchFieldUniquenessQuery } from '@/hooks/useBranches';
 import { BranchUniquenessUnderField } from '@/components/branding/BranchFieldUniquenessHints';
+import { HexColorPickField } from '@/components/branding/HexColorPickField';
 import { useServiceAreas, useCreateServiceArea, useDeleteServiceArea } from '@/hooks/useServiceAreas';
 import { toast } from 'sonner';
 import { CalendarCheck2, ClipboardList, Home, ListOrdered, Loader2, UserRound, X } from 'lucide-react';
@@ -288,18 +289,21 @@ export default function OnboardingPage() {
             <div className="grid gap-4">
               <FormField label="Primary color (required)">
                 <div className="flex items-center gap-2">
-                  <input
-                    type="color"
-                    value={/^#[0-9A-Fa-f]{6}$/.test(primaryColor) ? primaryColor : '#0f3d91'}
-                    onChange={(e) => setPrimaryColor(e.target.value)}
-                    className="h-10 w-12 cursor-pointer rounded-md border border-slate-300 bg-white p-1"
-                    aria-label="Pick primary color"
+                  <HexColorPickField
+                    value={primaryColor}
+                    onChange={setPrimaryColor}
+                    fallbackHex="#0f3d91"
+                    ariaLabel="Pick primary colour"
+                    presetVariant="primary"
                   />
                   <Input
                     type="text"
+                    inputMode="text"
+                    autoCapitalize="characters"
                     placeholder="#0f3d91"
                     value={primaryColor}
                     onChange={(e) => setPrimaryColor(e.target.value)}
+                    className="min-w-0 flex-1 font-mono text-sm"
                   />
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">
@@ -308,18 +312,21 @@ export default function OnboardingPage() {
               </FormField>
               <FormField label="Secondary color (required)">
                 <div className="flex items-center gap-2">
-                  <input
-                    type="color"
-                    value={/^#[0-9A-Fa-f]{6}$/.test(secondaryColor) ? secondaryColor : '#e8f0ff'}
-                    onChange={(e) => setSecondaryColor(e.target.value)}
-                    className="h-10 w-12 cursor-pointer rounded-md border border-slate-300 bg-white p-1"
-                    aria-label="Pick secondary color"
+                  <HexColorPickField
+                    value={secondaryColor}
+                    onChange={setSecondaryColor}
+                    fallbackHex="#e8f0ff"
+                    ariaLabel="Pick secondary colour"
+                    presetVariant="secondary"
                   />
                   <Input
                     type="text"
+                    inputMode="text"
+                    autoCapitalize="characters"
                     placeholder="#e8f0ff"
                     value={secondaryColor}
                     onChange={(e) => setSecondaryColor(e.target.value)}
+                    className="min-w-0 flex-1 font-mono text-sm"
                   />
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">

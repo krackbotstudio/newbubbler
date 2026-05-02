@@ -38,6 +38,7 @@ import { toast } from 'sonner';
 import { ExternalLink } from 'lucide-react';
 import { AcknowledgementInvoiceDialog } from '@/components/admin/orders/AcknowledgementInvoiceDialog';
 import { FinalInvoiceDialog } from '@/components/admin/orders/FinalInvoiceDialog';
+import { CatalogItemIcon } from '@/components/catalog/CatalogItemIcon';
 import { getStoredUser } from '@/lib/auth';
 import { CUSTOMER_APP_URL } from '@/lib/customer-app-url';
 
@@ -972,6 +973,10 @@ export default function OrderDetailPage() {
                     <tbody>
                       {ackItems.map((row, idx) => {
                         const lineAmount = row.amountPaise ?? row.quantity * row.unitPricePaise;
+                        const itemMeta =
+                          catalogMatrix && row.catalogItemId
+                            ? catalogMatrix.items.find((item) => item.id === row.catalogItemId)
+                            : null;
                         const seg =
                           catalogMatrix && row.segmentCategoryId
                             ? catalogMatrix.segmentCategories.find((s) => s.id === row.segmentCategoryId)?.label
@@ -984,7 +989,21 @@ export default function OrderDetailPage() {
                         return (
                           <tr key={idx} className="border-b last:border-0">
                             <td className="py-2 px-3">
-                              <div className="font-medium">{row.name}</div>
+                              <div className="flex items-start gap-2">
+                                <span
+                                  className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md border bg-muted/30"
+                                  style={{
+                                    borderColor: `color-mix(in srgb, ${summary?.branch?.primaryColor ?? '#1e3a8a'} 24%, rgb(229, 231, 235))`,
+                                  }}
+                                >
+                                  <CatalogItemIcon
+                                    icon={itemMeta?.icon}
+                                    size={22}
+                                    cacheBuster={itemMeta?.updatedAt}
+                                  />
+                                </span>
+                                <span className="font-medium leading-tight">{row.name}</span>
+                              </div>
                               {detail ? (
                                 <div className="text-xs text-muted-foreground mt-0.5">{detail}</div>
                               ) : null}
@@ -1157,7 +1176,9 @@ export default function OrderDetailPage() {
               <p className="font-bold text-foreground mb-1">
                 {summary.branch?.name?.trim() || branding?.businessName?.trim() || '—'}
               </p>
-              {summary.branch?.panNumber && <p>PAN: {summary.branch.panNumber}</p>}
+              {(summary.branch ? summary.branch.panNumber?.trim() : branding?.panNumber?.trim()) ? (
+                <p>PAN: {summary.branch ? summary.branch.panNumber!.trim() : branding!.panNumber!.trim()}</p>
+              ) : null}
               {summary.branch?.gstNumber && <p>GST: {summary.branch.gstNumber}</p>}
               {summary.branch && (
                 <>
@@ -1352,7 +1373,9 @@ export default function OrderDetailPage() {
               <p className="font-bold text-foreground mb-1">
                 {summary.branch?.name?.trim() || branding?.businessName?.trim() || '—'}
               </p>
-              {summary.branch?.panNumber && <p>PAN: {summary.branch.panNumber}</p>}
+              {(summary.branch ? summary.branch.panNumber?.trim() : branding?.panNumber?.trim()) ? (
+                <p>PAN: {summary.branch ? summary.branch.panNumber!.trim() : branding!.panNumber!.trim()}</p>
+              ) : null}
               {summary.branch?.gstNumber && <p>GST: {summary.branch.gstNumber}</p>}
               {summary.branch && (
                 <>

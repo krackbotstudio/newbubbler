@@ -11,12 +11,11 @@ import { createOrder } from '../orders/create-order.use-case';
 import {
   createFakeAddressesRepo,
   createFakeOrdersRepo,
-  createFakeSubscriptionsRepo,
-  createFakeSubscriptionUsageRepo,
   createFakeServiceAreaRepo,
   createFakeSlotConfigRepo,
   createFakeHolidaysRepo,
   createFakeOperatingHoursRepo,
+  createFakeBranchRepo,
 } from './fakes/in-memory-repos';
 
 const futurePickup = new Date(Date.now() + 86400000 * 3);
@@ -33,8 +32,6 @@ const baseParams = {
 describe('Service area and slot capacity validations', () => {
   it('throws PINCODE_NOT_SERVICEABLE when pincode is not active', async () => {
     const ordersRepo = createFakeOrdersRepo();
-    const subscriptionsRepo = createFakeSubscriptionsRepo();
-    const subscriptionUsageRepo = createFakeSubscriptionUsageRepo();
     const serviceAreaRepo = createFakeServiceAreaRepo(new Set()); // no pincodes serviceable
     const slotConfigRepo = createFakeSlotConfigRepo({
       slot: {
@@ -57,14 +54,12 @@ describe('Service area and slot capacity validations', () => {
         },
         {
           ordersRepo,
-          subscriptionsRepo,
-          subscriptionUsageRepo,
-          unitOfWork: undefined,
           serviceAreaRepo,
           slotConfigRepo,
           holidaysRepo: createFakeHolidaysRepo(),
           operatingHoursRepo: createFakeOperatingHoursRepo(),
           addressesRepo: createFakeAddressesRepo(),
+          branchRepo: createFakeBranchRepo(),
         },
       );
     } catch (e) {
@@ -76,8 +71,6 @@ describe('Service area and slot capacity validations', () => {
 
   it('throws SLOT_FULL when slot capacity is exceeded', async () => {
     const ordersRepo = createFakeOrdersRepo();
-    const subscriptionsRepo = createFakeSubscriptionsRepo();
-    const subscriptionUsageRepo = createFakeSubscriptionUsageRepo();
     const serviceAreaRepo = createFakeServiceAreaRepo(new Set(['500081']));
     const slotConfigRepo = createFakeSlotConfigRepo({
       slot: {
@@ -100,14 +93,12 @@ describe('Service area and slot capacity validations', () => {
         },
         {
           ordersRepo,
-          subscriptionsRepo,
-          subscriptionUsageRepo,
-          unitOfWork: undefined,
           serviceAreaRepo,
           slotConfigRepo,
           holidaysRepo: createFakeHolidaysRepo(),
           operatingHoursRepo: createFakeOperatingHoursRepo(),
           addressesRepo: createFakeAddressesRepo(),
+          branchRepo: createFakeBranchRepo(),
         },
       );
     } catch (e) {
@@ -119,8 +110,6 @@ describe('Service area and slot capacity validations', () => {
 
   it('throws SLOT_NOT_AVAILABLE when no slot exists for given time', async () => {
     const ordersRepo = createFakeOrdersRepo();
-    const subscriptionsRepo = createFakeSubscriptionsRepo();
-    const subscriptionUsageRepo = createFakeSubscriptionUsageRepo();
     const serviceAreaRepo = createFakeServiceAreaRepo(new Set(['500081']));
     const slotConfigRepo = createFakeSlotConfigRepo({
       existingCount: 0,
@@ -136,14 +125,12 @@ describe('Service area and slot capacity validations', () => {
         },
         {
           ordersRepo,
-          subscriptionsRepo,
-          subscriptionUsageRepo,
-          unitOfWork: undefined,
           serviceAreaRepo,
           slotConfigRepo,
           holidaysRepo: createFakeHolidaysRepo(),
           operatingHoursRepo: createFakeOperatingHoursRepo(), // null = no auto-create
           addressesRepo: createFakeAddressesRepo(),
+          branchRepo: createFakeBranchRepo(),
         },
       );
     } catch (e) {
